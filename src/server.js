@@ -24,6 +24,7 @@ const tokenStore = require('./auth/tokenStore');
 const wsfev1 = require('./services/wsfev1');
 const padron = require('./services/padron');
 const apoc = require('./services/apoc');
+const contribuyente = require('./services/contribuyente');
 const eventanilla = require('./services/eventanilla');
 const onboarding = require('./services/onboarding');
 const comprobantes = require('./services/comprobantes');
@@ -473,6 +474,14 @@ async function route(req, res, url) {
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'apoc' && seg[2]) {
     const cuitRepre = requireQ(q, 'cuit');
     const datos = await apoc.consultar(cuitRepre, seg[2]);
+    return sendJson(res, 200, { ok: true, ...datos });
+  }
+
+  // --- Vista consolidada (padron A5 + APOC) con semaforo de riesgo fiscal ---
+  // GET /api/contribuyente/:cuitConsulta?cuit=<representada>
+  if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'contribuyente' && seg[2]) {
+    const cuitRepre = requireQ(q, 'cuit');
+    const datos = await contribuyente.consolidar(cuitRepre, seg[2]);
     return sendJson(res, 200, { ok: true, ...datos });
   }
 

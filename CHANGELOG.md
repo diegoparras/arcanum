@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.2.5] - 2026-06-24
+
+### Agregado
+- **Vista consolidada del contribuyente** con semaforo de riesgo fiscal:
+  `GET /api/contribuyente/:cuit?cuit=<representada>` combina Padron A5 + WSAPOC en
+  una sola respuesta. Devuelve `semaforo` (VERDE/AMARILLO/ROJO), `fiscal`
+  (tipoContribuyente, condicionIVA, tipoComprobante, estadoClave, domicilio) y `apoc`.
+  Las dos consultas en paralelo; APOC es best-effort (si falla, no aborta el analisis).
+  Preset en el Generador y ruta en OpenAPI. Verificado contra ARCA produccion.
+
 ## [0.2.4] - 2026-06-24
 
 ### Agregado

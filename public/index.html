@@ -391,6 +391,7 @@ const RICH_PRESETS={
   'Consultar padrón A5 (constancia)':{m:'POST',p:'/api/ws/padron_a5/getPersona_v2',b:{cuit:'20111111112',params:{idPersona:'20111111112'}}},
   'Consultar padrón (A13)':{m:'GET',p:'/api/padron/a13/20111111112?cuit=20111111112',b:null},
   'Apócrifos: ¿el CUIT está en la base?':{m:'GET',p:'/api/apoc/20111111112?cuit=20111111112',b:null},
+  'Contribuyente: semáforo (padrón + apócrifos)':{m:'GET',p:'/api/contribuyente/20111111112?cuit=20111111112',b:null},
   'e-Ventanilla: listar comunicaciones':{m:'GET',p:'/api/eventanilla/comunicaciones?cuit=20111111112',b:null},
   'e-Ventanilla: leer comunicación':{m:'GET',p:'/api/eventanilla/comunicacion/123456?cuit=20111111112',b:null},
   'e-Ventanilla: adjuntos (metadata)':{m:'GET',p:'/api/eventanilla/comunicacion/123456/adjuntos?cuit=20111111112',b:null},

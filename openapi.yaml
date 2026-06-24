@@ -250,6 +250,15 @@ paths:
         - { name: cuit, in: query, required: true, schema: { type: string, description: CUIT representante (cert cargado) } }
       responses: { '200': { description: "{ esApocrifo, codigo, descripcion, fechaCondicion, fechaPublicacion }" } }
 
+  /api/contribuyente/{cuit}:
+    get:
+      tags: [Padron]
+      summary: Vista consolidada (padron A5 + apocrifos) con semaforo de riesgo fiscal
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string, description: CUIT a consultar } }
+        - { name: cuit, in: query, required: true, schema: { type: string, description: CUIT representante (cert cargado) } }
+      responses: { '200': { description: "{ semaforo: VERDE|AMARILLO|ROJO, fiscal: { tipoContribuyente, condicionIVA, tipoComprobante, estadoClave }, apoc, motivoRiesgo }" } }
+
   /api/eventanilla/status:
     get: { tags: [e-Ventanilla], summary: Estado (dummy), responses: { '200': { description: ok } } }
   /api/eventanilla/comunicaciones:
