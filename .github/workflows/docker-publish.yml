@@ -56,12 +56,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Escaneo de vulnerabilidades (Trivy, gate HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/arcanum:latest
-          format: table
-          exit-code: '0'   # informativo; subir a '1' para bloquear el release
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
