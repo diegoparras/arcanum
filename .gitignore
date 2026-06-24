@@ -1,0 +1,14 @@
+node_modules/
+.env
+# Datos sensibles: NUNCA commitear certificados, claves ni tokens cacheados.
+data/certs/
+data/cache/
+data/.masterkey
+# Informe de auditoria (hallazgos de seguridad): no publicar
+AUDIT-*.md
+*.key
+*.crt
+*.pem
+*.csr
+!data/certs/.gitkeep
+!data/cache/.gitkeep

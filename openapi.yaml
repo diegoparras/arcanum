@@ -1,0 +1,115 @@
+openapi: 3.0.3
+info:
+  title: Arcanum — Gateway REST para ARCA (ex-AFIP)
+  version: 0.1.0
+  description: >
+    API REST self-hosted que envuelve los Web Services SOAP de ARCA.
+    La firma WSAA se hace 100% local: la clave privada nunca sale del contenedor
+    ni pasa por terceros. Pensada para automatizar con n8n.
+  license:
+    name: Apache-2.0
+servers:
+  - url: http://localhost:8094
+    description: Instancia local
+security:
+  - ApiKeyAuth: []
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    AlicuotaIva:
+      type: object
+      properties:
+        id: { type: integer, example: 5, description: "3=27%, 4=10.5%, 5=21%, 6=5%, 8=2.5%, 9=0%" }
+        baseImponible: { type: number, example: 100.00 }
+        importe: { type: number, example: 21.00 }
+    Comprobante:
+      type: object
+      required: [cuit, puntoVenta, tipoComprobante, importeTotal]
+      properties:
+        cuit: { type: string, example: "20111111112", description: "CUIT emisor (debe tener cert cargado)" }
+        puntoVenta: { type: integer, example: 1 }
+        tipoComprobante: { type: integer, example: 11, description: "11=Factura C, 6=Factura B, 1=Factura A" }
+        concepto: { type: integer, example: 1, description: "1=Productos, 2=Servicios, 3=Ambos" }
+        tipoDocReceptor: { type: integer, example: 80, description: "80=CUIT, 96=DNI, 99=Consumidor Final" }
+        nroDocReceptor: { type: string, example: "20222222223" }
+        numero: { type: integer, nullable: true, description: "Si se omite, se usa ultimo autorizado + 1" }
+        fecha: { type: string, example: "2026-06-24" }
+        importeNeto: { type: number, example: 100.00 }
+        importeIva: { type: number, example: 21.00 }
+        importeTotal: { type: number, example: 121.00 }
+        importeNoGravado: { type: number, example: 0 }
+        importeExento: { type: number, example: 0 }
+        importeTributos: { type: number, example: 0 }
+        moneda: { type: string, example: "PES" }
+        cotizacion: { type: number, example: 1 }
+        alicuotasIva:
+          type: array
+          items: { $ref: '#/components/schemas/AlicuotaIva' }
+        fechaServicioDesde: { type: string, nullable: true }
+        fechaServicioHasta: { type: string, nullable: true }
+        fechaVtoPago: { type: string, nullable: true }
+paths:
+  /api/health:
+    get:
+      summary: Estado del servicio (sin auth)
+      security: []
+      responses: { '200': { description: OK } }
+  /api/tenants:
+    get:
+      summary: CUITs con certificado cargado
+      responses: { '200': { description: Lista de tenants } }
+  /api/wsfev1/status:
+    get:
+      summary: Estado de WSFEv1 (FEDummy)
+      responses: { '200': { description: Estado de los servidores de ARCA } }
+  /api/wsfev1/parametros/{nombre}:
+    get:
+      summary: Tablas de parametros (catalogos)
+      parameters:
+        - { name: nombre, in: path, required: true, schema: { type: string, enum: [tiposComprobante, tiposDocumento, tiposConcepto, alicuotasIva, monedas, tiposTributo, puntosVenta] } }
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: Valores del catalogo } }
+  /api/wsfev1/ultimo-autorizado:
+    get:
+      summary: Ultimo numero de comprobante autorizado
+      parameters:
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+        - { name: puntoVenta, in: query, required: true, schema: { type: integer } }
+        - { name: tipoComprobante, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: Ultimo numero } }
+  /api/wsfev1/comprobantes:
+    post:
+      summary: Emitir comprobante y obtener CAE
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Comprobante' }
+      responses:
+        '200': { description: Comprobante aprobado (con CAE) }
+        '422': { description: Rechazado por ARCA (ver errores/observaciones) }
+  /api/padron/{alcance}/{cuitConsulta}:
+    get:
+      summary: Consulta de padron / constancia de inscripcion
+      parameters:
+        - { name: alcance, in: path, required: true, schema: { type: string, enum: [a13, a5] } }
+        - { name: cuitConsulta, in: path, required: true, schema: { type: string } }
+        - { name: cuit, in: query, required: true, schema: { type: string, description: "CUIT representante (cert cargado)" } }
+      responses: { '200': { description: Datos del contribuyente } }
+  /api/wsaa/{cuit}/{service}:
+    get:
+      summary: Inspeccionar / forzar el Ticket de Acceso (diagnostico)
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string } }
+        - { name: service, in: path, required: true, schema: { type: string, example: wsfe } }
+      responses: { '200': { description: Datos del TA (token truncado) } }
+    delete:
+      summary: Invalidar el Ticket de Acceso cacheado
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string } }
+        - { name: service, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: Invalidado } }

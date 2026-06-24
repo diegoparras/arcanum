@@ -1,0 +1,52 @@
+# Arcanum — despliegue de un comando (app + Postgres).
+# Sirve para Docker vanilla y para paneles que importan compose (Dokploy,
+# Portainer, Coolify, y EasyPanel en su modo compose beta).
+#
+#   1) cp .env.example .env  y completar ARCANUM_API_KEY + ARCANUM_MASTER_KEY
+#   2) docker compose up -d
+#
+# Para EasyPanel sin compose, ver DESPLIEGUE.md (servicio Postgres + servicio App).
+services:
+  arcanum-db:
+    image: postgres:16-alpine
+    container_name: arcanum-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-arcanum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-arcanum}
+      POSTGRES_DB: ${POSTGRES_DB:-arcanum}
+    volumes:
+      - arcanum-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arcanum}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  arcanum:
+    build: .
+    image: ghcr.io/diegoparras/arcanum:latest
+    container_name: arcanum
+    restart: unless-stopped
+    depends_on:
+      arcanum-db:
+        condition: service_healthy
+    ports:
+      - "8094:8094"
+    environment:
+      ARCANUM_ENV: ${ARCANUM_ENV:-homo}            # homo | prod
+      ARCANUM_API_KEY: ${ARCANUM_API_KEY:-}         # vacio => se genera y se imprime en el log
+      ARCANUM_MASTER_KEY: ${ARCANUM_MASTER_KEY:-}   # 32 bytes hex; cifra las claves privadas
+      DATABASE_URL: postgres://${POSTGRES_USER:-arcanum}:${POSTGRES_PASSWORD:-arcanum}@arcanum-db:5432/${POSTGRES_DB:-arcanum}
+      PORT: 8094
+    volumes:
+      - arcanum-data:/data                          # master key autogenerada + artefactos
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8094/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  arcanum-pg:
+  arcanum-data:
