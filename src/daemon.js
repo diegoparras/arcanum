@@ -11,6 +11,7 @@ const catalog = require('./catalog');
 const engine = require('./soap/engine');
 const { getAccessTicket } = require('./auth/wsaa');
 const webhooks = require('./services/webhooks');
+const eventanilla = require('./services/eventanilla');
 
 const timers = [];
 let lastArcaOk = true;
@@ -29,7 +30,9 @@ async function monitor() {
     let ok = false;
     let detail = '';
     try {
-      await engine.call(s.id, s.dummyOp, {}, { entorno: config.env });
+      // e-Ventanilla es SOAP 1.2 + MTOM: usa su modulo rico, no el generico.
+      if (s.id === 'eventanilla') await eventanilla.dummy(config.env);
+      else await engine.call(s.id, s.dummyOp, {}, { entorno: config.env });
       ok = true;
     } catch (e) {
       detail = e.message.slice(0, 200);

@@ -23,6 +23,7 @@ const wsaa = require('./auth/wsaa');
 const tokenStore = require('./auth/tokenStore');
 const wsfev1 = require('./services/wsfev1');
 const padron = require('./services/padron');
+const eventanilla = require('./services/eventanilla');
 const onboarding = require('./services/onboarding');
 const comprobantes = require('./services/comprobantes');
 const pdf = require('./services/pdf');
@@ -388,6 +389,46 @@ async function route(req, res, url) {
     if (req.method === 'GET' && !seg[2]) return sendJson(res, 200, { ok: true, webhooks: await webhooks.listar(), eventos: webhooks.EVENTOS });
     if (req.method === 'POST' && !seg[2]) return sendJson(res, 200, { ok: true, webhook: await webhooks.crear(await readJsonBody(req)) });
     if (req.method === 'DELETE' && seg[2]) return sendJson(res, 200, { ok: true, ...(await webhooks.eliminar(seg[2])) });
+  }
+
+  // --- e-Ventanilla (Ventanilla Electronica) ---
+  if (seg[0] === 'api' && seg[1] === 'eventanilla') {
+    // GET /api/eventanilla/status  -> health (dummy)
+    if (req.method === 'GET' && seg[2] === 'status') {
+      return sendJson(res, 200, { ok: true, ...(await eventanilla.dummy()) });
+    }
+    // GET /api/eventanilla/comunicaciones?cuit=&desde=&hasta=&pagina=&porPagina=
+    if (req.method === 'GET' && seg[2] === 'comunicaciones') {
+      const cuit = requireQ(q, 'cuit');
+      assertCuitAllowed(principal, cuit);
+      const r = await eventanilla.consultarComunicaciones(cuit, {
+        desde: q.get('desde'), hasta: q.get('hasta'), pagina: q.get('pagina'), porPagina: q.get('porPagina'),
+      });
+      return sendJson(res, 200, { ok: true, ...r });
+    }
+    // GET /api/eventanilla/comunicacion/:id?cuit=        -> cuerpo del mensaje
+    if (req.method === 'GET' && seg[2] === 'comunicacion' && seg[3] && !seg[4]) {
+      const cuit = requireQ(q, 'cuit');
+      assertCuitAllowed(principal, cuit);
+      return sendJson(res, 200, { ok: true, ...(await eventanilla.consumirComunicacion(cuit, seg[3])) });
+    }
+    // GET /api/eventanilla/comunicacion/:id/adjuntos?cuit=  -> metadata de los PDF
+    if (req.method === 'GET' && seg[2] === 'comunicacion' && seg[3] && seg[4] === 'adjuntos') {
+      const cuit = requireQ(q, 'cuit');
+      assertCuitAllowed(principal, cuit);
+      const att = await eventanilla.obtenerAdjuntos(cuit, seg[3]);
+      return sendJson(res, 200, { ok: true, total: att.length, adjuntos: att.map((a, i) => ({ n: i, filename: a.filename, type: a.type, bytes: a.data.length })) });
+    }
+    // GET /api/eventanilla/comunicacion/:id/adjunto?cuit=&n=0  -> descarga el PDF
+    if (req.method === 'GET' && seg[2] === 'comunicacion' && seg[3] && seg[4] === 'adjunto') {
+      const cuit = requireQ(q, 'cuit');
+      assertCuitAllowed(principal, cuit);
+      const att = await eventanilla.obtenerAdjuntos(cuit, seg[3]);
+      if (!att.length) throw notFound();
+      const a = att[parseInt(q.get('n') || '0', 10)] || att[0];
+      res.writeHead(200, { 'Content-Type': a.type || 'application/pdf', 'Content-Disposition': `attachment; filename="${a.filename}"`, 'Content-Length': a.data.length });
+      return res.end(a.data);
+    }
   }
 
   // --- Padron / Constancia ---
