@@ -306,6 +306,11 @@ async function route(req, res, url) {
       const { certPem } = await readJsonBody(req);
       return sendJson(res, 200, { ok: true, ...(await onboarding.cargarCertificado(seg[2], certPem)) });
     }
+    // POST /api/tenants/:cuit/importar  { nombre, keyPem, certPem } -> importa un par existente
+    if (req.method === 'POST' && seg[2] && seg[3] === 'importar') {
+      const { nombre, keyPem, certPem } = await readJsonBody(req);
+      return sendJson(res, 200, { ok: true, ...(await onboarding.importarPar(seg[2], nombre, keyPem, certPem)) });
+    }
     // DELETE /api/tenants/:cuit
     if (req.method === 'DELETE' && seg[2]) {
       return sendJson(res, 200, { ok: true, ...(await onboarding.eliminarCliente(seg[2])) });
@@ -465,7 +470,7 @@ async function start() {
   console.log(`[arcanum] catalogo: ${catalog.list().length} servicios cargados`);
   const seeded = await users.seedAdmin();
   if (seeded && seeded.generated) {
-    console.log('\n[arcanum] Usuario superadmin creado: admin');
+    console.log(`\n[arcanum] Usuario superadmin creado: ${seeded.username}`);
     console.log(`[arcanum]   contrasena: ${seeded.pass}`);
     console.log('[arcanum] Cambiala despues de entrar. (definí ARCANUM_ADMIN_PASS para fijarla)\n');
   }

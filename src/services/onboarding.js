@@ -72,6 +72,15 @@ async function importarClave(cuit, nombre, keyPem, entorno = config.env) {
   return tenants.storeKey(cuit, entorno, keyPem, nombre);
 }
 
+/** Importa un par existente (clave + certificado) en una sola operacion. */
+async function importarPar(cuit, nombre, keyPem, certPem, entorno = config.env) {
+  if (!keyPem || !/BEGIN (RSA |EC )?PRIVATE KEY/.test(keyPem)) {
+    throw err('Falta la clave privada en formato PEM', 400);
+  }
+  await tenants.storeKey(cuit, entorno, keyPem, nombre);
+  return tenants.storeCert(cuit, entorno, certPem);
+}
+
 async function eliminarCliente(cuit, entorno = config.env) {
   const c = tenants.normalizeCuit(cuit);
   await db.query('DELETE FROM access_tickets WHERE cuit = $1 AND entorno = $2', [c, entorno]);
@@ -83,4 +92,4 @@ function err(message, httpStatus) {
   return Object.assign(new Error(message), { httpStatus });
 }
 
-module.exports = { crearCliente, getCsr, cargarCertificado, importarClave, eliminarCliente };
+module.exports = { crearCliente, getCsr, cargarCertificado, importarClave, importarPar, eliminarCliente };

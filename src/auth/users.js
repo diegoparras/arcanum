@@ -26,14 +26,15 @@ function verifyPassword(pw, stored) {
 async function seedAdmin() {
   const { rows } = await db.query('SELECT count(*)::int AS n FROM usuarios');
   if (rows[0].n > 0) return null;
+  const username = (process.env.ARCANUM_ADMIN_USER || 'admin').trim();
   const provided = process.env.ARCANUM_ADMIN_PASS;
   const pass = provided || crypto.randomBytes(9).toString('base64url');
   await db.query('INSERT INTO usuarios (username, pass_hash, role) VALUES ($1, $2, $3)', [
-    'admin',
+    username,
     hashPassword(pass),
     'superadmin',
   ]);
-  return { username: 'admin', generated: !provided, pass: provided ? undefined : pass };
+  return { username, generated: !provided, pass: provided ? undefined : pass };
 }
 
 async function login(username, password) {
