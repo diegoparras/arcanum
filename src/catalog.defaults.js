@@ -266,6 +266,21 @@ const SERVICES = [
     activacion: { relacionNombre: 'wsremazucar', pasos: pasosActivacion('wsremazucar') },
   },
   {
+    id: 'wscpe',
+    nombre: 'Carta de Porte Electronica (WSCPE)',
+    descripcion: 'Emision y gestion de la carta de porte para transporte de granos.',
+    categoria: 'agro',
+    wsaaService: 'wscpe',
+    soapNamespace: 'http://serviciosjava.arca.gob.ar/wscpe/',
+    authStyle: 'java',
+    endpoints: {
+      homo: 'https://cpea-ws-qaext.arca.gob.ar/wscpe/services/soap',
+      prod: 'https://cpea-ws.arca.gob.ar/wscpe/services/soap',
+    },
+    rich: false,
+    activacion: { relacionNombre: 'wscpe', pasos: pasosActivacion('wscpe'), docs: 'https://www.afip.gob.ar/ws/documentos/Manual-wscpe.pdf' },
+  },
+  {
     id: 'wsctg',
     nombre: 'Codigo Trazabilidad de Granos (WSCTG)',
     descripcion: 'Solicitud y consulta de CTG para el transporte de granos.',
