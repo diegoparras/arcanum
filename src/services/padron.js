@@ -12,8 +12,9 @@ const { post, SoapError } = require('../soap/client');
 const { normalizeCuit } = require('../auth/tenants');
 
 const PADRONES = {
-  a13: { service: 'ws_sr_padron_a13', ns: 'http://a13.soap.ws.server.puc.sr/', endpoint: () => config.endpoints.padronA13 },
-  a5: { service: 'ws_sr_constancia_inscripcion', ns: 'http://a5.soap.ws.server.puc.sr/', endpoint: () => config.endpoints.constancia },
+  // A5 (constancia) usa getPersona_v2; A13 usa getPersona.
+  a13: { service: 'ws_sr_padron_a13', ns: 'http://a13.soap.ws.server.puc.sr/', op: 'getPersona', endpoint: () => config.endpoints.padronA13 },
+  a5: { service: 'ws_sr_constancia_inscripcion', ns: 'http://a5.soap.ws.server.puc.sr/', op: 'getPersona_v2', endpoint: () => config.endpoints.constancia },
 };
 
 /**
@@ -35,17 +36,18 @@ async function consultarPersona(alcance, cuitRepresentada, idPersona) {
     `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:a="${cfg.ns}">` +
     '<soapenv:Header/>' +
     '<soapenv:Body>' +
-    '<a:getPersona>' +
+    `<a:${cfg.op}>` +
     `<token>${ta.token}</token>` +
     `<sign>${ta.sign}</sign>` +
     `<cuitRepresentada>${repre}</cuitRepresentada>` +
     `<idPersona>${target}</idPersona>` +
-    '</a:getPersona>' +
+    `</a:${cfg.op}>` +
     '</soapenv:Body>' +
     '</soapenv:Envelope>';
 
   const body = await post(cfg.endpoint(), '', envelope);
-  const resp = body?.getPersonaResponse?.personaReturn || body?.getPersonaResponse;
+  const r = body?.[`${cfg.op}Response`];
+  const resp = r?.personaReturn || r;
   if (!resp) throw new SoapError('Padron no devolvio datos de persona', 502, { body });
   return resp;
 }

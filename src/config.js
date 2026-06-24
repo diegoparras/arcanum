@@ -64,7 +64,7 @@ const config = {
   // El Ticket de Acceso (TA) dura 12hs. Renovamos con margen de seguridad.
   tokenRenewMarginMs: 10 * 60 * 1000, // 10 minutos antes del vencimiento
   // Timeout de las llamadas SOAP a ARCA.
-  soapTimeoutMs: parseInt(process.env.ARCANUM_SOAP_TIMEOUT_MS || '30000', 10),
+  soapTimeoutMs: parseInt(process.env.ARCANUM_SOAP_TIMEOUT_MS || '15000', 10),
   version: require('../package.json').version,
 };
 
