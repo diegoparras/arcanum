@@ -5,24 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Arcanum — Gateway ARCA</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2327408b'/%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z'/%3E%3Crect x='21' y='41' width='22' height='6' rx='1' fill='%23fff'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>(function(){try{var t=localStorage.arcanumTheme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<!-- Fuentes vendorizadas (sin CDN, por CSP y privacidad) -->
 <style>
-  :root{
-    --bg:#f5f6f9; --panel:#fff; --ink:#1a1c22; --muted:#5f6573; --line:#e5e8ef;
-    --accent:#27408b; --accent-ink:#1d2f5f; --accent-contrast:#fff; --ok:#2e7d52; --bad:#b23b3b; --warn:#b9791a;
-    --chip:#e9edf6; --header-bg:rgba(245,246,249,.9); --radius:14px;
-    --shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.05);
-    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-    --sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  }
-  :root[data-theme="dark"]{
-    --bg:#14161b; --panel:#1c1f27; --ink:#e7e9ee; --muted:#9aa1b0; --line:#2a2e38;
-    --accent:#6b8bd6; --accent-ink:#bcd0ff; --accent-contrast:#10131a; --ok:#5cc08a; --bad:#e3736f; --warn:#d6a44a;
-    --chip:#262b36; --header-bg:rgba(20,22,27,.9);
-    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.4);
-  }
+  @font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;
+    src:url("./vendor/fonts/inter-var-latin.woff2") format("woff2");
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+  @font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;
+    src:url("./vendor/fonts/inter-var-latin-ext.woff2") format("woff2");
+    unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+  @font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:100 800;font-display:swap;
+    src:url("./vendor/fonts/jetbrains-mono-latin.woff2") format("woff2");
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+2074,U+20AC,U+2122,U+2212,U+2215,U+FEFF,U+FFFD;}
+</style>
+<!-- Sistema de diseño Escriba (canonico) — PRIMERO; lo propio de Arcanum va despues -->
+<link rel="stylesheet" href="./escriba-ui.css">
+<style>
+  /* ===== Acento Arcanum (lo unico que cambia por app) ===== */
+  :root{ --accent:#27408b; --accent-2:#1d3168; --on-accent:#fff; --ring:0 0 0 3px rgba(39,64,139,.20); }
+  :root[data-theme="dark"]{ --accent:#6b8bd6; --accent-2:#27408b; --ring:0 0 0 3px rgba(107,139,214,.26); }
+  /* Alias heredados del CSS propio de Arcanum, mapeados a tokens canonicos */
+  :root{ --ink:var(--text); --line:var(--border); --chip:var(--card); --radius:14px;
+    --header-bg:var(--panel); --accent-ink:var(--accent); --accent-contrast:var(--on-accent);
+    --bad:var(--err); --sans:"Inter",-apple-system,"Segoe UI",Roboto,sans-serif; }
+  /* El h2 de Arcanum es un encabezado de seccion (mayusculas); el del login-card es el titulo. */
+  .login-card h2{ text-transform:none; letter-spacing:-.01em; color:var(--text); }
+
   html,body{transition:background-color .2s ease,color .2s ease}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
@@ -86,27 +94,24 @@
   .bars{display:flex;align-items:flex-end;gap:5px;height:90px;margin-top:8px}
   .bars .b{flex:1;background:var(--accent);border-radius:4px 4px 0 0;min-height:3px;opacity:.85}
   .muted{color:var(--muted)} .hint{color:var(--muted);font-size:13px}
-  .login{max-width:360px;margin:12vh auto;text-align:center}
-  .login .card{padding:28px}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0c0e13;color:#f3f5f9;padding:11px 18px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:80vw;box-shadow:var(--shadow)}
   .toast.show{opacity:1}.toast.bad{background:var(--bad)}
   .hidden{display:none}
   pre{background:#1c1a17;color:#f0ebe1;padding:12px;border-radius:10px;overflow:auto;font-family:var(--mono);font-size:11.5px}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;place-items:center;z-index:20;padding:20px}
-  .modal.open{display:grid}.modal .card{max-width:620px;width:100%;max-height:85vh;overflow:auto}
+  .modal.open{display:grid}.modal .card{position:relative;max-width:620px;width:100%;max-height:85vh;overflow:auto}
 </style>
 </head>
 <body>
 
-<div id="loginView" class="login hidden">
-  <div class="card">
-    <div class="logo" style="margin:0 auto 14px;width:44px;height:44px;border-radius:12px"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg></div>
-    <h1 style="margin:0 0 4px">Arcanum</h1>
-    <p class="hint" style="margin:0 0 18px">Gateway ARCA — Escriba Suite</p>
-    <label style="text-align:left">Usuario</label><input id="lu" autocomplete="username">
-    <label style="text-align:left">Contraseña</label>
-    <div class="pwwrap"><input id="lp" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar contraseña" onclick="togglePw('lp',this)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
-    <button class="primary" style="width:100%;margin-top:16px" onclick="doLogin()">Entrar</button>
+<div id="loginView" class="login-overlay hidden">
+  <div class="login-card">
+    <div class="logo"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg></div>
+    <h2>Arcanum</h2>
+    <p class="login-sub">Gateway ARCA — Escriba Suite</p>
+    <input id="lu" autocomplete="username" placeholder="Usuario">
+    <div class="pass-wrap"><input id="lp" type="password" autocomplete="current-password" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()"><button class="pass-toggle" type="button" tabindex="-1" aria-label="Mostrar u ocultar contraseña" onclick="togglePw('lp',this)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+    <button class="primary" style="width:100%" onclick="doLogin()">Entrar</button>
     <div id="oidcBtn"></div>
   </div>
 </div>
@@ -115,8 +120,8 @@
 <header><div class="wrap bar">
   <div class="logo"><svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg></div><h1>Arcanum</h1>
   <nav id="nav"></nav>
-  <div class="right" style="position:relative"><span id="who"></span>
-    <button class="iconbtn" id="menuBtn" onclick="toggleMenu()" aria-label="Menú"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+  <div class="right" style="position:relative">
+    <button class="iconbtn" id="menuBtn" onclick="toggleMenu()" aria-label="Menú"><svg viewBox="0 0 20 20" aria-hidden="true" style="fill:currentColor;stroke:none"><circle cx="10" cy="4" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="10" cy="16" r="1.7"/></svg></button>
     <div class="menu" id="appmenu"></div>
   </div>
 </div></header>
@@ -144,7 +149,7 @@ $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();}
 
 function showLogin(){$('#loginView').classList.remove('hidden');$('#appView').classList.add('hidden');
   fetch('/api/auth/config').then(r=>r.json()).then(c=>{
-    $('#oidcBtn').innerHTML=c.oidc?'<a href="/api/auth/oidc/login"><button style="width:100%;margin-top:8px">Entrar con Lockatus</button></a>':'';
+    $('#oidcBtn').innerHTML=c.oidc?'<a class="login-sso" href="/api/auth/oidc/login">Entrar con Lockatus</a>':'';
   }).catch(()=>{});}
 async function doLogin(){
   try{ await api('/api/auth/login',{method:'POST',body:JSON.stringify({username:$('#lu').value,password:$('#lp').value})});
@@ -162,7 +167,6 @@ function go(v){renderNav(v);location.hash=v;({panel:vPanel,clientes:vClientes,se
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; }catch(e){ showLogin(); return; }
   try{ const h=await fetch('/api/health').then(r=>r.json()); ENV=h.env; }catch{}
-  $('#who').textContent=ME.username+' ('+ME.role+')';
   $('#loginView').classList.add('hidden');$('#appView').classList.remove('hidden');
   go((location.hash||'#panel').slice(1));
 }
@@ -495,8 +499,9 @@ const I_EYEOFF='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.9 5.1A10
 function pwField(id,ph,extra){return `<div class="pwwrap"><input id="${id}" type="password" ${extra||''} ${ph?'placeholder="'+ph+'"':''}><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar" onclick="togglePw('${id}',this)">${I_EYE}</button></div>`;}
 function togglePw(id,btn){const el=$('#'+id);const show=el.type==='password';el.type=show?'text':'password';btn.innerHTML=show?I_EYEOFF:I_EYE;}
 
-/* ---------- MENÚ (rayitas): Acerca de + tema + entorno + salir ---------- */
+/* ---------- MENÚ (kebab): tema + entorno + Acerca de (modal) + salir ---------- */
 const I_LOGOUT='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
+const I_INFO='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>';
 function toggleMenu(){const m=$('#appmenu');const open=m.classList.toggle('open');if(open)renderMenu();}
 async function renderMenu(){
   let cfg={entorno:ENV||'?',version:'?'};
@@ -504,14 +509,9 @@ async function renderMenu(){
   const admin=['superadmin','admin'].includes(ME.role);
   const dark=document.documentElement.getAttribute('data-theme')==='dark';
   $('#appmenu').innerHTML=`
-   <div class="menu-sec"><div class="menu-h">Acerca de</div>
-     <div class="menu-row"><span>Arcanum</span><span class="mono">v${cfg.version}</span></div>
-     <div class="menu-row"><span>Usuario</span><span class="mono">${ME.username}</span></div>
-     <div class="menu-row"><span>Entorno</span><span class="tag ${cfg.entorno==='prod'?'warn':''}">${String(cfg.entorno).toUpperCase()}</span></div>
-   </div>
-   <div class="menu-sec"><div class="menu-h">Tema</div>
-     <button class="menu-item" onclick="toggleTheme();renderMenu()">${dark?I_SUN:I_MOON}<span>${dark?'Tema claro':'Tema oscuro'}</span></button>
-   </div>
+   <div class="menu-user">${ME.username} · ${ME.role}</div>
+   <div class="menu-sep"></div>
+   <button class="menu-item" onclick="toggleTheme();renderMenu()">${dark?I_SUN:I_MOON}<span>${dark?'Tema claro':'Tema oscuro'}</span></button>
    ${admin?`<div class="menu-sec"><div class="menu-h">Entorno ARCA</div>
      <div class="menu-row"><span>Operar contra</span>
        <select id="m_env" onchange="cambiarEntorno(this.value)">
@@ -519,7 +519,25 @@ async function renderMenu(){
          <option value="prod"${cfg.entorno==='prod'?' selected':''}>Producción</option>
        </select></div>
      <div class="hint" style="padding:2px 12px 6px">Cambia los endpoints de ARCA para toda la instancia.</div></div>`:''}
-   <div class="menu-sec"><button class="menu-item" onclick="logout()">${I_LOGOUT}<span>Salir</span></button></div>`;
+   <button class="menu-item" onclick="acercaDe()">${I_INFO}<span>Acerca de Arcanum</span></button>
+   <div class="menu-sep"></div>
+   <button class="menu-item" onclick="logout()">${I_LOGOUT}<span>Cerrar sesión</span></button>`;
+}
+async function acercaDe(){
+  $('#appmenu').classList.remove('open');
+  let cfg={entorno:ENV||'?',version:'?'};
+  try{ cfg=await api('/api/config'); }catch{}
+  const env=String(cfg.entorno).toUpperCase();
+  modal(`<button class="modal-x" type="button" aria-label="Cerrar" onclick="closeModal()">&times;</button>
+   <h3 class="modal-tit">Arcanum</h3>
+   <p class="modal-cuerpo">Gateway REST self-hosted para los Web Services de ARCA (ex-AFIP). Firma WSAA 100% local.</p>
+   <dl class="about-rows">
+     <dt>Versión</dt><dd>v${cfg.version}</dd>
+     <dt>Usuario</dt><dd>${ME.username} (${ME.role})</dd>
+     <dt>Entorno</dt><dd><span class="tag ${cfg.entorno==='prod'?'warn':''}">${env}</span></dd>
+     <dt>Rol en la suite</dt><dd>Gateway</dd>
+   </dl>
+   <p class="about-foot">Diego Parras · Ecosistema Escriba</p>`);
 }
 async function cambiarEntorno(v){
   if(!confirm('¿Cambiar el entorno de ARCA a '+v.toUpperCase()+'? Afecta a toda la instancia.')){renderMenu();return;}

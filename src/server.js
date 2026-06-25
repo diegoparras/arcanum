@@ -110,6 +110,10 @@ async function route(req, res, url) {
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/app')) {
     return serveDashboard(res);
   }
+  // Estaticos de la UI (CSS canonico + fuentes vendorizadas). Publicos, solo lectura.
+  if (req.method === 'GET' && (url.pathname === '/escriba-ui.css' || url.pathname.startsWith('/vendor/fonts/'))) {
+    return serveStatic(res, url.pathname);
+  }
   if (req.method === 'GET' && url.pathname === '/docs') {
     return serveDocsPage(res);
   }
@@ -521,6 +525,25 @@ function serveDashboard(res) {
     res.end(html);
   } catch {
     sendError(res, Object.assign(new Error('UI no encontrada'), { httpStatus: 404 }));
+  }
+}
+
+const STATIC_TYPES = { '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2' };
+function serveStatic(res, pathname) {
+  // Sirve solo desde public/, sin permitir traversal (la ruta ya viene de un allowlist
+  // de prefijos en route(); igual normalizamos y verificamos que quede dentro de public/).
+  const root = path.join(__dirname, '..', 'public');
+  const target = path.normalize(path.join(root, pathname));
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    return sendError(res, Object.assign(new Error('no encontrado'), { httpStatus: 404 }));
+  }
+  try {
+    const buf = fs.readFileSync(target);
+    const type = STATIC_TYPES[path.extname(target).toLowerCase()] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' });
+    res.end(buf);
+  } catch {
+    sendError(res, Object.assign(new Error('no encontrado'), { httpStatus: 404 }));
   }
 }
 
