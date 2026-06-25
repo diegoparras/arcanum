@@ -45,6 +45,10 @@ const config = {
     return activeEnv;
   },
   port: parseInt(process.env.PORT || '8094', 10),
+  // Federacion: cuando OIDC (Lockatus) esta habilitado, el login LOCAL se bloquea
+  // por defecto (no se puede saltear el SSO). Escape hatch para dejar admin local:
+  // ARCANUM_ALLOW_LOCAL_LOGIN=1.
+  allowLocalLogin: ['1', 'true', 'yes'].includes(String(process.env.ARCANUM_ALLOW_LOCAL_LOGIN || '').toLowerCase()),
   // Clave de API para proteger el gateway. Si esta vacia se genera una al
   // arrancar y se imprime UNA vez en el log (patron de la suite).
   apiKey: process.env.ARCANUM_API_KEY || '',

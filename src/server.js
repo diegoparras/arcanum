@@ -126,9 +126,11 @@ async function route(req, res, url) {
     return res.end(await metrics.prometheus());
   }
 
-  // Config de auth (publico): la UI lo usa para mostrar "Entrar con Lockatus".
+  // Config de auth (publico): la UI lo usa para mostrar "Entrar con Lockatus" y,
+  // en federado, ocultar el login local (ssoOnly).
   if (req.method === 'GET' && url.pathname === '/api/auth/config') {
-    return sendJson(res, 200, { ok: true, oidc: oidc.enabled(), entorno: config.env });
+    const ssoOnly = oidc.enabled() && !config.allowLocalLogin;
+    return sendJson(res, 200, { ok: true, oidc: oidc.enabled(), ssoOnly, entorno: config.env });
   }
   // OIDC: inicio del login
   if (req.method === 'GET' && url.pathname === '/api/auth/oidc/login') {
@@ -162,6 +164,11 @@ async function route(req, res, url) {
 
   // Login de la UI (publico)
   if (req.method === 'POST' && url.pathname === '/api/auth/login') {
+    // Federado: con OIDC habilitado el login local queda BLOQUEADO en el server
+    // (no alcanza con ocultarlo en la UI) para que no se saltee Lockatus.
+    if (oidc.enabled() && !config.allowLocalLogin) {
+      throw Object.assign(new Error('Login local deshabilitado: ingresá con Lockatus (SSO).'), { httpStatus: 403 });
+    }
     const { username, password } = await readJsonBody(req);
     const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '?';
     const key = `${ip}:${username}`;
