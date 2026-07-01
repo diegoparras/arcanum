@@ -27,8 +27,33 @@ function endpoint(entorno) {
 }
 
 function get(src, tag) {
-  const m = src.match(new RegExp('<' + tag + '>([^<]*)</' + tag + '>', 'i'));
+  // ARCA/.NET puede devolver tags con namespaces, por ejemplo:
+  // <a:FechaCondicion>...</a:FechaCondicion> o <FechaCondicion>...</FechaCondicion>.
+  const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(
+    '<(?:[\\w.-]+:)?' + escapedTag + '[^>]*>([^<]*)</(?:[\\w.-]+:)?' + escapedTag + '>',
+    'i'
+  );
+  const m = src.match(re);
   return m ? m[1].trim() : null;
+}
+
+function getBlock(src, tag) {
+  // Igual que get(), pero captura contenido XML interno y tolera namespaces.
+  const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(
+    '<(?:[\\w.-]+:)?' + escapedTag + '[^>]*>([\\s\\S]*?)</(?:[\\w.-]+:)?' + escapedTag + '>',
+    'i'
+  );
+  const m = src.match(re);
+  return m ? m[1].trim() : null;
+}
+
+function xmlPreview(xml) {
+  return String(xml || '')
+    .replace(/<Token>[\s\S]*?<\/Token>/i, '<Token>***</Token>')
+    .replace(/<Sign>[\s\S]*?<\/Sign>/i, '<Sign>***</Sign>')
+    .slice(0, 3000);
 }
 
 /**
@@ -43,20 +68,26 @@ async function consultar(cuitRepresentada, cuitConsulta, entorno) {
 
   const ta = await getAccessTicket(repre, SERVICE, entorno);
 
+  // Formato SOAP segun manual ARCA WSAPOC 1.0.9 (SOAP 1.2):
+  // Los parametros deben ir con namespace `tem:` y la credencial debe llamarse
+  // `Credencial` con C mayuscula. Si va como <credencial> sin namespace, ARCA
+  // responde codigo 201 / Object reference porque no puede leer Token/Sign.
   const envelope =
     '<?xml version="1.0" encoding="UTF-8"?>' +
-    '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"' +
-    ` xmlns:ws="${NS}">` +
-    '<soapenv:Header/><soapenv:Body>' +
-    `<ws:${OP}>` +
-    '<credencial>' +
-    `<Token>${ta.token}</Token>` +
-    `<Sign>${ta.sign}</Sign>` +
-    `<CUITDelegado>${repre}</CUITDelegado>` +
-    '</credencial>' +
-    `<cuit>${target}</cuit>` +
-    `</ws:${OP}>` +
-    '</soapenv:Body></soapenv:Envelope>';
+    '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"' +
+    ` xmlns:tem="${NS}">` +
+    '<soap:Header/>' +
+    '<soap:Body>' +
+    `<tem:${OP}>` +
+    '<tem:Credencial>' +
+    `<tem:Token>${ta.token}</tem:Token>` +
+    `<tem:Sign>${ta.sign}</tem:Sign>` +
+    `<tem:CUITDelegado>${repre}</tem:CUITDelegado>` +
+    '</tem:Credencial>' +
+    `<tem:cuit>${target}</tem:cuit>` +
+    `</tem:${OP}>` +
+    '</soap:Body>' +
+    '</soap:Envelope>';
 
   const url = endpoint(entorno);
   const ctrl = new AbortController();
@@ -65,7 +96,9 @@ async function consultar(cuitRepresentada, cuitConsulta, entorno) {
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/xml; charset=UTF-8', SOAPAction: `"${NS}${OP}"` },
+      headers: {
+        'Content-Type': `application/soap+xml; charset=UTF-8; action="${NS}${OP}"`,
+      },
       body: envelope,
       signal: ctrl.signal,
     });
@@ -75,33 +108,74 @@ async function consultar(cuitRepresentada, cuitConsulta, entorno) {
   } finally {
     clearTimeout(timer);
   }
+
   const xml = await res.text();
 
-  const fault = xml.match(/<(?:[\w]+:)?Fault[^>]*>[\s\S]*?<(?:faultstring|(?:[\w]+:)?Text)[^>]*>([^<]+)/i);
-  if (fault) throw new SoapError(`WSAPOC rechazo la solicitud: ${fault[1]}`, 502, { raw: xml.slice(0, 800) });
+  // Log temporal de diagnostico. En Railway: Deployments -> View logs.
+  // No imprime Token ni Sign.
+  console.log('[WSAPOC] consulta', { cuitDelegado: repre, cuitConsulta: target, httpStatus: res.status });
+  console.log('[WSAPOC] response preview:', xmlPreview(xml));
+
+  const fault = xml.match(/<(?:[\w.-]+:)?Fault[^>]*>[\s\S]*?<(?:faultstring|(?:[\w.-]+:)?Text)[^>]*>([^<]+)/i);
+  if (fault) throw new SoapError(`WSAPOC rechazo la solicitud: ${fault[1]}`, 502, { raw: xmlPreview(xml) });
 
   const codigo = get(xml, 'Codigo') || get(xml, 'codigo');
-  let descripcion = get(xml, 'Descripcion') || get(xml, 'descripcion');
+  const descripcion = get(xml, 'Descripcion') || get(xml, 'descripcion');
 
-  // Si hay <resultados> con contenido => el CUIT figura como apocrifo.
-  const resultados = xml.match(/<resultados>([\s\S]*?)<\/resultados>/i);
-  const esApocrifo = !!(resultados && resultados[1].trim());
+  // Si hay <resultados> con una PublicacionAPOC vigente => el CUIT figura como apocrifo.
+  // El XML de WSAPOC suele venir con namespaces, por eso NO alcanza con buscar
+  // literalmente <resultados>. Ej.: <a:resultados>...</a:resultados>.
+  const resultados = getBlock(xml, 'resultados') || getBlock(xml, 'Resultados');
+  const publicacion = resultados ? getBlock(resultados, 'PublicacionAPOC') || resultados : null;
 
-  let fechaCondicion = null;
-  let fechaPublicacion = null;
-  let detalle = null;
-  if (esApocrifo) {
-    fechaCondicion = get(resultados[1], 'FechaCondicion') || get(resultados[1], 'fechaCondicion');
-    fechaPublicacion = get(resultados[1], 'FechaPublicacion') || get(resultados[1], 'fechaPublicacion');
-    detalle = get(resultados[1], 'Descripcion') || get(resultados[1], 'descripcion');
-  }
+  const fechaCondicion = publicacion
+    ? get(publicacion, 'FechaCondicion') || get(publicacion, 'fechaCondicion')
+    : null;
+  const fechaPublicacion = publicacion
+    ? get(publicacion, 'FechaPublicacion') || get(publicacion, 'fechaPublicacion')
+    : null;
+  const detalle = publicacion
+    ? get(publicacion, 'Descripcion') || get(publicacion, 'descripcion')
+    : null;
 
-  // Quirk conocido de ARCA: para monotributistas o CUIT sin antecedentes el WS
-  // devuelve codigo 201 + "Object reference not set..." en vez de una respuesta
-  // limpia. NO es un error nuestro ni implica apocrifo: es "sin publicaciones".
-  const quirk201 = codigo === '201' || /object reference not set/i.test(descripcion || '');
-  if (!esApocrifo && quirk201) {
-    descripcion = 'Sin publicaciones de apocrifos para el CUIT (ARCA devuelve codigo 201 para monotributistas o CUIT sin antecedentes).';
+  const esApocrifo = !!(
+    publicacion &&
+    (
+      /<(?:[\w.-]+:)?PublicacionAPOC\b/i.test(resultados || '') ||
+      fechaCondicion ||
+      fechaPublicacion ||
+      get(publicacion, 'Cuit') ||
+      get(publicacion, 'CUIT') ||
+      get(publicacion, 'cuit')
+    )
+  );
+
+  console.log('[WSAPOC] parseado', {
+    codigo,
+    descripcion,
+    tieneResultados: !!resultados,
+    tienePublicacion: !!publicacion,
+    fechaCondicion,
+    fechaPublicacion,
+    esApocrifo,
+  });
+
+  // IMPORTANTE:
+  // No convertir codigo 201 en "sin publicaciones". Segun el manual WSAPOC,
+  // 201 es error al validar credenciales de autenticacion.
+  // Si lo maquillamos como "sin antecedentes", la app muestra un falso negativo.
+  if (!esApocrifo && codigo === '201') {
+    return {
+      cuit: target,
+      esApocrifo: false,
+      codigo,
+      descripcion: descripcion || 'Error al validar credenciales de autenticacion WSAPOC.',
+      fechaCondicion,
+      fechaPublicacion,
+      detalle,
+      error: 'WSAPOC_CREDENCIALES_201',
+      rawPreview: xmlPreview(xml),
+    };
   }
 
   return {
