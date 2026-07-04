@@ -3,6 +3,30 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.0] - 2026-07-04
+
+### Agregado
+- **Representacion impresa legal del comprobante (PDF renovado)**: datos del emisor
+  (razon social, condicion IVA, domicilio, CUIT, IIBB, inicio de actividades),
+  receptor con su **condicion frente al IVA**, discriminacion de IVA por alicuota
+  (A/M) o total (B/C), periodo facturado (servicios), condicion de venta, leyendas
+  ("A CONSUMIDOR FINAL" RG 5866, Ley 27.743), CAE + vencimiento, QR de ARCA y
+  **codigo de barras Interleaved 2 of 5** (RG 1415). Datos del emisor por env
+  (`ARCANUM_EMISOR_*`).
+- **CondicionIVAReceptorId en WSFEv1** (RG 5616, obligatoria desde 2025): se envia
+  en la emision y se persiste para el PDF. Parametro `condicionIvaReceptor`.
+- **Regla RG 5866/2026**: en ventas a consumidor final por total >= $10.000.000 se
+  exige identificar al comprador (DNI/CUIL/CDI); si falta, se rechaza con 422.
+  Umbral configurable (`ARCANUM_UMBRAL_CF_ID`).
+- **Sugerencia de comprobante** (`reglas-comprobante.js`): dada la condicion del
+  emisor + la del receptor sugiere letra A/B/C y si discrimina IVA. Integrada en
+  `/api/contribuyente` (campo `comprobanteSugerido`).
+
+### Nota
+- Inspirado en el fork open-source ArcanumPro (derivado de Arcanum, Apache-2.0):
+  se reimplementaron el layout legal y el helper de reglas, adaptados a nuestra
+  arquitectura (config por env, persistencia del desglose, integracion al semaforo).
+
 ## [0.2.5] - 2026-06-24
 
 ### Agregado

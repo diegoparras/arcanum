@@ -70,6 +70,16 @@ const config = {
   // Timeout de las llamadas SOAP a ARCA.
   soapTimeoutMs: parseInt(process.env.ARCANUM_SOAP_TIMEOUT_MS || '15000', 10),
   version: require('../package.json').version,
+  // Datos del emisor para la representacion impresa (PDF legal). Opcionales: si
+  // no se cargan, el PDF muestra solo el CUIT. condicionIva: RI | MONOTRIBUTO | EXENTO.
+  emisor: {
+    razonSocial: process.env.ARCANUM_EMISOR_RAZON_SOCIAL || '',
+    nombreFantasia: process.env.ARCANUM_EMISOR_NOMBRE_FANTASIA || '',
+    domicilio: process.env.ARCANUM_EMISOR_DOMICILIO || '',
+    condicionIva: (process.env.ARCANUM_EMISOR_CONDICION_IVA || '').toUpperCase(),
+    iibb: process.env.ARCANUM_EMISOR_IIBB || '',
+    inicioActividades: process.env.ARCANUM_EMISOR_INICIO_ACTIVIDADES || '',
+  },
 };
 
 module.exports = { config, ENDPOINTS };

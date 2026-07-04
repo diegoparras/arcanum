@@ -164,6 +164,25 @@ function validarImportes(inv) {
   }
 }
 
+// RG 5866/2026: en ventas a consumidor final por importe total >= $10.000.000
+// hay que identificar al comprador (DNI/CUIL/CDI). tipoDoc 99 = "sin identificar".
+const UMBRAL_CF_IDENTIFICACION = Number(process.env.ARCANUM_UMBRAL_CF_ID || 10000000);
+function validarIdentificacionConsumidorFinal(inv, tipoCbte) {
+  const total = Number(inv.importeTotal || 0);
+  if (total < UMBRAL_CF_IDENTIFICACION) return;
+  // Aplica a comprobantes B (6/7/8) y C (11/12/13), tipicos a consumidor final.
+  const esBoC = [6, 7, 8, 11, 12, 13].includes(tipoCbte);
+  const esCF = Number(inv.condicionIvaReceptor) === 5 || esBoC;
+  const docTipo = parseInt(inv.tipoDocReceptor ?? 99, 10);
+  const docNro = normalizeCuit(inv.nroDocReceptor ?? 0) || '0';
+  if (esCF && (docTipo === 99 || docNro === '0' || !docNro)) {
+    throw new SoapError(
+      `RG 5866: por ser >= $${UMBRAL_CF_IDENTIFICACION.toLocaleString('es-AR')} a consumidor final hay que identificar al comprador (DNI/CUIL/CDI). Pasá tipoDocReceptor (96=DNI, 86=CUIL, 87=CDI, 80=CUIT) y nroDocReceptor.`,
+      422,
+    );
+  }
+}
+
 /**
  * Emite un comprobante y obtiene su CAE. Valida importes, soporta comprobantes
  * asociados (NC/ND), reintenta ante token vencido, es idempotente (idempotencyKey)
@@ -185,6 +204,7 @@ async function authorizeInvoice(cuit, inv) {
   const ptoVta = parseInt(inv.puntoVenta, 10);
   const tipoCbte = parseInt(inv.tipoComprobante, 10);
   const concepto = parseInt(inv.concepto ?? 1, 10);
+  validarIdentificacionConsumidorFinal(inv, tipoCbte);
 
   return withTokenRetry(c, SERVICE, config.env, () => emitir(c, inv, { ptoVta, tipoCbte, concepto, idem }));
 }
@@ -228,6 +248,10 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
     serviceDates +
     `<ar:MonId>${escapeXml(inv.moneda || 'PES')}</ar:MonId>` +
     `<ar:MonCotiz>${fmtMoney(inv.cotizacion ?? 1)}</ar:MonCotiz>` +
+    // Condicion IVA del receptor (RG 5616): obligatoria en WSFEv1 desde 2025.
+    (inv.condicionIvaReceptor != null
+      ? `<ar:CondicionIVAReceptorId>${parseInt(inv.condicionIvaReceptor, 10)}</ar:CondicionIVAReceptorId>`
+      : '') +
     buildCbtesAsoc(inv.comprobantesAsociados) +
     buildTributos(inv.tributos) +
     buildAlicuotas(inv.alicuotasIva) +
@@ -268,6 +292,21 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
     docNro: String(normalizeCuit(inv.nroDocReceptor ?? 0) || 0),
     observaciones,
     errores: topErrors,
+    // Discriminacion y datos para la representacion impresa (PDF legal).
+    concepto,
+    importeNeto: Number(inv.importeNeto || 0),
+    importeIva: Number(inv.importeIva || 0),
+    importeExento: Number(inv.importeExento || 0),
+    importeNoGravado: Number(inv.importeNoGravado || 0),
+    importeTributos: Number(inv.importeTributos || 0),
+    alicuotasIva: Array.isArray(inv.alicuotasIva) ? inv.alicuotasIva : [],
+    condicionIvaReceptor: inv.condicionIvaReceptor != null ? parseInt(inv.condicionIvaReceptor, 10) : null,
+    receptorNombre: inv.receptorNombre || inv.razonSocialReceptor || null,
+    receptorDomicilio: inv.receptorDomicilio || null,
+    condicionVenta: inv.condicionVenta || null,
+    fechaServicioDesde: inv.fechaServicioDesde || null,
+    fechaServicioHasta: inv.fechaServicioHasta || null,
+    fechaVtoPago: inv.fechaVtoPago || null,
   };
 
   // Persistimos solo los aprobados (los rechazados quedan en el log de requests).

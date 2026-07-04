@@ -11,6 +11,8 @@
 
 const padron = require('./padron');
 const apoc = require('./apoc');
+const reglas = require('./reglas-comprobante');
+const { config } = require('../config');
 const { normalizeCuit } = require('../auth/tenants');
 const { SoapError } = require('../soap/client');
 
@@ -127,6 +129,13 @@ async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
 
   if (!apocOk) advertencias.push('No se pudo consultar la base de apocrifos (WSAPOC).');
 
+  // Sugerencia de comprobante a emitir (requiere condicion del emisor configurada).
+  const receptorCondicionId = reglas.idDesdeTipoContribuyente(tipoContribuyente);
+  const sugerencia = reglas.sugerirComprobante({
+    emisorCondicion: (config.emisor && config.emisor.condicionIva) || '',
+    receptorCondicionId,
+  });
+
   return {
     cuit: target,
     nombre,
@@ -145,6 +154,14 @@ async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
       esApocrifo,
       fechaCondicion: apocData ? apocData.fechaCondicion : null,
       fechaPublicacion: apocData ? apocData.fechaPublicacion : null,
+    },
+    comprobanteSugerido: {
+      letra: sugerencia.letra,
+      tipoComprobante: sugerencia.tipoComprobante,
+      requiereIva: sugerencia.requiereIva,
+      condicionIvaReceptorId: receptorCondicionId,
+      condicionIvaReceptor: sugerencia.condicionIvaReceptor,
+      motivo: sugerencia.motivo,
     },
     advertencias,
     fuentes: ['padron_a5', 'wsapoc'],
