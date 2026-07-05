@@ -3,6 +3,12 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.11] - 2026-07-04
+
+### Corregido
+- Multi-select de Eventos (Webhooks): las opciones se veian blancas sobre el campo
+  celeste. Ahora son transparentes (muestran el celeste) con las seleccionadas en azul.
+
 ## [0.3.10] - 2026-07-04
 
 ### Cambiado

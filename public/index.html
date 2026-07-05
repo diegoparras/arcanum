@@ -29,6 +29,10 @@
   /* Todos los campos para completar en celeste claro, para diferenciarlos. */
   input,textarea,select{ background-color:var(--field-bg); border-color:var(--field-border); }
   input:focus,textarea:focus,select:focus{ background-color:var(--field-bg); }
+  /* Multi-select (ej. Eventos): opciones transparentes para que se vea el celeste, no blanco. */
+  select[multiple]{ background-color:var(--field-bg); padding:4px; }
+  select[multiple] option{ background:transparent; padding:5px 8px; border-radius:6px; margin:1px 0; }
+  select[multiple] option:checked{ background:var(--accent); color:var(--on-accent); }
   /* Alias heredados del CSS propio de Arcanum, mapeados a tokens canonicos */
   :root{ --ink:var(--text); --line:var(--border); --chip:var(--card); --radius:14px;
     --header-bg:var(--panel); --accent-ink:var(--accent); --accent-contrast:var(--on-accent);
