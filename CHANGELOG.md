@@ -3,6 +3,12 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.4] - 2026-07-04
+
+### Cambiado
+- Isologo ARCA oficial (paths vectoriales reales) embebido en el PDF, en negro,
+  reemplazando el wordmark tipografico. `public/arca-logo.svg` actualizado al vector real.
+
 ## [0.3.3] - 2026-07-04
 
 ### Agregado

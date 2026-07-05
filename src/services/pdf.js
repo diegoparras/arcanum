@@ -16,7 +16,15 @@ const { condicionIvaLabel } = require('./reglas-comprobante');
 const TINTA = '#1c1a17';
 const GRIS = '#6b6358';
 const LINEA = '#c9c3b8';
-const ARCA_GRIS = '#4d4d4d';
+
+// Isologo ARCA: paths SVG oficiales (viewBox 0 0 240 66). pdfkit dibuja el path
+// data nativamente, asi que embebemos el vector real sin dependencias extra.
+const ARCA_PATHS = [
+  'M25.276,5.12L0.543,60.825h13.202l4.958-11.939h25.788l4.958,11.939h13.525L38.001,5.12H25.276z M22.776,39.096l8.82-21.236l8.82,21.236H22.763H22.776z',
+  'M105.364,42.876c3.609-1.562,6.391-3.851,8.357-6.842c1.966-2.992,2.949-6.587,2.949-10.787c0-4.199-0.983-7.725-2.949-10.745c-1.967-3.02-4.748-5.352-8.357-6.966c-3.61-1.616-7.895-2.43-12.88-2.43H68.382v55.705h12.964V45.205h11.139c0.196,0,0.365-0.014,0.562-0.026l10.815,15.616h13.835l-12.402-17.919c0,0,0.056-0.016,0.084-0.03L105.364,42.876z M100.672,18.126c2.01,1.671,3.021,4.045,3.021,7.121c0,3.076-1.012,5.463-3.021,7.164c-2.021,1.7-4.985,2.542-8.904,2.542H81.346V15.612h10.422c3.919,0,6.896,0.829,8.904,2.5V18.126z',
+  'M141.067,20.079c1.588-1.587,3.469-2.823,5.646-3.694c2.177-0.87,4.564-1.306,7.164-1.306c2.753,0,5.31,0.562,7.667,1.671c2.361,1.11,4.466,2.753,6.321,4.93l8.343-7.641c-2.653-3.23-5.939-5.688-9.86-7.36c-3.917-1.671-8.299-2.5-13.118-2.5c-4.298,0-8.287,0.703-11.966,2.107c-3.681,1.404-6.897,3.413-9.622,6.012c-2.724,2.598-4.846,5.646-6.361,9.158c-1.518,3.497-2.263,7.345-2.263,11.546c0,4.198,0.76,8.033,2.263,11.545c1.516,3.497,3.623,6.56,6.319,9.158c2.697,2.599,5.898,4.605,9.58,6.01c3.679,1.406,7.667,2.107,11.967,2.107c4.874,0,9.27-0.843,13.201-2.542c3.921-1.699,7.207-4.172,9.86-7.401l-8.343-7.642c-1.855,2.178-3.96,3.835-6.321,4.973c-2.357,1.137-4.914,1.715-7.667,1.715c-2.6,0-4.987-0.437-7.164-1.309c-2.178-0.869-4.059-2.105-5.646-3.707s-2.824-3.469-3.693-5.646c-0.871-2.177-1.306-4.593-1.306-7.247c0-2.655,0.435-5.071,1.306-7.248c0.869-2.177,2.105-4.059,3.693-5.646V20.079z',
+  'M225.931,60.825h13.526L214.47,5.12h-12.725L177.01,60.825h13.204l4.957-11.939h25.787l4.959,11.939H225.931z M199.245,39.096l8.819-21.236l8.82,21.236h-17.655H199.245z',
+];
 
 const TIPOS = {
   1: 'FACTURA A', 2: 'NOTA DE DEBITO A', 3: 'NOTA DE CREDITO A',
@@ -290,12 +298,14 @@ async function generar(cmp) {
 
   // ---------- Pie: ARCA + CAE + QR + codigo de barras ----------
   doc.image(qrPng, L, 650, { width: 80 });
-  // Isologo ARCA (wordmark + tagline), en el gris institucional.
-  doc.font('Helvetica-Bold').fontSize(19).fillColor(ARCA_GRIS).text('ARCA', 138, 648);
-  doc.font('Helvetica').fontSize(5.5).fillColor(ARCA_GRIS).text('AGENCIA DE RECAUDACION', 138, 671, { characterSpacing: 0.8 });
-  doc.text('Y CONTROL ADUANERO', 138, 678, { characterSpacing: 0.8 });
-  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(TINTA).text('Comprobante Autorizado', 138, 690);
-  doc.font('Helvetica').fontSize(6).fillColor(GRIS).text('Esta Administracion no se responsabiliza por los datos ingresados en el detalle de la operacion.', 138, 701, { width: 205 });
+  // Isologo ARCA: vector real (paths oficiales) escalado, en negro.
+  doc.save().translate(138, 650).scale(0.3);
+  for (const d of ARCA_PATHS) doc.path(d).fill(TINTA);
+  doc.restore();
+  doc.font('Helvetica').fontSize(5.5).fillColor(TINTA).text('AGENCIA DE RECAUDACION', 138, 673, { characterSpacing: 0.8 });
+  doc.text('Y CONTROL ADUANERO', 138, 680, { characterSpacing: 0.8 });
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(TINTA).text('Comprobante Autorizado', 138, 692);
+  doc.font('Helvetica').fontSize(6).fillColor(GRIS).text('Esta Administracion no se responsabiliza por los datos ingresados en el detalle de la operacion.', 138, 703, { width: 205 });
 
   doc.font('Helvetica').fontSize(8).fillColor(GRIS).text('Pag. 1/1', 360, 648, { width: R - 360, align: 'right' });
   doc.fontSize(10).fillColor(GRIS).text('CAE N°:', 360, 668);
