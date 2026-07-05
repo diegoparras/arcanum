@@ -528,7 +528,9 @@ function serveDashboard(res) {
   const p = path.join(__dirname, '..', 'public', 'index.html');
   try {
     const html = fs.readFileSync(p, 'utf8');
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    // El HTML lleva todo el JS/CSS inline: nunca servir una version cacheada vieja
+    // (evita quedar con un bundle stale tras un update -> UI rara/lenta).
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, must-revalidate' });
     res.end(html);
   } catch {
     sendError(res, Object.assign(new Error('UI no encontrada'), { httpStatus: 404 }));

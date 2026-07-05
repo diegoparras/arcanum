@@ -3,6 +3,17 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.9] - 2026-07-04
+
+### Corregido
+- El `index.html` (que lleva todo el JS/CSS inline) ahora se sirve con
+  `Cache-Control: no-cache, must-revalidate`, para que el navegador nunca quede con
+  un bundle viejo cacheado tras un update (causaba UI rara/lenta hasta un hard-refresh).
+
+### Performance (0.3.8)
+- Feedback instantaneo al cambiar de vista: `go()` limpia y muestra "Cargando..." al
+  instante en vez de dejar el contenido anterior hasta que responde el fetch.
+
 ## [0.3.7] - 2026-07-04
 
 ### Corregido
