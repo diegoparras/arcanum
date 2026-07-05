@@ -1,6 +1,6 @@
 {
   "name": "arcanum",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "description": "Gateway REST self-hosted para los Web Services SOAP de ARCA (ex-AFIP). Firma WSAA 100% local, sin terceros. Pensado para conectarse a n8n.",
   "license": "Apache-2.0",
   "type": "commonjs",

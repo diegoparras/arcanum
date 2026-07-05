@@ -3,6 +3,12 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.15] - 2026-07-04
+
+### Cambiado
+- El gris de reposo de los campos se hizo mas visible (#e4e6ea en claro,
+  rgba blanco .08 en oscuro); antes era casi imperceptible sobre la tarjeta.
+
 ## [0.3.14] - 2026-07-04
 
 ### Cambiado
