@@ -180,7 +180,7 @@ function renderNav(cur){
   $('#nav').innerHTML=VIEWS.filter(v=>v[0]!=='usuarios'||['superadmin','admin'].includes(ME.role))
     .map(v=>`<button class="${v[0]===cur?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('');
 }
-function go(v){renderNav(v);location.hash=v;({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,comprobantes:vComprobantes,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
+function go(v){renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,comprobantes:vComprobantes,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
 
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; }catch(e){ showLogin(); return; }
