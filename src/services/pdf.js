@@ -63,8 +63,8 @@ async function qrUrl(cmp) {
     tipoCmp: Number(cmp.tipo_cbte),
     nroCmp: Number(cmp.numero),
     importe: Number(cmp.importe_total),
-    moneda: cmp.moneda || 'PES',
-    ctz: 1,
+    moneda: (cmp.raw && cmp.raw.moneda) || cmp.moneda || 'PES',
+    ctz: Number((cmp.raw && cmp.raw.cotizacion) || cmp.cotizacion || 1),
     tipoDocRec: Number(cmp.doc_tipo) || 99,
     nroDocRec: Number(cmp.doc_nro) || 0,
     tipoCodAut: 'E',
@@ -248,7 +248,9 @@ async function generar(cmp) {
   doc.moveTo(L, y).lineTo(R, y).strokeColor(LINEA).stroke();
 
   // ---------- Totales (bloque inferior) ----------
-  const simb = cmp.moneda && cmp.moneda !== 'PES' ? cmp.moneda : '$';
+  const moneda = raw.moneda || 'PES';
+  const cotiz = Number(raw.cotizacion || 1);
+  const simb = moneda !== 'PES' ? moneda : '$';
   let ty = 548;
   const rowTot = (label, val, bold) => {
     doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 12 : 9).fillColor(bold ? TINTA : GRIS);
@@ -274,6 +276,15 @@ async function generar(cmp) {
     if (Number(raw.importeTributos)) rowTot('Importe Otros Tributos', raw.importeTributos);
   }
   rowTot('Importe Total', cmp.importe_total, true);
+
+  // Moneda extranjera: dejar constancia de la moneda y la cotizacion usada.
+  if (moneda !== 'PES') {
+    const MONEDAS = { DOL: 'Dolar Estadounidense', '060': 'Euro', '012': 'Real', '033': 'Peso Chileno', '011': 'Peso Uruguayo' };
+    doc.font('Helvetica').fontSize(8).fillColor(GRIS);
+    doc.text(`Moneda: ${MONEDAS[moneda] || moneda}   Cotizacion: $ ${money(cotiz)}`, 300, ty + 2, { width: R - 300, align: 'right' });
+    doc.text(`Equivalente en pesos: $ ${money(Number(cmp.importe_total) * cotiz)}`, 300, ty + 14, { width: R - 300, align: 'right' });
+    if (raw.canMisMonExt === 'S') doc.font('Helvetica-Oblique').text('Pagadero en la moneda de emision.', 300, ty + 26, { width: R - 300, align: 'right' });
+  }
 
   // ---------- Regimen de Transparencia Fiscal (Ley 27.743): solo Factura B (emisor RI) a consumidor final ----------
   const esCF = condRecId === 5 || (!condRecId && (letra === 'B' || letra === 'C'));

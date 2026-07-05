@@ -162,6 +162,10 @@ function validarImportes(inv) {
       throw new SoapError(`La suma de IVA por alicuota (${sumIva}) no coincide con importeIva (${iva.toFixed(2)})`, 422);
     }
   }
+  // Moneda extranjera: la cotizacion es obligatoria y > 0 (ARCA la valida).
+  if (String(inv.moneda || 'PES') !== 'PES' && !(Number(inv.cotizacion) > 0)) {
+    throw new SoapError('Para moneda extranjera hay que informar `cotizacion` (> 0). Consultala en /api/wsfev1/parametros/cotizacion.', 422);
+  }
 }
 
 // RG 5866/2026: en ventas a consumidor final por importe total >= $10.000.000
@@ -248,6 +252,11 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
     serviceDates +
     `<ar:MonId>${escapeXml(inv.moneda || 'PES')}</ar:MonId>` +
     `<ar:MonCotiz>${fmtMoney(inv.cotizacion ?? 1)}</ar:MonCotiz>` +
+    // CanMisMonExt (RG 5616): obligatorio si la moneda no es PES. 'S' = el receptor
+    // cancela en la misma moneda extranjera; 'N' = cancela en pesos.
+    (String(inv.moneda || 'PES') !== 'PES'
+      ? `<ar:CanMisMonExt>${(inv.canMisMonExt || (inv.pagaEnMonedaExtranjera ? 'S' : 'N')) === 'S' ? 'S' : 'N'}</ar:CanMisMonExt>`
+      : '') +
     // Condicion IVA del receptor (RG 5616): obligatoria en WSFEv1 desde 2025.
     (inv.condicionIvaReceptor != null
       ? `<ar:CondicionIVAReceptorId>${parseInt(inv.condicionIvaReceptor, 10)}</ar:CondicionIVAReceptorId>`
@@ -287,6 +296,8 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
     fecha: cbteFecha,
     cuit,
     moneda: inv.moneda || 'PES',
+    cotizacion: Number(inv.cotizacion ?? 1),
+    canMisMonExt: String(inv.moneda || 'PES') !== 'PES' ? ((inv.canMisMonExt || (inv.pagaEnMonedaExtranjera ? 'S' : 'N')) === 'S' ? 'S' : 'N') : null,
     importeTotal: Number(inv.importeTotal || 0),
     docTipo: parseInt(inv.tipoDocReceptor ?? 99, 10),
     docNro: String(normalizeCuit(inv.nroDocReceptor ?? 0) || 0),

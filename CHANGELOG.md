@@ -3,6 +3,19 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.5] - 2026-07-04
+
+### Corregido / Agregado
+- **Moneda extranjera** en WSFEv1, ahora correcta de punta a punta:
+  - `CanMisMonExt` (RG 5616) se envia cuando la moneda no es PES ('S'=paga en la
+    misma moneda, 'N'=paga en pesos; via `canMisMonExt` o `pagaEnMonedaExtranjera`).
+  - Validacion: `cotizacion` obligatoria y > 0 si la moneda no es PES.
+  - QR: la moneda y la cotizacion se toman del comprobante real (antes `ctz` estaba
+    fijo en 1 y la moneda no se leia; ambos bugs corregidos).
+  - PDF: importes en la moneda emitida (DOL, etc.), con linea de cotizacion,
+    equivalente en pesos y leyenda "Pagadero en la moneda de emision" (si CanMisMonExt=S).
+  - Se persisten `cotizacion` y `canMisMonExt`.
+
 ## [0.3.4] - 2026-07-04
 
 ### Cambiado
