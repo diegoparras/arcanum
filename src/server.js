@@ -22,6 +22,8 @@ const tenants = require('./auth/tenants');
 const wsaa = require('./auth/wsaa');
 const tokenStore = require('./auth/tokenStore');
 const wsfev1 = require('./services/wsfev1');
+const wsfex = require('./services/wsfex');
+const wsmtxca = require('./services/wsmtxca');
 const padron = require('./services/padron');
 const apoc = require('./services/apoc');
 const contribuyente = require('./services/contribuyente');
@@ -339,6 +341,56 @@ async function route(req, res, url) {
       if (!inv.cuit) throw badRequest('Falta "cuit" (emisor) en el body');
       assertCuitAllowed(principal, inv.cuit);
       const result = await wsfev1.authorizeInvoice(inv.cuit, inv);
+      return sendJson(res, result.aprobado ? 200 : 422, { ok: result.aprobado, comprobante: result });
+    }
+  }
+
+  // --- WSFEXv1 (Factura E de exportacion) ---
+  if (seg[0] === 'api' && seg[1] === 'wsfex') {
+    if (req.method === 'GET' && seg[2] === 'status') return sendJson(res, 200, { ok: true, ...(await wsfex.dummy()) });
+    if (req.method === 'GET' && seg[2] === 'ultimo-autorizado') {
+      const cuit = requireQ(q, 'cuit'); assertCuitAllowed(principal, cuit);
+      return sendJson(res, 200, { ok: true, ...(await wsfex.lastAuthorized(cuit, requireQ(q, 'puntoVenta'))) });
+    }
+    if (req.method === 'GET' && seg[2] === 'ultimo-id') {
+      const cuit = requireQ(q, 'cuit'); assertCuitAllowed(principal, cuit);
+      return sendJson(res, 200, { ok: true, ultimoId: await wsfex.lastId(cuit) });
+    }
+    if (req.method === 'GET' && seg[2] === 'consultar') {
+      const cuit = requireQ(q, 'cuit'); assertCuitAllowed(principal, cuit);
+      return sendJson(res, 200, { ok: true, comprobante: await wsfex.consultar(cuit, requireQ(q, 'puntoVenta'), requireQ(q, 'numero')) });
+    }
+    if (req.method === 'POST' && seg[2] === 'comprobantes') {
+      requireRole(principal, 'superadmin', 'admin', 'operador');
+      const inv = await readJsonBody(req);
+      if (!inv.cuit) throw badRequest('Falta "cuit" (emisor) en el body');
+      assertCuitAllowed(principal, inv.cuit);
+      const result = await wsfex.authorize(inv.cuit, inv);
+      return sendJson(res, result.aprobado ? 200 : 422, { ok: result.aprobado, comprobante: result });
+    }
+  }
+
+  // --- WSMTXCA (Factura con detalle: IVA por item) ---
+  if (seg[0] === 'api' && seg[1] === 'wsmtxca') {
+    if (req.method === 'GET' && seg[2] === 'status') return sendJson(res, 200, { ok: true, ...(await wsmtxca.dummy()) });
+    if (req.method === 'GET' && seg[2] === 'ultimo-autorizado') {
+      const cuit = requireQ(q, 'cuit'); assertCuitAllowed(principal, cuit);
+      return sendJson(res, 200, { ok: true, ...(await wsmtxca.lastAuthorized(cuit, requireQ(q, 'puntoVenta'), requireQ(q, 'tipoComprobante'))) });
+    }
+    if (req.method === 'GET' && seg[2] === 'alicuotas') {
+      const cuit = requireQ(q, 'cuit'); assertCuitAllowed(principal, cuit);
+      return sendJson(res, 200, { ok: true, alicuotas: await wsmtxca.alicuotasIVA(cuit) });
+    }
+    if (req.method === 'GET' && seg[2] === 'consultar') {
+      const cuit = requireQ(q, 'cuit'); assertCuitAllowed(principal, cuit);
+      return sendJson(res, 200, { ok: true, comprobante: await wsmtxca.consultar(cuit, requireQ(q, 'puntoVenta'), requireQ(q, 'tipoComprobante'), requireQ(q, 'numero')) });
+    }
+    if (req.method === 'POST' && seg[2] === 'comprobantes') {
+      requireRole(principal, 'superadmin', 'admin', 'operador');
+      const inv = await readJsonBody(req);
+      if (!inv.cuit) throw badRequest('Falta "cuit" (emisor) en el body');
+      assertCuitAllowed(principal, inv.cuit);
+      const result = await wsmtxca.authorize(inv.cuit, inv);
       return sendJson(res, result.aprobado ? 200 : 422, { ok: result.aprobado, comprobante: result });
     }
   }

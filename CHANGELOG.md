@@ -3,6 +3,25 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.4.0] - 2026-07-04
+
+### Agregado
+- **WSFEXv1 (Factura E de exportacion)** promovido a modulo rico: `GET /api/wsfex/status`,
+  `/ultimo-autorizado`, `/ultimo-id`, `/consultar`, y `POST /api/wsfex/comprobantes`
+  (cliente del exterior, pais destino, moneda/cotizacion, incoterms, permisos, items[]).
+  Persiste el comprobante (tipo 19) y lo integra al PDF/consulta. FEXDummy verificado
+  contra prod OK.
+- **WSMTXCA (factura con detalle)** promovido a modulo rico: `GET /api/wsmtxca/status`,
+  `/ultimo-autorizado`, `/alicuotas`, `/consultar`, y `POST /api/wsmtxca/comprobantes`
+  con **IVA por item** (arrayItems + arraySubtotalesIVA) y CondicionIVAReceptorId.
+  dummy verificado contra prod OK; el envelope JAX-WS llega y ARCA responde el negocio.
+- Presets de ambos en el Generador y rutas en OpenAPI.
+
+### Nota
+- La emision de WSFEX/WSMTXCA requiere asociar el certificado a esos servicios en el
+  Administrador de Relaciones (boton "Como activar"). El plumbing (WSAA + envelope +
+  parseo) esta verificado; la emision fiscal no se probo para no generar comprobantes reales.
+
 ## [0.3.17] - 2026-07-04
 
 ### Cambiado

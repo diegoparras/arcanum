@@ -57,7 +57,7 @@ const SERVICES = [
       prod: 'https://servicios1.afip.gov.ar/wsfexv1/service.asmx',
     },
     dummyOp: 'FEXDummy',
-    rich: false,
+    rich: true,
     activacion: {
       relacionNombre: 'wsfex - Factura Electronica de Exportacion',
       pasos: pasosActivacion('wsfex'),
@@ -76,7 +76,7 @@ const SERVICES = [
       prod: 'https://serviciosjava.afip.gov.ar/wsmtxca/services/MTXCAService',
     },
     dummyOp: 'dummy',
-    rich: false,
+    rich: true,
     activacion: { relacionNombre: 'wsmtxca', pasos: pasosActivacion('wsmtxca') },
   },
   {

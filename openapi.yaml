@@ -231,6 +231,43 @@ paths:
           text/csv: { schema: { type: string } }
       responses: { '200': { description: "{ total, aprobados, rechazados, resultados[] }" } }
 
+  /api/wsfex/status:
+    get: { tags: [WSFEXv1], summary: Estado (FEXDummy), responses: { '200': { description: ok } } }
+  /api/wsfex/ultimo-autorizado:
+    get:
+      tags: [WSFEXv1]
+      summary: Ultimo Nro de Factura E autorizado
+      parameters:
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+        - { name: puntoVenta, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: "{ ultimoNumero, fecha }" } }
+  /api/wsfex/comprobantes:
+    post:
+      tags: [WSFEXv1]
+      summary: Emitir Factura E de exportacion (cod. 19) y obtener CAE
+      description: "Requiere: puntoVenta, cliente, paisDestino, moneda, cotizacion, importeTotal, items[]. Opcional: incoterms, tipoExportacion, permisoExistente, permisos[]."
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: aprobado }, '422': { description: rechazado } }
+
+  /api/wsmtxca/status:
+    get: { tags: [WSMTXCA], summary: Estado (dummy), responses: { '200': { description: ok } } }
+  /api/wsmtxca/ultimo-autorizado:
+    get:
+      tags: [WSMTXCA]
+      summary: Ultimo Nro autorizado (por pto de venta y tipo)
+      parameters:
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+        - { name: puntoVenta, in: query, required: true, schema: { type: integer } }
+        - { name: tipoComprobante, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: "{ ultimoNumero }" } }
+  /api/wsmtxca/comprobantes:
+    post:
+      tags: [WSMTXCA]
+      summary: Emitir comprobante con detalle (IVA por item) y obtener CAE
+      description: "items[] con codigoCondicionIVA e importeIVA por linea; subtotalesIVA[] por alicuota."
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: aprobado }, '422': { description: rechazado } }
+
   /api/padron/{alcance}/{cuit}:
     get:
       tags: [Padron]
