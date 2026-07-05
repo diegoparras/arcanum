@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.2] - 2026-07-04
+
+### Agregado
+- PDF: **detalle de items linea por linea** (Codigo / Producto-Servicio / Cantidad /
+  U. Medida / P. Unitario / % Bonif / Subtotal). Se pasan en `items` al emitir y se
+  persisten; si no hay, se muestra una linea resumen.
+- PDF: **caja "Regimen de Transparencia Fiscal al Consumidor (Ley 27.743)"** con IVA
+  Contenido + Otros Impuestos Nacionales Indirectos, solo en Factura B a consumidor final.
+- PDF: leyenda **"*147 Telefono gratuito - Defensa del Consumidor"**, **"Pag. 1/1"** y
+  **wordmark ARCA** ("Agencia de Recaudacion y Control Aduanero" + "Comprobante Autorizado")
+  en reemplazo del recuadro negro.
+
 ## [0.3.1] - 2026-07-04
 
 ### Cambiado

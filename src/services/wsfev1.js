@@ -300,6 +300,7 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
     importeNoGravado: Number(inv.importeNoGravado || 0),
     importeTributos: Number(inv.importeTributos || 0),
     alicuotasIva: Array.isArray(inv.alicuotasIva) ? inv.alicuotasIva : [],
+    items: Array.isArray(inv.items) ? inv.items : [],
     condicionIvaReceptor: inv.condicionIvaReceptor != null ? parseInt(inv.condicionIvaReceptor, 10) : null,
     receptorNombre: inv.receptorNombre || inv.razonSocialReceptor || null,
     receptorDomicilio: inv.receptorDomicilio || null,

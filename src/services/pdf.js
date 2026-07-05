@@ -195,37 +195,58 @@ async function generar(cmp) {
   y += boxH + 12;
 
   // ---------- Tabla de conceptos ----------
-  const cols = { desc: L + 6, cant: 320, punit: 370, sub: R - 6 };
+  const COL = { cod: L + 4, desc: L + 48, um: 306 };
   doc.rect(L, y, R - L, 20).fill('#f2efe9');
-  doc.fillColor(GRIS).fontSize(8).font('Helvetica-Bold');
-  doc.text('Descripcion', cols.desc, y + 6);
-  doc.text('Cant.', cols.cant, y + 6);
-  doc.text('P. Unitario', cols.punit, y + 6);
-  doc.text('Subtotal', 470, y + 6, { width: 79, align: 'right' });
-  y += 24;
+  doc.fillColor(GRIS).fontSize(7.5).font('Helvetica-Bold');
+  const hy = y + 7;
+  doc.text('Codigo', COL.cod, hy);
+  doc.text('Producto / Servicio', COL.desc, hy);
+  doc.text('Cant.', 250, hy, { width: 34, align: 'right' });
+  doc.text('U. Med.', COL.um, hy);
+  doc.text('P. Unit.', 342, hy, { width: 62, align: 'right' });
+  doc.text('% Bonif', 408, hy, { width: 46, align: 'right' });
+  doc.text('Subtotal', 470, hy, { width: 81, align: 'right' });
+  y += 26;
 
-  const base = Number(raw.importeNeto || 0) + Number(raw.importeNoGravado || 0) + Number(raw.importeExento || 0);
-  const baseFila = discrimina ? Number(raw.importeNeto || 0) || base : Number(cmp.importe_total || 0);
-  const conceptoNom = { 1: 'Productos', 2: 'Servicios', 3: 'Productos y Servicios' }[Number(raw.concepto)] || 'Productos / Servicios';
-  doc.font('Helvetica').fontSize(9).fillColor(TINTA);
-  doc.text(conceptoNom + ' segun detalle', cols.desc, y, { width: 260 });
-  doc.text('1', cols.cant, y);
-  doc.text(money(baseFila), cols.punit, y);
-  doc.text(money(baseFila), 470, y, { width: 79, align: 'right' });
-  y += 22;
+  const items = Array.isArray(raw.items) && raw.items.length ? raw.items : null;
+  doc.font('Helvetica').fontSize(8.5).fillColor(TINTA);
+  if (items) {
+    for (const it of items.slice(0, 12)) {
+      const desc = String(it.descripcion || it.desc || '');
+      const dh = Math.max(12, doc.heightOfString(desc, { width: 196 }));
+      doc.fillColor(TINTA);
+      doc.text(String(it.codigo || ''), COL.cod, y, { width: 42 });
+      doc.text(desc, COL.desc, y, { width: 196 });
+      doc.text(money(it.cantidad ?? 1), 250, y, { width: 34, align: 'right' });
+      doc.text(String(it.unidadMedida || 'unidades'), COL.um, y, { width: 40 });
+      doc.text(money(it.precioUnitario ?? it.subtotal ?? 0), 342, y, { width: 62, align: 'right' });
+      doc.text(money(it.bonifPct ?? 0), 408, y, { width: 46, align: 'right' });
+      doc.text(money(it.subtotal ?? 0), 470, y, { width: 81, align: 'right' });
+      y += dh + 4;
+    }
+    if (raw.items.length > 12) { doc.fillColor(GRIS).text(`... y ${raw.items.length - 12} item(s) mas`, COL.desc, y); y += 12; }
+  } else {
+    const baseFila = discrimina ? Number(raw.importeNeto || 0) || Number(cmp.importe_total || 0) : Number(cmp.importe_total || 0);
+    const conceptoNom = { 1: 'Productos', 2: 'Servicios', 3: 'Productos y Servicios' }[Number(raw.concepto)] || 'Productos / Servicios';
+    doc.text(conceptoNom + ' segun detalle', COL.desc, y, { width: 196 });
+    doc.text('1,00', 250, y, { width: 34, align: 'right' });
+    doc.text('unidades', COL.um, y, { width: 40 });
+    doc.text(money(baseFila), 342, y, { width: 62, align: 'right' });
+    doc.text('0,00', 408, y, { width: 46, align: 'right' });
+    doc.text(money(baseFila), 470, y, { width: 81, align: 'right' });
+    y += 16;
+  }
   doc.moveTo(L, y).lineTo(R, y).strokeColor(LINEA).stroke();
-  y += 10;
 
-  // ---------- Totales ----------
-  const tx = 360;
-  const tv = R;
+  // ---------- Totales (bloque inferior) ----------
   const simb = cmp.moneda && cmp.moneda !== 'PES' ? cmp.moneda : '$';
+  let ty = 548;
   const rowTot = (label, val, bold) => {
     doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 12 : 9).fillColor(bold ? TINTA : GRIS);
-    doc.text(`${label}:`, tx, y, { width: 90 });
-    doc.fillColor(TINTA).text(simb, tx + 92, y);
-    doc.fillColor(TINTA).text(money(val), tx, y, { width: tv - tx, align: 'right' });
-    y += bold ? 20 : 15;
+    doc.text(`${label}:`, 350, ty, { width: 108, align: 'right' });
+    doc.fillColor(TINTA).text(simb, 464, ty);
+    doc.fillColor(TINTA).text(money(val), 470, ty, { width: R - 470, align: 'right' });
+    ty += bold ? 20 : 15;
   };
   if (discrimina) {
     rowTot('Neto Gravado', raw.importeNeto);
@@ -238,36 +259,50 @@ async function generar(cmp) {
     } else if (Number(raw.importeIva)) {
       rowTot('IVA', raw.importeIva);
     }
-    if (Number(raw.importeTributos)) rowTot('Otros Tributos', raw.importeTributos);
+    if (Number(raw.importeTributos)) rowTot('Importe Otros Tributos', raw.importeTributos);
   } else {
     rowTot('Subtotal', cmp.importe_total);
+    if (Number(raw.importeTributos)) rowTot('Importe Otros Tributos', raw.importeTributos);
   }
   rowTot('Importe Total', cmp.importe_total, true);
 
-  // ---------- Leyendas ----------
-  y += 6;
-  const leyendas = [];
-  const totalNum = Number(cmp.importe_total || 0);
+  // ---------- Regimen de Transparencia Fiscal (Ley 27.743): solo Factura B (emisor RI) a consumidor final ----------
   const esCF = condRecId === 5 || (!condRecId && (letra === 'B' || letra === 'C'));
-  if (esCF && totalNum >= 10000000) leyendas.push('A CONSUMIDOR FINAL');
-  if ((letra === 'B' || letra === 'C') && esCF) leyendas.push('Regimen de Transparencia Fiscal al Consumidor (Ley 27.743).');
-  if (letra === 'C') leyendas.push('El presente comprobante no genera credito fiscal (RG s/ Monotributo / Exento).');
-  if (leyendas.length) {
-    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(TINTA);
-    for (const lg of leyendas) { doc.text(lg, L, y, { width: R - L }); y += 12; }
+  if (letra === 'B' && esCF) {
+    const bx = L;
+    const by = 545;
+    const bw = 280;
+    const bh = 50;
+    doc.rect(bx, by, bw, bh).lineWidth(0.8).strokeColor('#a32d2d').stroke();
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(TINTA).text('Regimen de Transparencia Fiscal al Consumidor (Ley 27.743)', bx + 6, by + 6, { width: bw - 12 });
+    doc.font('Helvetica').fontSize(8).fillColor(GRIS).text('IVA Contenido:', bx + 6, by + 24);
+    doc.fillColor(TINTA).text(`${simb} ${money(raw.importeIva || 0)}`, bx + 6, by + 24, { width: bw - 12, align: 'right' });
+    doc.fillColor(GRIS).text('Otros Impuestos Nacionales Indirectos:', bx + 6, by + 37);
+    doc.fillColor(TINTA).text(`${simb} ${money(raw.importeTributos || 0)}`, bx + 6, by + 37, { width: bw - 12, align: 'right' });
   }
 
-  // ---------- CAE + QR + barra ----------
-  doc.image(qrPng, L, 655, { width: 84 });
-  doc.font('Helvetica').fontSize(10).fillColor(GRIS).text('CAE N°:', 145, 665);
-  doc.fillColor(TINTA).font('Helvetica-Bold').text(cmp.cae || '-', 205, 665);
-  doc.font('Helvetica').fillColor(GRIS).text('Vto. CAE:', 145, 683);
-  doc.fillColor(TINTA).font('Helvetica-Bold').text(ymd(cmp.cae_vto), 205, 683);
-  doc.font('Helvetica').fontSize(8).fillColor(GRIS).text('Comprobante Autorizado por ARCA', 145, 705);
+  // ---------- Leyendas ----------
+  let ly = 604;
+  if (esCF && Number(cmp.importe_total) >= 10000000) { doc.font('Helvetica-Bold').fontSize(9).fillColor(TINTA).text('A CONSUMIDOR FINAL', L, ly); ly += 13; }
+  if (letra === 'B' || letra === 'C') { doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(GRIS).text('*147 Telefono gratuito CABA - Area de Defensa y Proteccion del Consumidor.', L, ly); ly += 11; }
+  if (letra === 'C') { doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(GRIS).text('El presente comprobante no genera credito fiscal.', L, ly); ly += 11; }
+
+  // ---------- Pie: ARCA + CAE + QR + codigo de barras ----------
+  doc.image(qrPng, L, 650, { width: 80 });
+  doc.font('Helvetica-Bold').fontSize(16).fillColor(TINTA).text('ARCA', 138, 652);
+  doc.font('Helvetica').fontSize(6.5).fillColor(GRIS).text('Agencia de Recaudacion y Control Aduanero', 138, 672);
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(TINTA).text('Comprobante Autorizado', 138, 685);
+  doc.font('Helvetica').fontSize(6).fillColor(GRIS).text('Esta Administracion no se responsabiliza por los datos ingresados en el detalle de la operacion.', 138, 697, { width: 205 });
+
+  doc.font('Helvetica').fontSize(8).fillColor(GRIS).text('Pag. 1/1', 360, 648, { width: R - 360, align: 'right' });
+  doc.fontSize(10).fillColor(GRIS).text('CAE N°:', 360, 668);
+  doc.fillColor(TINTA).font('Helvetica-Bold').text(cmp.cae || '-', 415, 668);
+  doc.font('Helvetica').fontSize(10).fillColor(GRIS).text('Fecha de Vto. de CAE:', 360, 686);
+  doc.fillColor(TINTA).font('Helvetica-Bold').text(ymd(cmp.cae_vto), 480, 686);
 
   drawBarcode(doc, cmp);
 
-  doc.fontSize(7).fillColor('#9a9388').text('Generado por Arcanum — Escriba Suite', L, 792, { align: 'center', width: R - L });
+  doc.font('Helvetica').fontSize(7).fillColor('#9a9388').text('Generado por Arcanum — Escriba Suite', L, 792, { align: 'center', width: R - L });
 
   doc.end();
   return done;
