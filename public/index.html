@@ -22,8 +22,13 @@
 <link rel="stylesheet" href="./escriba-ui.css">
 <style>
   /* ===== Acento Arcanum (lo unico que cambia por app) ===== */
-  :root{ --accent:#27408b; --accent-2:#1d3168; --on-accent:#fff; --ring:0 0 0 3px rgba(39,64,139,.20); }
-  :root[data-theme="dark"]{ --accent:#6b8bd6; --accent-2:#27408b; --ring:0 0 0 3px rgba(107,139,214,.26); }
+  :root{ --accent:#27408b; --accent-2:#1d3168; --on-accent:#fff; --ring:0 0 0 3px rgba(39,64,139,.20);
+    --field-bg:#e9f1fd; --field-border:#bcd3f2; }
+  :root[data-theme="dark"]{ --accent:#6b8bd6; --accent-2:#27408b; --ring:0 0 0 3px rgba(107,139,214,.26);
+    --field-bg:rgba(107,139,214,.13); --field-border:rgba(107,139,214,.32); }
+  /* Todos los campos para completar en celeste claro, para diferenciarlos. */
+  input,textarea,select{ background-color:var(--field-bg); border-color:var(--field-border); }
+  input:focus,textarea:focus,select:focus{ background-color:var(--field-bg); }
   /* Alias heredados del CSS propio de Arcanum, mapeados a tokens canonicos */
   :root{ --ink:var(--text); --line:var(--border); --chip:var(--card); --radius:14px;
     --header-bg:var(--panel); --accent-ink:var(--accent); --accent-contrast:var(--on-accent);

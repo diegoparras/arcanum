@@ -3,6 +3,13 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.10] - 2026-07-04
+
+### Cambiado
+- Todos los campos para completar (input, textarea, select) ahora tienen fondo
+  celeste claro (`--field-bg`) con borde azul suave, para diferenciarlos del resto.
+  Adaptado a modo claro y oscuro.
+
 ## [0.3.9] - 2026-07-04
 
 ### Corregido
