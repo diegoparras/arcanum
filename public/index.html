@@ -393,11 +393,12 @@ async function vWebhooks(){
   v.innerHTML=`<h2>Webhooks</h2><div class="card"><table><thead><tr><th>URL</th><th>Eventos</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
    <div class="card" style="margin-top:14px;max-width:560px"><h3 style="margin-top:0">Nuevo webhook</h3>
    <label>URL (n8n, etc.)</label><input id="w_url" class="mono" placeholder="https://...">
-   <label>Eventos</label><div class="chklist" id="w_ev">${eventos.map(e=>`<label class="chk"><input type="checkbox" value="${e}" checked> ${e}</label>`).join('')}</div>
+   <label>Eventos</label><div class="chklist" id="w_ev">${eventos.map(e=>`<label class="chk"><input type="checkbox" value="${e}"> ${e}</label>`).join('')}</div>
    <label>Secret (opcional, para firma HMAC)</label><input id="w_secret">
    <button class="primary" style="margin-top:14px" onclick="addWebhook()">Crear</button></div>`;
 }
 async function addWebhook(){const ev=[...document.querySelectorAll('#w_ev input:checked')].map(o=>o.value);
+  if(!ev.length){toast('Elegí al menos un evento',true);return;}
   try{await api('/api/webhooks',{method:'POST',body:JSON.stringify({url:$('#w_url').value,eventos:ev,secret:$('#w_secret').value||null})});toast('Webhook creado');vWebhooks();}catch(e){toast(e.message,true);}}
 async function delWebhook(id){try{await api('/api/webhooks/'+id,{method:'DELETE'});vWebhooks();}catch(e){toast(e.message,true);}}
 

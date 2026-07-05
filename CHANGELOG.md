@@ -3,6 +3,12 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.13] - 2026-07-04
+
+### Cambiado
+- Webhooks: los eventos ahora vienen **destildados** por defecto (el usuario elige
+  cuales suscribir). Se valida que haya al menos uno seleccionado al crear.
+
 ## [0.3.12] - 2026-07-04
 
 ### Cambiado
