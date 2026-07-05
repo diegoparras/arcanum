@@ -3,6 +3,13 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.14] - 2026-07-04
+
+### Cambiado
+- Campos de formulario: por defecto en gris muy claro (`--field-rest`, con variante
+  para modo oscuro) para diferenciarlos del fondo; al enfocarlos pasan al celeste
+  (`--field-bg`) con el borde azul suave.
+
 ## [0.3.13] - 2026-07-04
 
 ### Cambiado
