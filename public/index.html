@@ -29,10 +29,11 @@
   /* Todos los campos para completar en celeste claro, para diferenciarlos. */
   input,textarea,select{ background-color:var(--field-bg); border-color:var(--field-border); }
   input:focus,textarea:focus,select:focus{ background-color:var(--field-bg); }
-  /* Multi-select (ej. Eventos): opciones transparentes para que se vea el celeste, no blanco. */
-  select[multiple]{ background-color:var(--field-bg); padding:4px; }
-  select[multiple] option{ background:transparent; padding:5px 8px; border-radius:6px; margin:1px 0; }
-  select[multiple] option:checked{ background:var(--accent); color:var(--on-accent); }
+  /* Lista de checkboxes (reemplaza al multi-select nativo). */
+  .chklist{ background-color:var(--field-bg); border:1px solid var(--field-border); border-radius:10px; padding:6px; max-height:150px; overflow:auto; display:flex; flex-direction:column; gap:2px; }
+  .chk{ display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:8px; cursor:pointer; font-size:14px; }
+  .chk:hover{ background:rgba(39,64,139,.07); }
+  .chk input{ width:16px; height:16px; margin:0; padding:0; accent-color:var(--accent); background:none; border:none; cursor:pointer; }
   /* Alias heredados del CSS propio de Arcanum, mapeados a tokens canonicos */
   :root{ --ink:var(--text); --line:var(--border); --chip:var(--card); --radius:14px;
     --header-bg:var(--panel); --accent-ink:var(--accent); --accent-contrast:var(--on-accent);
@@ -392,11 +393,11 @@ async function vWebhooks(){
   v.innerHTML=`<h2>Webhooks</h2><div class="card"><table><thead><tr><th>URL</th><th>Eventos</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
    <div class="card" style="margin-top:14px;max-width:560px"><h3 style="margin-top:0">Nuevo webhook</h3>
    <label>URL (n8n, etc.)</label><input id="w_url" class="mono" placeholder="https://...">
-   <label>Eventos</label><select id="w_ev" multiple style="height:110px">${eventos.map(e=>`<option value="${e}" selected>${e}</option>`).join('')}</select>
+   <label>Eventos</label><div class="chklist" id="w_ev">${eventos.map(e=>`<label class="chk"><input type="checkbox" value="${e}" checked> ${e}</label>`).join('')}</div>
    <label>Secret (opcional, para firma HMAC)</label><input id="w_secret">
    <button class="primary" style="margin-top:14px" onclick="addWebhook()">Crear</button></div>`;
 }
-async function addWebhook(){const ev=[...$('#w_ev').selectedOptions].map(o=>o.value);
+async function addWebhook(){const ev=[...document.querySelectorAll('#w_ev input:checked')].map(o=>o.value);
   try{await api('/api/webhooks',{method:'POST',body:JSON.stringify({url:$('#w_url').value,eventos:ev,secret:$('#w_secret').value||null})});toast('Webhook creado');vWebhooks();}catch(e){toast(e.message,true);}}
 async function delWebhook(id){try{await api('/api/webhooks/'+id,{method:'DELETE'});vWebhooks();}catch(e){toast(e.message,true);}}
 

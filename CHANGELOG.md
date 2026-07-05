@@ -3,6 +3,13 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.12] - 2026-07-04
+
+### Cambiado
+- Webhooks: el multi-select nativo de Eventos (que se veia "todo pintado" porque las
+  opciones venian todas seleccionadas) se reemplazo por una lista de checkboxes,
+  consistente entre navegadores y sobre el fondo celeste.
+
 ## [0.3.11] - 2026-07-04
 
 ### Corregido
