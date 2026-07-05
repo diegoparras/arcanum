@@ -3,6 +3,12 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.17] - 2026-07-04
+
+### Cambiado
+- Gris de reposo de los campos a #eef0f3 (sutil pero visible sobre las tarjetas
+  blancas). Verificado: input/select computan #eef0f3 (antes el bug los dejaba blancos).
+
 ## [0.3.16] - 2026-07-04
 
 ### Corregido
