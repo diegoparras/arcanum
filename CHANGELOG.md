@@ -3,6 +3,13 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.1] - 2026-07-04
+
+### Cambiado
+- PDF: los importes se muestran con `$` (no "PES"), con el simbolo separado del
+  numero y alineado como en el layout oficial de ARCA. "ORIGINAL" centrado arriba
+  y caja de letra reposicionada para calcar la representacion impresa vigente.
+
 ## [0.3.0] - 2026-07-04
 
 ### Agregado

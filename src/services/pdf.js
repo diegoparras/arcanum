@@ -137,16 +137,16 @@ async function generar(cmp) {
   const MID = 300;
 
   // ---------- Encabezado con caja de letra ----------
-  doc.rect(L, 55, R - L, 108).lineWidth(0.8).strokeColor(LINEA).stroke();
-  doc.moveTo(MID, 84).lineTo(MID, 163).strokeColor(LINEA).stroke();
-  doc.fontSize(7).font('Helvetica').fillColor(GRIS).text('ORIGINAL', L + 6, 60);
+  doc.fontSize(9).font('Helvetica-Bold').fillColor(TINTA).text('ORIGINAL', L, 43, { width: R - L, align: 'center' });
+  doc.rect(L, 58, R - L, 110).lineWidth(0.8).strokeColor(LINEA).stroke();
+  doc.moveTo(MID, 100).lineTo(MID, 168).strokeColor(LINEA).stroke();
   // Caja de letra centrada, montada sobre el borde superior
-  doc.rect(MID - 24, 42, 48, 42).fillAndStroke('#ffffff', TINTA);
-  doc.fillColor(TINTA).fontSize(28).font('Helvetica-Bold').text(letra, MID - 24, 47, { width: 48, align: 'center' });
-  doc.fontSize(7).font('Helvetica').fillColor(GRIS).text(`COD. ${String(tipo).padStart(2, '0')}`, MID - 40, 86, { width: 80, align: 'center' });
+  doc.rect(MID - 24, 56, 48, 42).fillAndStroke('#ffffff', TINTA);
+  doc.fillColor(TINTA).fontSize(28).font('Helvetica-Bold').text(letra, MID - 24, 61, { width: 48, align: 'center' });
+  doc.fontSize(7).font('Helvetica').fillColor(GRIS).text(`COD. ${String(tipo).padStart(2, '0')}`, MID - 40, 100, { width: 80, align: 'center' });
 
   // Columna izquierda: emisor
-  let y = 74;
+  let y = 78;
   const razon = emisor.razonSocial || `CUIT ${cmp.cuit}`;
   doc.fillColor(TINTA).font('Helvetica-Bold').fontSize(15).text(razon, L + 10, y, { width: 218 });
   y += doc.heightOfString(razon, { width: 218 }) + 3;
@@ -160,7 +160,7 @@ async function generar(cmp) {
 
   // Columna derecha: datos del comprobante (a la derecha de la caja de letra)
   const RX = MID + 30;
-  let yr = 74;
+  let yr = 78;
   doc.fillColor(TINTA).font('Helvetica-Bold').fontSize(13).text(tipoNombre, RX, yr, { width: R - RX - 4 }); yr += 20;
   doc.font('Helvetica').fontSize(9).fillColor(TINTA);
   doc.text(`Punto de Venta: ${String(cmp.punto_venta).padStart(5, '0')}`, RX, yr); yr += 13;
@@ -219,10 +219,12 @@ async function generar(cmp) {
   // ---------- Totales ----------
   const tx = 360;
   const tv = R;
+  const simb = cmp.moneda && cmp.moneda !== 'PES' ? cmp.moneda : '$';
   const rowTot = (label, val, bold) => {
     doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 12 : 9).fillColor(bold ? TINTA : GRIS);
-    doc.text(label, tx, y, { width: 110 });
-    doc.fillColor(TINTA).text(`${cmp.moneda || 'PES'} ${money(val)}`, tx, y, { width: tv - tx, align: 'right' });
+    doc.text(`${label}:`, tx, y, { width: 90 });
+    doc.fillColor(TINTA).text(simb, tx + 92, y);
+    doc.fillColor(TINTA).text(money(val), tx, y, { width: tv - tx, align: 'right' });
     y += bold ? 20 : 15;
   };
   if (discrimina) {
