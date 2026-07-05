@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.16] - 2026-07-04
+
+### Corregido
+- El fondo gris de reposo no se aplicaba a los input/select: una regla base posterior
+  (`input,select,textarea{background:var(--panel)}`) lo pisaba con blanco (y ademas
+  mataba la flecha del select por usar el shorthand `background`). Se cambio a
+  `background-color:var(--field-rest)`.
+- El gris de reposo ahora es el tono del fondo (`var(--bg)`), mas suave; al enfocar
+  sigue pasando al celeste. Se restauro la flecha de los `<select>`.
+
 ## [0.3.15] - 2026-07-04
 
 ### Cambiado
