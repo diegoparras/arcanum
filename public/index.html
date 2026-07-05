@@ -120,7 +120,7 @@
     <h2>Arcanum</h2>
     <p class="login-sub">Gateway ARCA — Escriba Suite</p>
     <input id="lu" autocomplete="username" placeholder="Usuario">
-    <div class="pass-wrap"><input id="lp" type="password" autocomplete="current-password" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()"><button class="pass-toggle" type="button" tabindex="-1" aria-label="Mostrar u ocultar contraseña" onclick="togglePw('lp',this)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+    <div class="pwwrap"><input id="lp" type="password" autocomplete="current-password" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar contraseña" onclick="togglePw('lp',this)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
     <button class="primary" style="width:100%" onclick="doLogin()">Entrar</button>
     <div id="oidcBtn"></div>
   </div>
@@ -163,7 +163,7 @@ function showLogin(){$('#loginView').classList.remove('hidden');$('#appView').cl
     // Federado (ssoOnly): se entra SOLO por Lockatus → ocultamos el login local.
     const card=$('#loginView .login-card'), sso=!!c.ssoOnly;
     $('#lu').classList.toggle('hidden',sso);
-    $('#lp').closest('.pass-wrap').classList.toggle('hidden',sso);
+    $('#lp').closest('.pwwrap').classList.toggle('hidden',sso);
     card.querySelector('button.primary').classList.toggle('hidden',sso);
     card.querySelector('.login-sub').textContent=sso?'Acceso unificado de la Suite Escriba':'Gateway ARCA — Escriba Suite';
   }).catch(()=>{});}

@@ -3,6 +3,14 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.6] - 2026-07-04
+
+### Corregido
+- Login: el toggle de mostrar/ocultar contrasena usaba clases sin estilo
+  (`.pass-wrap`/`.pass-toggle`), por lo que el icono se veia como un circulo negro
+  y se desacomodaba al clickear. Ahora usa `.pwwrap`/`.eye` (icono line, posicion
+  fija dentro del campo), como el resto de los campos de clave de la app.
+
 ## [0.3.5] - 2026-07-04
 
 ### Corregido / Agregado
