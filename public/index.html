@@ -35,7 +35,7 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
   a{color:var(--accent-ink)}
-  header{position:sticky;top:0;background:var(--header-bg);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:10}
+  header{position:sticky;top:0;background:var(--header-bg);border-bottom:1px solid var(--line);z-index:10}
   .wrap{max-width:1100px;margin:0 auto;padding:0 20px}
   .bar{display:flex;align-items:center;gap:16px;padding:13px 0}
   .logo{width:32px;height:32px;border-radius:9px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-family:var(--mono)}
@@ -43,12 +43,14 @@
   nav{display:flex;gap:4px;margin-left:8px;flex-wrap:wrap}
   nav button{background:none;border:none;color:var(--muted);padding:7px 11px;border-radius:8px;cursor:pointer;font-size:14px}
   nav button.active{background:var(--chip);color:var(--ink);font-weight:560}
+  nav button:hover{background:var(--accent-2);color:var(--on-accent)}
+  nav button.active:hover{background:var(--accent-2);color:var(--on-accent)}
   .right{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:13px;color:var(--muted)}
   .env{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:999px;background:var(--chip);color:var(--accent-ink)}
   button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
-  button.primary:hover{filter:brightness(1.08)}
+  button.primary:hover{background:var(--accent-2);border-color:var(--accent-2);color:var(--on-accent)}
   button{font-family:var(--sans);font-size:14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 13px;border-radius:9px;cursor:pointer}
-  button:hover{box-shadow:var(--shadow)}
+  button:hover{box-shadow:var(--shadow);background:var(--chip);border-color:var(--line);color:var(--ink)}
   button.ghost{border:none;color:var(--accent-ink);padding:6px 9px;display:inline-flex;align-items:center;gap:5px}
   button.ghost svg,nav button svg{width:16px;height:16px}
   .iconbtn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;transition:color .15s,box-shadow .15s}

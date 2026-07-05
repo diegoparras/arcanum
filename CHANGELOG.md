@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.7] - 2026-07-04
+
+### Corregido
+- **Contraste en hover:** el design system pintaba de azul el fondo de cualquier
+  boton en hover pero no cambiaba el texto, dejando gris/oscuro sobre azul (visible
+  en la barra de navegacion). Ahora el nav en hover va azul + texto blanco, y los
+  botones secundarios usan un hover claro y legible.
+- **Performance:** se quito el `backdrop-filter: blur(8px)` del header sticky, que
+  forzaba repintado en cada scroll y hacia sentir la interfaz lenta/pesada.
+
 ## [0.3.6] - 2026-07-04
 
 ### Corregido
