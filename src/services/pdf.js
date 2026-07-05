@@ -16,6 +16,7 @@ const { condicionIvaLabel } = require('./reglas-comprobante');
 const TINTA = '#1c1a17';
 const GRIS = '#6b6358';
 const LINEA = '#c9c3b8';
+const ARCA_GRIS = '#4d4d4d';
 
 const TIPOS = {
   1: 'FACTURA A', 2: 'NOTA DE DEBITO A', 3: 'NOTA DE CREDITO A',
@@ -289,10 +290,12 @@ async function generar(cmp) {
 
   // ---------- Pie: ARCA + CAE + QR + codigo de barras ----------
   doc.image(qrPng, L, 650, { width: 80 });
-  doc.font('Helvetica-Bold').fontSize(16).fillColor(TINTA).text('ARCA', 138, 652);
-  doc.font('Helvetica').fontSize(6.5).fillColor(GRIS).text('Agencia de Recaudacion y Control Aduanero', 138, 672);
-  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(TINTA).text('Comprobante Autorizado', 138, 685);
-  doc.font('Helvetica').fontSize(6).fillColor(GRIS).text('Esta Administracion no se responsabiliza por los datos ingresados en el detalle de la operacion.', 138, 697, { width: 205 });
+  // Isologo ARCA (wordmark + tagline), en el gris institucional.
+  doc.font('Helvetica-Bold').fontSize(19).fillColor(ARCA_GRIS).text('ARCA', 138, 648);
+  doc.font('Helvetica').fontSize(5.5).fillColor(ARCA_GRIS).text('AGENCIA DE RECAUDACION', 138, 671, { characterSpacing: 0.8 });
+  doc.text('Y CONTROL ADUANERO', 138, 678, { characterSpacing: 0.8 });
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(TINTA).text('Comprobante Autorizado', 138, 690);
+  doc.font('Helvetica').fontSize(6).fillColor(GRIS).text('Esta Administracion no se responsabiliza por los datos ingresados en el detalle de la operacion.', 138, 701, { width: 205 });
 
   doc.font('Helvetica').fontSize(8).fillColor(GRIS).text('Pag. 1/1', 360, 648, { width: R - 360, align: 'right' });
   doc.fontSize(10).fillColor(GRIS).text('CAE N°:', 360, 668);

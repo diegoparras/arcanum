@@ -3,6 +3,13 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.3.3] - 2026-07-04
+
+### Agregado
+- Isologo institucional de ARCA como asset vectorial (`public/arca-logo.svg`).
+- PDF: el pie usa el wordmark ARCA en el gris institucional (#4d4d4d) con el tagline
+  "Agencia de Recaudacion y Control Aduanero" en dos lineas, como el logo oficial.
+
 ## [0.3.2] - 2026-07-04
 
 ### Agregado
