@@ -3,6 +3,14 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.4.2] - 2026-07-08
+
+### Corregido
+- El **motor SOAP generico** ahora soporta SOAP 1.2: el passthrough
+  `/api/ws/wsapoc/GetPublicacionAPOC` usa `<Credencial>` (namespace tempuri) en SOAP 1.2,
+  igual que el modulo rico. Antes quedaba con el formato viejo (codigo 201). Verificado
+  contra prod (codigo 0). SOAP 1.1 del resto de los servicios sin cambios (regresion OK).
+
 ## [0.4.1] - 2026-07-08
 
 ### Corregido

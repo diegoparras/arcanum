@@ -65,12 +65,14 @@ async function call(serviceId, operation, params = {}, opts = {}) {
   const soapAction =
     svc.soapActionTemplate != null ? svc.soapActionTemplate.replace('{op}', operation) : `${ns}${operation}`;
 
+  const soap12 = style === 'apoc'; // WSAPOC (.NET tempuri) requiere SOAP 1.2
   async function doPost(inner) {
+    const soapNs = soap12 ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/';
     const envelope =
       '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +
+      `<soapenv:Envelope xmlns:soapenv="${soapNs}">` +
       `<soapenv:Header/><soapenv:Body>${inner}</soapenv:Body></soapenv:Envelope>`;
-    const body = await post(url, soapAction, envelope);
+    const body = await post(url, soapAction, envelope, { soap12 });
     return body?.[`${operation}Response`] ?? body;
   }
 
@@ -98,12 +100,13 @@ async function call(serviceId, operation, params = {}, opts = {}) {
         toXml(params) +
         `</ser:${operation}>`;
     } else if (style === 'apoc') {
-      // Estilo WSAPOC (.NET tempuri): credencial envuelta + CUITDelegado.
+      // Estilo WSAPOC (.NET tempuri, SOAP 1.2): <Credencial> (C mayuscula) con
+      // namespace default = tempuri, para que ARCA lea Token/Sign (si no, error 201).
       inner =
-        `<ws:${operation} xmlns:ws="${ns}">` +
-        `<credencial><Token>${ta.token}</Token><Sign>${ta.sign}</Sign><CUITDelegado>${cuit}</CUITDelegado></credencial>` +
+        `<${operation} xmlns="${ns}">` +
+        `<Credencial><Token>${ta.token}</Token><Sign>${ta.sign}</Sign><CUITDelegado>${cuit}</CUITDelegado></Credencial>` +
         toXml(params) +
-        `</ws:${operation}>`;
+        `</${operation}>`;
     } else {
       // Estilo body-auth (FEV1 y familia): <Auth><Token><Sign><Cuit> + params.
       inner =

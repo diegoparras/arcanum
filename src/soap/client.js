@@ -30,17 +30,19 @@ function escapeXml(s) {
  * @param {string} envelope    XML completo del Envelope
  * @returns {Promise<object>}  contenido de soap:Body ya parseado
  */
-async function post(url, soapAction, envelope) {
+async function post(url, soapAction, envelope, opts = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), config.soapTimeoutMs);
+  // SOAP 1.2: la accion va en el Content-Type (application/soap+xml; action="..."),
+  // sin header SOAPAction. SOAP 1.1: text/xml + header SOAPAction.
+  const headers = opts.soap12
+    ? { 'Content-Type': `application/soap+xml; charset=utf-8; action="${soapAction}"` }
+    : { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: soapAction };
   let res;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'text/xml; charset=utf-8',
-        SOAPAction: soapAction,
-      },
+      headers,
       body: envelope,
       signal: ctrl.signal,
     });
