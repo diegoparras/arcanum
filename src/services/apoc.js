@@ -2,12 +2,14 @@
 
 // WSAPOC - Consulta de la base de "Facturas Apocrifas" / contribuyentes con
 // comprobantes apocrifos (ex-APOC). Servicio WSAA: `wsapoc`.
-//   Operacion: GetPublicacionAPOC(credencial{Token,Sign,CUITDelegado}, cuit)
-//   Endpoint .NET (.asmx), namespace tempuri.org, SOAPAction tempuri/{op}.
+//   Operacion: GetPublicacionAPOC(Credencial{Token,Sign,CUITDelegado}, cuit)
+//   Endpoint .NET (.asmx), namespace tempuri.org. SOAP 1.2 (application/soap+xml).
 //
-// A diferencia del resto, la credencial va envuelta en <credencial> y el CUIT a
-// consultar va suelto en <cuit>. Reusamos el cache de TA (getAccessTicket) para
-// NO pedir un token nuevo en cada consulta (evita el baneo de WSAA).
+// La credencial va como <tem:Credencial> (C mayuscula, con namespace tempuri) y el
+// CUIT a consultar como <tem:cuit>. Ojo: si va en minuscula/sin namespace o en SOAP
+// 1.1, ARCA responde codigo 201 "Object reference" (no lee Token/Sign). Reusamos el
+// cache de TA (getAccessTicket) para NO pedir token nuevo por consulta (anti-baneo).
+// Fix del formato: PR #1 de francomeretta1-spec.
 
 const { config } = require('../config');
 const { getAccessTicket } = require('../auth/wsaa');
@@ -111,11 +113,6 @@ async function consultar(cuitRepresentada, cuitConsulta, entorno) {
 
   const xml = await res.text();
 
-  // Log temporal de diagnostico. En Railway: Deployments -> View logs.
-  // No imprime Token ni Sign.
-  console.log('[WSAPOC] consulta', { cuitDelegado: repre, cuitConsulta: target, httpStatus: res.status });
-  console.log('[WSAPOC] response preview:', xmlPreview(xml));
-
   const fault = xml.match(/<(?:[\w.-]+:)?Fault[^>]*>[\s\S]*?<(?:faultstring|(?:[\w.-]+:)?Text)[^>]*>([^<]+)/i);
   if (fault) throw new SoapError(`WSAPOC rechazo la solicitud: ${fault[1]}`, 502, { raw: xmlPreview(xml) });
 
@@ -150,16 +147,6 @@ async function consultar(cuitRepresentada, cuitConsulta, entorno) {
     )
   );
 
-  console.log('[WSAPOC] parseado', {
-    codigo,
-    descripcion,
-    tieneResultados: !!resultados,
-    tienePublicacion: !!publicacion,
-    fechaCondicion,
-    fechaPublicacion,
-    esApocrifo,
-  });
-
   // IMPORTANTE:
   // No convertir codigo 201 en "sin publicaciones". Segun el manual WSAPOC,
   // 201 es error al validar credenciales de autenticacion.
@@ -174,7 +161,6 @@ async function consultar(cuitRepresentada, cuitConsulta, entorno) {
       fechaPublicacion,
       detalle,
       error: 'WSAPOC_CREDENCIALES_201',
-      rawPreview: xmlPreview(xml),
     };
   }
 

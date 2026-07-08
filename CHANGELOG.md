@@ -3,6 +3,15 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.4.1] - 2026-07-08
+
+### Corregido
+- **WSAPOC**: el request estaba mal formado (`<credencial>` en minuscula/sin namespace,
+  SOAP 1.1), por lo que ARCA devolvia siempre codigo 201 "Object reference". Ahora usa
+  `<tem:Credencial>` (namespace tempuri) en SOAP 1.2 y devuelve codigo 0 con los datos
+  reales; parseo tolerante a namespaces. Verificado contra prod (201 -> 0).
+  Gracias a francomeretta1-spec (PR #1). Se quitaron los console.log de diagnostico.
+
 ## [0.4.0] - 2026-07-04
 
 ### Agregado
