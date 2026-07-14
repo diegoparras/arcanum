@@ -3,6 +3,15 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.6.2] - 2026-07-14
+
+### Tests
+- Cobertura para los modulos nuevos (test/nuevos.test.js, 17 tests): reglas-comprobante
+  (sugerencia de letra A/B/C), importar.parseQr (decodifica QR de ARCA / rechaza basura),
+  engine.toXml (serializacion + rechazo de claves invalidas / inyeccion XML), y helpers de
+  lotes (n/pInt anti-NaN, alicuotaId por tasa, aging verde/amarillo/rojo, parseCsv, normItem).
+  Total 27 tests (antes 10).
+
 ## [0.6.1] - 2026-07-14
 
 ### Seguridad (auditoria + remediacion)

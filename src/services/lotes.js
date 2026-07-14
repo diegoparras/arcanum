@@ -235,4 +235,6 @@ async function exportCsv(loteId) {
   return lines.join('\n');
 }
 
-module.exports = { crear, listar, detalle, emitirItem, emitirLote, marcarRecibido, solicitarItem, exportCsv, aging, cuitDe, ESTADOS };
+module.exports = { crear, listar, detalle, emitirItem, emitirLote, marcarRecibido, solicitarItem, exportCsv, aging, cuitDe, ESTADOS,
+  // Expuestos para tests unitarios (funciones puras).
+  _internos: { parseCsv, normItem, alicuotaId, n, pInt } };
