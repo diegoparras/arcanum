@@ -35,6 +35,7 @@ const emisores = require('./services/emisores');
 const importar = require('./services/importar');
 const metrics = require('./services/metrics');
 const webhooks = require('./services/webhooks');
+const lotes = require('./services/lotes');
 
 // Si no se definio API key, generamos una y la mostramos una sola vez.
 let API_KEY = config.apiKey;
@@ -502,6 +503,41 @@ async function route(req, res, url) {
     if (req.method === 'GET' && !seg[2]) return sendJson(res, 200, { ok: true, webhooks: await webhooks.listar(), eventos: webhooks.EVENTOS });
     if (req.method === 'POST' && !seg[2]) return sendJson(res, 200, { ok: true, webhook: await webhooks.crear(await readJsonBody(req)) });
     if (req.method === 'DELETE' && seg[2]) return sendJson(res, 200, { ok: true, ...(await webhooks.eliminar(seg[2])) });
+  }
+
+  // --- Facturador masivo (lotes con seguimiento y aging) ---
+  if (seg[0] === 'api' && seg[1] === 'lotes') {
+    // GET /api/lotes?cuit=   -> lista con resumen de aging
+    if (req.method === 'GET' && !seg[2]) return sendJson(res, 200, { ok: true, lotes: await lotes.listar(q.get('cuit')) });
+    // POST /api/lotes   { cuit, nombre, perfil, items|csv }
+    if (req.method === 'POST' && !seg[2]) {
+      requireRole(principal, 'superadmin', 'admin', 'operador');
+      const body = await readJsonBody(req);
+      if (!body.cuit) throw badRequest('Falta "cuit" (emisor del lote)');
+      assertCuitAllowed(principal, body.cuit);
+      return sendJson(res, 200, { ok: true, lote: await lotes.crear(body.cuit, body) });
+    }
+    // GET /api/lotes/:id            -> detalle con items + aging
+    if (req.method === 'GET' && seg[2] && !seg[3]) return sendJson(res, 200, { ok: true, lote: await lotes.detalle(seg[2]) });
+    // GET /api/lotes/:id/export.csv
+    if (req.method === 'GET' && seg[2] && seg[3] === 'export.csv') {
+      const csv = await lotes.exportCsv(seg[2]);
+      res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="lote-${seg[2]}.csv"` });
+      return res.end(csv);
+    }
+    // POST /api/lotes/:id/emitir            -> emite todos los pendientes
+    if (req.method === 'POST' && seg[2] && seg[3] === 'emitir' && !seg[4]) {
+      requireRole(principal, 'superadmin', 'admin', 'operador');
+      return sendJson(res, 200, { ok: true, ...(await lotes.emitirLote(seg[2], await readJsonBody(req).catch(() => ({}))))});
+    }
+    // POST /api/lotes/:id/items/:itemId/(emitir|recibido|solicitar)
+    if (req.method === 'POST' && seg[2] && seg[3] === 'items' && seg[4] && seg[5]) {
+      requireRole(principal, 'superadmin', 'admin', 'operador');
+      const body = await readJsonBody(req).catch(() => ({}));
+      if (seg[5] === 'emitir') return sendJson(res, 200, { ok: true, item: await lotes.emitirItem(seg[2], seg[4], body) });
+      if (seg[5] === 'recibido') return sendJson(res, 200, { ok: true, item: await lotes.marcarRecibido(seg[2], seg[4], body) });
+      if (seg[5] === 'solicitar') return sendJson(res, 200, { ok: true, item: await lotes.solicitarItem(seg[2], seg[4]) });
+    }
   }
 
   // --- e-Ventanilla (Ventanilla Electronica) ---

@@ -335,6 +335,34 @@ paths:
         - { name: n, in: query, schema: { type: integer, default: 0 } }
       responses: { '200': { description: PDF, content: { application/pdf: {} } } }
 
+  /api/lotes:
+    get:
+      tags: [Facturador]
+      summary: Lista de lotes con resumen de aging
+      parameters: [{ name: cuit, in: query, schema: { type: string } }]
+      responses: { '200': { description: ok } }
+    post:
+      tags: [Facturador]
+      summary: Crear lote de facturacion (JSON items[] o csv)
+      description: "Body: { cuit, nombre, perfil (pyme|asociacion), items[]|csv }. Cada item: nombre, cuit, email, tipoComprobante, puntoVenta, importeTotal (o neto/iva), periodo."
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: creado } }
+  /api/lotes/{id}:
+    get: { tags: [Facturador], summary: "Detalle del lote (items + aging verde/amarillo/rojo)", parameters: [{ name: id, in: path, required: true, schema: { type: integer } }], responses: { '200': { description: ok } } }
+  /api/lotes/{id}/export.csv:
+    get: { tags: [Facturador], summary: Export CSV del lote con aging, parameters: [{ name: id, in: path, required: true, schema: { type: integer } }], responses: { '200': { description: csv } } }
+  /api/lotes/{id}/emitir:
+    post: { tags: [Facturador], summary: Emitir el CAE de todos los pendientes del lote, parameters: [{ name: id, in: path, required: true, schema: { type: integer } }], responses: { '200': { description: "{ total, emitidos, resultados[] }" } } }
+  /api/lotes/{id}/items/{itemId}/{accion}:
+    post:
+      tags: [Facturador]
+      summary: "Accion sobre un item: emitir | recibido | solicitar"
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: itemId, in: path, required: true, schema: { type: integer } }
+        - { name: accion, in: path, required: true, schema: { type: string, enum: [emitir, recibido, solicitar] } }
+      responses: { '200': { description: ok } }
+
   /api/comprobantes:
     get:
       tags: [Comprobantes]

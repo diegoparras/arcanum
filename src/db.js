@@ -133,6 +133,41 @@ CREATE TABLE IF NOT EXISTS api_keys (
   last_used   TIMESTAMPTZ
 );
 
+-- Facturador masivo: lotes de solicitudes con seguimiento y aging.
+CREATE TABLE IF NOT EXISTS lotes (
+  id          BIGSERIAL PRIMARY KEY,
+  cuit        TEXT NOT NULL,
+  entorno     TEXT NOT NULL DEFAULT 'homo',
+  nombre      TEXT NOT NULL,
+  perfil      TEXT NOT NULL DEFAULT 'pyme',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS lote_items (
+  id            BIGSERIAL PRIMARY KEY,
+  lote_id       BIGINT NOT NULL REFERENCES lotes(id) ON DELETE CASCADE,
+  nombre        TEXT,
+  cuit          TEXT,
+  doc_tipo      INT,
+  doc_nro       TEXT,
+  email         TEXT,
+  concepto      INT DEFAULT 1,
+  periodo       TEXT,
+  tipo_comprobante INT,
+  punto_venta   INT,
+  importe_neto  NUMERIC(18,2),
+  importe_iva   NUMERIC(18,2),
+  importe_total NUMERIC(18,2),
+  estado        TEXT NOT NULL DEFAULT 'pendiente',
+  cae           TEXT,
+  numero        INT,
+  cae_vto       DATE,
+  solicitado_at TIMESTAMPTZ,
+  resuelto_at   TIMESTAMPTZ,
+  nota          TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS lote_items_lote_idx ON lote_items (lote_id);
+
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS csr_pem TEXT;
 -- Datos fiscales del emisor POR CUIT (para el encabezado legal del PDF).
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS emisor JSONB;

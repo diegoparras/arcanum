@@ -54,4 +54,13 @@ async function notify(evento, data) {
   }
 }
 
-module.exports = { notify, enabled };
+// Envio directo a un destinatario (ej. solicitar comprobante a un profesional).
+async function send(to, subject, text) {
+  const t = init();
+  if (!t) throw Object.assign(new Error('SMTP no configurado (defini ARCANUM_SMTP_HOST)'), { httpStatus: 422 });
+  if (!to) throw Object.assign(new Error('Falta el destinatario'), { httpStatus: 422 });
+  await t.sendMail({ from: process.env.ARCANUM_SMTP_FROM || 'arcanum@localhost', to, subject: `[Arcanum] ${subject}`, text });
+  return { enviado: true, to };
+}
+
+module.exports = { notify, enabled, send };

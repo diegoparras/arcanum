@@ -185,12 +185,12 @@ async function doLogin(){
 }
 async function logout(){ await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); showLogin(); }
 
-const VIEWS=[['panel','Panel'],['clientes','Clientes'],['servicios','Servicios'],['emitir','Emitir'],['comprobantes','Comprobantes'],['generador','Generador'],['webhooks','Webhooks'],['usuarios','Usuarios']];
+const VIEWS=[['panel','Panel'],['clientes','Clientes'],['servicios','Servicios'],['emitir','Emitir'],['facturador','Facturador'],['comprobantes','Comprobantes'],['generador','Generador'],['webhooks','Webhooks'],['usuarios','Usuarios']];
 function renderNav(cur){
   $('#nav').innerHTML=VIEWS.filter(v=>v[0]!=='usuarios'||['superadmin','admin'].includes(ME.role))
     .map(v=>`<button class="${v[0]===cur?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('');
 }
-function go(v){renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,comprobantes:vComprobantes,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
+function go(v){renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
 
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; }catch(e){ showLogin(); return; }
@@ -450,6 +450,65 @@ async function addWebhook(){const ev=[...document.querySelectorAll('#w_ev input:
   if(!ev.length){toast('Elegí al menos un evento',true);return;}
   try{await api('/api/webhooks',{method:'POST',body:JSON.stringify({url:$('#w_url').value,eventos:ev,secret:$('#w_secret').value||null})});toast('Webhook creado');vWebhooks();}catch(e){toast(e.message,true);}}
 async function delWebhook(id){try{await api('/api/webhooks/'+id,{method:'DELETE'});vWebhooks();}catch(e){toast(e.message,true);}}
+
+/* ---------- FACTURADOR MASIVO (lotes con aging) ---------- */
+const SEMA={VERDE:'#3b6d11',AMARILLO:'#b8860b',ROJO:'#a32d2d'};
+function semDot(s){return s?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${SEMA[s]||'#999'};margin-right:6px"></span>`:'';}
+function estadoTag(e){const m={pendiente:'',solicitado:'warn',emitido:'ok',recibido:'ok',rechazado:'no'};return `<span class="tag ${m[e]||''}">${e}</span>`;}
+async function vFacturador(){
+  const v=$('#view');const {lotes}=await api('/api/lotes');
+  const rows=lotes.map(l=>{const r=l.resumen;
+    return `<tr onclick="verLote(${l.id})" style="cursor:pointer">
+      <td>${l.nombre}</td><td><span class="tag">${l.perfil}</span></td><td class="mono">${l.cuit}</td>
+      <td>${r.total} <span class="hint">(${r.emitidos+r.recibidos} ok · ${r.pendientes} pend.)</span></td>
+      <td>${r.rojo?semDot('ROJO')+r.rojo+' ':''}${r.amarillo?semDot('AMARILLO')+r.amarillo+' ':''}${r.verde?semDot('VERDE')+r.verde:''}</td>
+      <td class="hint">${new Date(l.created_at).toLocaleDateString('es-AR')}</td></tr>`;}).join('')||'<tr><td colspan="6" class="hint">Todavía no cargaste lotes.</td></tr>';
+  v.innerHTML=`<div class="row"><h2 style="margin:0">Facturador masivo</h2><button class="primary" style="margin-left:auto" onclick="nuevoLote()">Nuevo lote</button></div>
+   <p class="hint">Cargá un lote (CSV o filas) con los profesionales/clientes a facturar. Seguí el estado de cada uno con el semáforo de antigüedad: <span style="color:${SEMA.VERDE}">verde &lt;5d</span> · <span style="color:${SEMA.AMARILLO}">amarillo 5–15d</span> · <span style="color:${SEMA.ROJO}">rojo &gt;15d</span>.</p>
+   <div class="card"><table><thead><tr><th>Lote</th><th>Perfil</th><th>CUIT</th><th>Items</th><th>Pendientes (aging)</th><th>Creado</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+async function nuevoLote(){
+  let tenants=[];try{tenants=(await api('/api/tenants')).tenants;}catch{}
+  const opts=tenants.map(t=>`<option value="${t.cuit}">${t.cuit}${t.nombre?' — '+t.nombre:''}</option>`).join('');
+  modal(`<h3>Nuevo lote</h3>
+    <div class="f2"><div><label>Emisor (CUIT)</label><select id="lt_cuit">${opts}</select></div>
+    <div><label>Perfil</label><select id="lt_perfil"><option value="pyme">PyME</option><option value="asociacion">Asociación (delegado)</option></select></div></div>
+    <label>Nombre del lote</label><input id="lt_nombre" placeholder="Honorarios junio 2026">
+    <label>Items (CSV) <span class="hint">cabecera: nombre,cuit,email,tipoComprobante,puntoVenta,importeNeto,importeIva,importeTotal,periodo</span></label>
+    <textarea id="lt_csv" rows="6" class="mono" placeholder="nombre,cuit,email,tipoComprobante,puntoVenta,importeNeto,importeIva,importeTotal,periodo
+Dr. Perez,20111111112,perez@mail.com,11,1,,,12100,Jun-2026
+Dra. Gomez,27222222223,gomez@mail.com,11,1,,,8500,Jun-2026"></textarea>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="crearLote()">Crear lote</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function crearLote(){
+  try{const r=await api('/api/lotes',{method:'POST',body:JSON.stringify({cuit:$('#lt_cuit').value,nombre:$('#lt_nombre').value,perfil:$('#lt_perfil').value,csv:$('#lt_csv').value})});
+    toast('Lote creado ('+r.lote.items+' items)');closeModal();verLote(r.lote.id);}catch(e){toast(e.message,true);}
+}
+async function verLote(id){
+  const v=$('#view');const {lote}=await api('/api/lotes/'+id);const r=lote.resumen;
+  const rows=lote.items.map(it=>{const a=it.aging||{};const pend=!['emitido','recibido','rechazado'].includes(it.estado);
+    return `<tr><td>${it.nombre||''}</td><td class="mono">${it.cuit||it.doc_nro||''}</td>
+      <td>${estadoTag(it.estado)}</td>
+      <td>${pend?semDot(a.semaforo)+(a.dias!=null?a.dias+'d':''):''}${it.cae?'<span class="hint mono">CAE '+it.cae+'</span>':''}</td>
+      <td class="mono">${it.importe_total!=null?'$'+Number(it.importe_total).toFixed(2):''}</td>
+      <td class="row">${pend?`<button class="ghost" onclick="itemAccion(${id},${it.id},'emitir')">Emitir</button>
+        <button class="ghost" onclick="itemAccion(${id},${it.id},'recibido')">Recibido</button>
+        ${it.email?`<button class="ghost" onclick="itemAccion(${id},${it.id},'solicitar')">Solicitar</button>`:''}`:''}</td></tr>`;}).join('');
+  v.innerHTML=`<div class="row"><button class="ghost" onclick="vFacturador()">← Lotes</button><h2 style="margin:0 auto 0 8px">${lote.nombre}</h2>
+     <button onclick="emitirTodo(${id})">Emitir pendientes</button>
+     <a href="/api/lotes/${id}/export.csv"><button>CSV</button></a></div>
+   <p class="hint">${lote.cuit} · perfil ${lote.perfil} · ${r.total} items — ${r.emitidos} emitidos, ${r.recibidos} recibidos, ${r.pendientes} pendientes</p>
+   <div class="card"><table><thead><tr><th>Nombre</th><th>CUIT/Doc</th><th>Estado</th><th>Aging / CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+async function itemAccion(loteId,itemId,accion){
+  if(accion==='recibido'){const cae=prompt('CAE del comprobante recibido (opcional):','');if(cae===null)return;
+    try{await api(`/api/lotes/${loteId}/items/${itemId}/recibido`,{method:'POST',body:JSON.stringify({cae:cae||null})});toast('Marcado recibido');verLote(loteId);}catch(e){toast(e.message,true);}return;}
+  try{await api(`/api/lotes/${loteId}/items/${itemId}/${accion}`,{method:'POST',body:'{}'});
+    toast(accion==='emitir'?'Comprobante emitido':accion==='solicitar'?'Solicitud enviada':'OK');verLote(loteId);}catch(e){toast(e.message,true);}
+}
+async function emitirTodo(id){if(!confirm('¿Emitir el CAE de todos los pendientes de este lote?'))return;
+  try{const r=await api('/api/lotes/'+id+'/emitir',{method:'POST',body:'{}'});toast(`Emitidos ${r.emitidos}/${r.total}`);verLote(id);}catch(e){toast(e.message,true);}
+}
 
 /* ---------- USUARIOS ---------- */
 async function vUsuarios(){

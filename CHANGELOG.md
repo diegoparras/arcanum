@@ -3,6 +3,24 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.6.0] - 2026-07-14
+
+### Agregado
+- **Facturador masivo** (nueva seccion "Facturador"): lotes de facturacion con
+  seguimiento y **semaforo de antiguedad** (verde <5d, amarillo 5-15d, rojo >15d).
+  - Cargar lote por CSV o `items[]` (una fila por profesional/cliente).
+  - Maquina de estados por item: pendiente -> solicitado -> emitido | recibido | rechazado.
+  - **Emitir el CAE** de un item o de todo el lote (usa WSFEv1, numero auto, idempotente).
+  - **Marcar recibido** (el profesional emitio y te mando su comprobante).
+  - **Solicitar por email** al profesional (SMTP).
+  - Export CSV con dias pendientes y semaforo. Perfiles pyme / asociacion.
+  - `GET/POST /api/lotes`, `GET /api/lotes/:id`, `/emitir`, `/items/:id/(emitir|recibido|solicitar)`, `/export.csv`.
+  - Verificado end-to-end (crear, aging, recibido, export, emision hasta el nivel de cert).
+
+### Comparado con ArcanumPro
+- Su facturador trackea; el nuestro ademas **emite el CAE real** integrado (WSFEv1),
+  resuelve el numero solo, es idempotente y computa el aging en el server.
+
 ## [0.5.0] - 2026-07-08
 
 ### Agregado (inspirado en ArcanumPro, mejorado)
