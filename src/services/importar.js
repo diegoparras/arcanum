@@ -142,10 +142,13 @@ async function importar(cuitConsultante, input = {}) {
     );
   }
 
-  // 4) Persistir como importado.
+  // 4) Persistir como importado, BAJO EL CUIT DEL CONSULTANTE (el que esta autorizado),
+  //    no bajo el CUIT emisor que viene del QR (evita escribir en el tenant ajeno / IDOR).
+  //    El emisor real queda como metadato en raw.
   const raw = {
     ...d,
-    cuit: d.cuitEmisor,
+    cuit: consultante,
+    cuitEmisor: d.cuitEmisor,
     importado: true,
     constatacion,
     receptorNombre: input.receptorNombre || null,
@@ -157,11 +160,11 @@ async function importar(cuitConsultante, input = {}) {
        importe_total, doc_tipo, doc_nro, raw, origen)
      VALUES ($1,$2,$3,$4,$5,$6,NULL,'A', to_date($7,'YYYYMMDD'),$8,$9,$10,$11,'importado')
      ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
-    [d.cuitEmisor, config.env, d.puntoVenta, d.tipoComprobante, d.numero, d.cae, d.fecha,
+    [consultante, config.env, d.puntoVenta, d.tipoComprobante, d.numero, d.cae, d.fecha,
       d.importeTotal, d.docTipo, d.docNro, JSON.stringify(raw)],
   );
 
-  return { ...d, origen: 'importado', constatacion };
+  return { ...d, cuitConsultante: consultante, origen: 'importado', constatacion };
 }
 
 module.exports = { importar, parseQr, constatar };

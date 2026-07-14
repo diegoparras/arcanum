@@ -507,8 +507,16 @@ async function route(req, res, url) {
 
   // --- Facturador masivo (lotes con seguimiento y aging) ---
   if (seg[0] === 'api' && seg[1] === 'lotes') {
+    // Scoping por CUIT: en TODA ruta con :id, se resuelve el CUIT dueño del lote y se
+    // valida contra el principal (cierra el IDOR multi-tenant, igual que /api/comprobantes).
+    if (seg[2]) assertCuitAllowed(principal, await lotes.cuitDe(seg[2]));
     // GET /api/lotes?cuit=   -> lista con resumen de aging
-    if (req.method === 'GET' && !seg[2]) return sendJson(res, 200, { ok: true, lotes: await lotes.listar(q.get('cuit')) });
+    if (req.method === 'GET' && !seg[2]) {
+      const cuit = q.get('cuit');
+      if (scopedRequiresCuit(principal) && !cuit) throw badRequest('Indica un CUIT autorizado en ?cuit=');
+      if (cuit) assertCuitAllowed(principal, cuit);
+      return sendJson(res, 200, { ok: true, lotes: await lotes.listar(cuit) });
+    }
     // POST /api/lotes   { cuit, nombre, perfil, items|csv }
     if (req.method === 'POST' && !seg[2]) {
       requireRole(principal, 'superadmin', 'admin', 'operador');
@@ -584,6 +592,7 @@ async function route(req, res, url) {
   // GET /api/padron/:alcance/:cuitConsulta?cuit=   (alcance: a13 | a5)
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'padron' && seg[2] && seg[3]) {
     const cuitRepre = requireQ(q, 'cuit');
+    assertCuitAllowed(principal, cuitRepre);
     const datos = await padron.consultarPersona(seg[2], cuitRepre, seg[3]);
     return sendJson(res, 200, { ok: true, alcance: seg[2], cuit: seg[3], datos });
   }
@@ -592,6 +601,7 @@ async function route(req, res, url) {
   // GET /api/apoc/:cuitConsulta?cuit=   (cuit = representada / titular del certificado)
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'apoc' && seg[2]) {
     const cuitRepre = requireQ(q, 'cuit');
+    assertCuitAllowed(principal, cuitRepre);
     const datos = await apoc.consultar(cuitRepre, seg[2]);
     return sendJson(res, 200, { ok: true, ...datos });
   }
@@ -600,6 +610,7 @@ async function route(req, res, url) {
   // GET /api/contribuyente/:cuitConsulta?cuit=<representada>
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'contribuyente' && seg[2]) {
     const cuitRepre = requireQ(q, 'cuit');
+    assertCuitAllowed(principal, cuitRepre);
     const datos = await contribuyente.consolidar(cuitRepre, seg[2]);
     return sendJson(res, 200, { ok: true, ...datos });
   }

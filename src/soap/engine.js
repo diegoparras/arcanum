@@ -14,12 +14,17 @@ const { normalizeCuit } = require('../auth/tenants');
 
 // Serializa un objeto JS a XML (hijos sin prefijo, heredan el namespace por
 // defecto del elemento operacion). Arrays => elementos repetidos con la misma key.
+const KEY_RE = /^[A-Za-z][A-Za-z0-9_.-]*$/; // NCName simplificado para las claves (nombres de elemento)
+
 function toXml(obj) {
   if (obj === null || obj === undefined) return '';
   if (typeof obj !== 'object') return escapeXml(obj);
   let out = '';
   for (const [k, v] of Object.entries(obj)) {
     if (v === undefined) continue;
+    // Las CLAVES se interpolan como nombres de elemento: validarlas evita inyeccion XML
+    // por parte del cliente (ej. params en el passthrough generico /api/ws).
+    if (!KEY_RE.test(k)) throw Object.assign(new Error(`Clave invalida en params: "${k}" (use letras, numeros, _ . -)`), { httpStatus: 400 });
     if (Array.isArray(v)) {
       for (const item of v) out += `<${k}>${toXml(item)}</${k}>`;
     } else if (v !== null && typeof v === 'object') {

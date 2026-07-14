@@ -26,7 +26,24 @@ function aging(item) {
   return { semaforo, dias };
 }
 
-function n(x) { return x === '' || x === null || x === undefined ? null : Number(x); }
+function n(x) { if (x === '' || x === null || x === undefined) return null; const v = Number(x); return Number.isFinite(v) ? v : null; }
+function pInt(x) { if (x === '' || x === null || x === undefined) return null; const v = parseInt(x, 10); return Number.isFinite(v) ? v : null; }
+
+// Infiere el id de alicuota IVA de ARCA desde la tasa (o usa el explicito).
+function alicuotaId(neto, iva, explicit) {
+  if (explicit != null) return parseInt(explicit, 10);
+  if (!(iva > 0) || !(neto > 0)) return 5;
+  const pct = Math.round((iva / neto) * 1000) / 10;
+  const M = { 0: 3, 2.5: 9, 5: 8, 10.5: 4, 21: 5, 27: 6 };
+  return M[pct] != null ? M[pct] : 5;
+}
+
+/** CUIT dueno de un lote (para chequear authz por CUIT antes de operar). */
+async function cuitDe(loteId) {
+  const r = await db.query('SELECT cuit FROM lotes WHERE id=$1', [loteId]);
+  if (!r.rows.length) throw Object.assign(new Error('Lote no encontrado'), { httpStatus: 404 });
+  return r.rows[0].cuit;
+}
 
 // CSV: cabecera con nombre,cuit,docTipo,docNro,email,concepto,periodo,tipoComprobante,puntoVenta,importeNeto,importeIva,importeTotal
 function parseCsv(text) {
@@ -46,13 +63,13 @@ function normItem(raw) {
   return {
     nombre: raw.nombre || raw.razonSocial || null,
     cuit: raw.cuit ? normalizeCuit(raw.cuit) : null,
-    doc_tipo: raw.docTipo != null && raw.docTipo !== '' ? parseInt(raw.docTipo, 10) : (raw.cuit ? 80 : 99),
+    doc_tipo: pInt(raw.docTipo) != null ? pInt(raw.docTipo) : (raw.cuit ? 80 : 99),
     doc_nro: raw.docNro != null ? String(raw.docNro) : (raw.cuit ? normalizeCuit(raw.cuit) : '0'),
     email: raw.email || null,
-    concepto: raw.concepto ? parseInt(raw.concepto, 10) : 1,
+    concepto: pInt(raw.concepto) != null ? pInt(raw.concepto) : 1,
     periodo: raw.periodo || null,
-    tipo_comprobante: raw.tipoComprobante ? parseInt(raw.tipoComprobante, 10) : null,
-    punto_venta: raw.puntoVenta ? parseInt(raw.puntoVenta, 10) : null,
+    tipo_comprobante: pInt(raw.tipoComprobante),
+    punto_venta: pInt(raw.puntoVenta),
     importe_neto: n(raw.importeNeto),
     importe_iva: n(raw.importeIva),
     importe_total: n(raw.importeTotal),
@@ -151,7 +168,7 @@ async function emitirItem(loteId, itemId, extra = {}) {
     importeNeto: neto,
     importeIva: iva,
     importeTotal: total,
-    alicuotasIva: iva > 0 ? [{ id: 5, baseImponible: neto, importe: iva }] : [],
+    alicuotasIva: iva > 0 ? [{ id: alicuotaId(neto, iva, it.alicuota_id ?? extra.alicuotaId), baseImponible: neto, importe: iva }] : [],
     idempotencyKey: `lote-${loteId}-item-${itemId}`,
     receptorNombre: it.nombre,
   };
@@ -218,4 +235,4 @@ async function exportCsv(loteId) {
   return lines.join('\n');
 }
 
-module.exports = { crear, listar, detalle, emitirItem, emitirLote, marcarRecibido, solicitarItem, exportCsv, aging, ESTADOS };
+module.exports = { crear, listar, detalle, emitirItem, emitirLote, marcarRecibido, solicitarItem, exportCsv, aging, cuitDe, ESTADOS };

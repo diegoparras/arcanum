@@ -3,6 +3,24 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.6.1] - 2026-07-14
+
+### Seguridad (auditoria + remediacion)
+- **IDOR multi-tenant en /api/lotes (CRITICO/ALTO)**: el bloque del facturador no aplicaba
+  `assertCuitAllowed`, permitiendo a un usuario scoped por `cuit_allow` leer/emitir/exportar
+  lotes de OTRO CUIT (incl. sacar CAE real bajo certificado ajeno). Ahora toda ruta `/api/lotes`
+  resuelve el CUIT dueno y valida contra el principal; el listado exige `?cuit` para usuarios
+  scoped. Verificado (403 cross-tenant, 200 propio).
+- **Cert ajeno (MEDIO)**: `/api/apoc`, `/api/padron`, `/api/contribuyente` firmaban el TRA con
+  el certificado de la representada sin `assertCuitAllowed`. Agregado.
+- **Import bajo CUIT arbitrario (MEDIO)**: la importacion por QR persistia bajo el CUIT emisor
+  del QR; ahora persiste bajo el CUIT consultante (autorizado), con el emisor en `raw.cuitEmisor`.
+- **Inyeccion XML por claves (BAJO)**: `engine.toXml` valida cada clave como NCName.
+- **Robustez**: `pInt`/`n` rechazan NaN (evita 500 al cargar lote y facturas $0 silenciosas);
+  la alicuota IVA del facturador se infiere de la tasa (no hardcodeada a 21%); wsmtxca deriva
+  `importeIva`/`alicuotasIva` de los subtotales para el PDF.
+- Informe completo (13 hallazgos) en AUDIT-arcanum-2026-07-14.md (no versionado).
+
 ## [0.6.0] - 2026-07-14
 
 ### Agregado

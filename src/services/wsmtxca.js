@@ -218,7 +218,9 @@ async function authorize(cuit, inv) {
       cotizacion: Number(inv.cotizacion ?? 1),
       importeTotal: Number(inv.importeTotal || 0),
       importeNeto: Number(inv.importeGravado ?? inv.importeNeto ?? 0),
-      importeIva: Number(inv.importeIva ?? 0),
+      // El IVA en wsmtxca va por items/subtotales; lo derivamos para el PDF/registro.
+      importeIva: Number(inv.importeIva ?? (Array.isArray(inv.subtotalesIVA) ? inv.subtotalesIVA.reduce((a, s) => a + Number(s.importe || 0), 0) : 0)),
+      alicuotasIva: Array.isArray(inv.subtotalesIVA) ? inv.subtotalesIVA.map((s) => ({ id: parseInt(s.codigo ?? s.id, 10), importe: Number(s.importe || 0) })) : [],
       importeExento: Number(inv.importeExento || 0),
       importeNoGravado: Number(inv.importeNoGravado || 0),
       importeTributos: Number(inv.importeOtrosTributos ?? inv.importeTributos ?? 0),
