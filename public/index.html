@@ -228,6 +228,7 @@ async function vClientes(){
       <td class="row">
        ${t.tieneClave?`<button class="ghost" onclick="verCsr('${t.cuit}')">CSR</button>`:''}
        <button class="ghost" onclick="pegarCert('${t.cuit}')">Pegar .crt</button>
+       <button class="ghost" onclick="editarEmisor('${t.cuit}')">Datos fiscales</button>
       </td></tr>`;}).join('')||'<tr><td colspan="4" class="hint">No hay clientes. Creá el primero.</td></tr>';
   v.innerHTML=`<div class="row"><h2 style="margin:0">Clientes (${ENV})</h2>
     <button style="margin-left:auto" onclick="importarCert()">Importar certificado</button>
@@ -246,6 +247,30 @@ async function crearCliente(){
       <a href="/api/tenants/${r.cuit}/csr"><button>Descargar .csr</button></a>
       <button class="primary" onclick="closeModal();vClientes()">Listo</button></div>`);
     toast('Cliente creado'); }catch(e){toast(e.message,true);}
+}
+async function editarEmisor(cuit){
+  let e={};try{ e=(await api('/api/tenants/'+cuit+'/emisor')).emisor||{}; }catch{}
+  modal(`<h3>Datos fiscales del emisor · <span class="mono">${cuit}</span></h3>
+    <p class="hint">Van en el encabezado legal del PDF. Se guardan <strong>por CUIT</strong>, así cada cliente sale con sus propios datos.</p>
+    <label>Razón social</label><input id="em_rs" value="${e.razonSocial||''}">
+    <label>Nombre de fantasía</label><input id="em_nf" value="${e.nombreFantasia||''}">
+    <label>Domicilio comercial</label><input id="em_dom" value="${e.domicilio||''}">
+    <div class="f2"><div><label>Condición frente al IVA</label><select id="em_civa">
+      <option value="">— elegir —</option>
+      <option value="RI" ${e.condicionIva==='RI'?'selected':''}>Responsable Inscripto</option>
+      <option value="MONOTRIBUTO" ${e.condicionIva==='MONOTRIBUTO'?'selected':''}>Responsable Monotributo</option>
+      <option value="EXENTO" ${e.condicionIva==='EXENTO'?'selected':''}>IVA Sujeto Exento</option></select></div>
+    <div><label>Ingresos Brutos</label><input id="em_iibb" value="${e.iibb||''}"></div></div>
+    <div class="f2"><div><label>Inicio de actividades</label><input id="em_ia" placeholder="2010-01-01" value="${e.inicioActividades||''}"></div>
+    <div><label>&nbsp;</label><label class="chk" style="padding:9px 0"><input type="checkbox" id="em_mipyme" ${e.mipyme?'checked':''}> Es MiPyME (FCE)</label></div></div>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarEmisor('${cuit}')">Guardar</button>
+    <button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function guardarEmisor(cuit){
+  const body={razonSocial:$('#em_rs').value,nombreFantasia:$('#em_nf').value,domicilio:$('#em_dom').value,
+    condicionIva:$('#em_civa').value,iibb:$('#em_iibb').value,inicioActividades:$('#em_ia').value,mipyme:$('#em_mipyme').checked};
+  try{ await api('/api/tenants/'+cuit+'/emisor',{method:'PUT',body:JSON.stringify(body)});
+    toast('Datos fiscales guardados');closeModal();vClientes(); }catch(e){ toast(e.message,true); }
 }
 async function verCsr(cuit){ try{const t=await fetch('/api/tenants/'+cuit+'/csr',{credentials:'include'}).then(r=>r.text());
   modal(`<h3>CSR de ${cuit}</h3><pre>${t.replace(/</g,'&lt;')}</pre><div class="row"><button onclick="navigator.clipboard.writeText(\`${t}\`);toast('Copiado')">Copiar</button><a href="/api/tenants/${cuit}/csr"><button>Descargar</button></a><button class="primary" onclick="closeModal()">Cerrar</button></div>`);}catch(e){toast(e.message,true);} }
@@ -381,8 +406,32 @@ async function vComprobantes(){
   const rows=comprobantes.map(c=>`<tr><td class="mono">${c.cuit}</td><td class="mono">${c.punto_venta}-${c.numero}</td><td>${c.tipo_cbte}</td>
     <td class="mono">${(c.fecha||'').slice?.(0,10)||c.fecha||''}</td><td class="mono">${c.cae||''}</td><td class="mono">$${Number(c.importe_total).toFixed(2)}</td>
     <td><a href="/api/comprobantes/${c.cuit}/${c.punto_venta}/${c.tipo_cbte}/${c.numero}/pdf"><button class="ghost">PDF</button></a></td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
-  v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes emitidos</h2><a href="/api/comprobantes/export.csv" style="margin-left:auto"><button>Exportar CSV</button></a></div>
+  v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes</h2>
+     <button class="primary" style="margin-left:auto" onclick="importarQr()">Importar por QR</button>
+     <a href="/api/comprobantes/export.csv"><button>Exportar CSV</button></a></div>
    <div class="card" style="margin-top:12px"><table><thead><tr><th>CUIT</th><th>Cbte</th><th>Tipo</th><th>Fecha</th><th>CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+async function importarQr(){
+  let tenants=[];try{tenants=(await api('/api/tenants')).tenants;}catch{}
+  const opts=tenants.map(t=>`<option value="${t.cuit}">${t.cuit}${t.nombre?' — '+t.nombre:''}</option>`).join('');
+  modal(`<h3>Importar comprobante por QR</h3>
+    <p class="hint">Pegá el contenido del QR de ARCA (la URL <span class="mono">afip.gob.ar/fe/qr/?p=…</span>). Se leen los datos, se chequea que el CAE no esté duplicado y <strong>se constata contra ARCA (WSCDC)</strong> para confirmar que el comprobante es auténtico.</p>
+    <label>Constatar con el certificado de</label><select id="imp_cuit">${opts}</select>
+    <label>Contenido del QR</label><textarea id="imp_qr" rows="3" class="mono" placeholder="https://www.afip.gob.ar/fe/qr/?p=eyJ2ZXIiOjEs..."></textarea>
+    <div id="imp_res" style="margin-top:10px"></div>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="doImportarQr()">Importar y constatar</button>
+    <button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function doImportarQr(){
+  const box=$('#imp_res');box.innerHTML='<span class="hint">Leyendo QR y constatando con ARCA…</span>';
+  try{
+    const r=await api('/api/comprobantes/importar',{method:'POST',body:JSON.stringify({cuit:$('#imp_cuit').value,qr:$('#imp_qr').value})});
+    const c=r.comprobante, k=c.constatacion||{};
+    const tag=k.consultado?(k.valido?'<span class="tag ok">ARCA valida el comprobante</span>':'<span class="tag no">ARCA lo rechazó</span>')
+      :`<span class="tag warn">no se pudo constatar</span> <span class="hint">${(k.motivo||'').slice(0,120)}</span>`;
+    box.innerHTML=`${tag}<p class="hint" style="margin-top:8px">Emisor ${c.cuitEmisor} · ${c.puntoVenta}-${c.numero} · CAE ${c.cae} · $${Number(c.importeTotal).toFixed(2)}</p>`;
+    toast('Comprobante importado');setTimeout(()=>{closeModal();vComprobantes();},1500);
+  }catch(e){box.innerHTML=`<span class="tag no">${e.message}</span>`;}
 }
 
 /* ---------- WEBHOOKS ---------- */

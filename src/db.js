@@ -134,6 +134,10 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS csr_pem TEXT;
+-- Datos fiscales del emisor POR CUIT (para el encabezado legal del PDF).
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS emisor JSONB;
+-- Comprobantes importados (no emitidos por nosotros): origen y constatacion ARCA.
+ALTER TABLE comprobantes ADD COLUMN IF NOT EXISTS origen TEXT NOT NULL DEFAULT 'emitido';
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cuit_allow TEXT[];
 ALTER TABLE requests ADD COLUMN IF NOT EXISTS usuario TEXT;
 ALTER TABLE requests ADD COLUMN IF NOT EXISTS ip TEXT;

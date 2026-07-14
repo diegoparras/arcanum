@@ -31,6 +31,8 @@ const eventanilla = require('./services/eventanilla');
 const onboarding = require('./services/onboarding');
 const comprobantes = require('./services/comprobantes');
 const pdf = require('./services/pdf');
+const emisores = require('./services/emisores');
+const importar = require('./services/importar');
 const metrics = require('./services/metrics');
 const webhooks = require('./services/webhooks');
 
@@ -406,6 +408,14 @@ async function route(req, res, url) {
       assertCuitAllowed(principal, cuit);
       return sendJson(res, 200, { ok: true, ...(await onboarding.crearCliente(cuit, nombre)) });
     }
+    // GET/PUT /api/tenants/:cuit/emisor  -> datos fiscales del emisor (encabezado del PDF)
+    if (seg[2] && seg[3] === 'emisor') {
+      if (req.method === 'GET') return sendJson(res, 200, { ok: true, emisor: await emisores.get(seg[2]) });
+      if (req.method === 'PUT') {
+        const body = await readJsonBody(req);
+        return sendJson(res, 200, { ok: true, emisor: await emisores.set(seg[2], body) });
+      }
+    }
     // GET /api/tenants/:cuit/csr  -> recupera el CSR generado
     if (req.method === 'GET' && seg[2] && seg[3] === 'csr') {
       const csr = await onboarding.getCsr(seg[2]);
@@ -453,12 +463,22 @@ async function route(req, res, url) {
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="comprobantes.csv"' });
       return res.end(csv);
     }
+    // POST /api/comprobantes/importar  { cuit, qr }  -> importa un comprobante ajeno
+    if (req.method === 'POST' && seg[2] === 'importar') {
+      requireRole(principal, 'superadmin', 'admin', 'operador');
+      const body = await readJsonBody(req);
+      if (!body.cuit) throw badRequest('Falta "cuit" (el CUIT con certificado, que constata)');
+      assertCuitAllowed(principal, body.cuit);
+      const r = await importar.importar(body.cuit, body);
+      return sendJson(res, 200, { ok: true, comprobante: r });
+    }
     // GET /api/comprobantes/:cuit/:pv/:tipo/:nro/pdf
     if (req.method === 'GET' && seg[2] && seg[3] && seg[4] && seg[5] && seg[6] === 'pdf') {
       assertCuitAllowed(principal, seg[2]);
       const cmp = await comprobantes.get(seg[2], seg[3], seg[4], seg[5]);
       if (!cmp) throw notFound();
-      const buf = await pdf.generar(cmp);
+      // Multi-emisor: el encabezado legal sale de los datos fiscales de ESE CUIT.
+      const buf = await pdf.generar(cmp, await emisores.get(cmp.cuit));
       res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="cbte-${seg[3]}-${seg[5]}.pdf"` });
       return res.end(buf);
     }

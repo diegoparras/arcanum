@@ -124,14 +124,19 @@ function drawBarcode(doc, cmp) {
   }
 }
 
-/** Devuelve un Buffer con el PDF del comprobante. */
-async function generar(cmp) {
+/**
+ * Devuelve un Buffer con el PDF del comprobante.
+ * @param {object} cmp        fila de comprobantes (con raw)
+ * @param {object} [emisorDe] datos fiscales del emisor de ESE CUIT (multi-emisor).
+ *                            Si no se pasa, cae al emisor global por env.
+ */
+async function generar(cmp, emisorDe) {
   const raw = cmp.raw || {};
   const tipo = Number(cmp.tipo_cbte);
   const letra = LETRA[tipo] || 'X';
   const tipoNombre = TIPOS[tipo] || `COMPROBANTE TIPO ${tipo}`;
   const discrimina = letra === 'A' || letra === 'M'; // A/M discriminan IVA
-  const emisor = config.emisor || {};
+  const emisor = (emisorDe && Object.keys(emisorDe).length ? emisorDe : config.emisor) || {};
 
   const url = await qrUrl(cmp);
   const qrPng = await QRCode.toBuffer(url, { margin: 1, width: 220 });

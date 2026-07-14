@@ -3,6 +3,23 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.5.0] - 2026-07-08
+
+### Agregado (inspirado en ArcanumPro, mejorado)
+- **Multi-emisor por CUIT**: los datos fiscales del emisor (razon social, domicilio,
+  condicion IVA, IIBB, inicio act., flag MiPyME) se guardan **en la DB por cada CUIT**
+  y se editan desde la UI (Clientes -> Datos fiscales), en vez de un JSON estatico que
+  obligue a redeployar. El PDF usa el encabezado del CUIT correcto. Fallback al emisor
+  global por env. `GET/PUT /api/tenants/:cuit/emisor`.
+- **Importar comprobante por QR** (`POST /api/comprobantes/importar`): decodifica el QR
+  de ARCA, valida whitelist de emisores (`ARCANUM_EMISORES_PERMITIDOS`), dedup por CAE
+  y **CONSTATA contra ARCA con WSCDC** (mejora sobre el dedup local: confirma que el
+  comprobante es autentico). Se persiste con `origen='importado'`. UI en Comprobantes.
+
+### Comparado con ArcanumPro
+- Ellos: multi-emisor via emisores.json estatico (redeploy) + import por QR con dedup local.
+- Nosotros: multi-emisor editable en DB + import con constatacion real en ARCA.
+
 ## [0.4.2] - 2026-07-08
 
 ### Corregido
