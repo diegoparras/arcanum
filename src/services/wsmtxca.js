@@ -161,7 +161,8 @@ async function authorize(cuit, inv) {
   const concepto = parseInt(inv.concepto ?? 1, 10);
   if (!ptoVta || !tipoCbte) throw new SoapError('Faltan `puntoVenta` o `tipoComprobante`', 422);
 
-  return withTokenRetry(c, SERVICE, config.env, async () => {
+  // Lock por (cuit, entorno, ptoVta, tipoCbte): serializa la emision (numeracion sin carrera).
+  return withTokenRetry(c, SERVICE, config.env, () => db.withLock(`emit:wsmtxca:${c}:${config.env}:${ptoVta}:${tipoCbte}`, async () => {
     const numero = inv.numero ? parseInt(inv.numero, 10) : (await lastAuthorized(c, ptoVta, tipoCbte)).ultimoNumero + 1;
     const fechaEmision = inv.fecha ? isoDate(inv.fecha) : todayIso();
 
@@ -256,7 +257,7 @@ async function authorize(cuit, inv) {
     }
     webhooks.emitir(aprobado ? 'comprobante_emitido' : 'comprobante_rechazado', out).catch(() => {});
     return out;
-  });
+  }));
 }
 
 module.exports = { dummy, lastAuthorized, consultar, alicuotasIVA, authorize };

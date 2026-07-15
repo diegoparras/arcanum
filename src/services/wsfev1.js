@@ -210,7 +210,10 @@ async function authorizeInvoice(cuit, inv) {
   const concepto = parseInt(inv.concepto ?? 1, 10);
   validarIdentificacionConsumidorFinal(inv, tipoCbte);
 
-  return withTokenRetry(c, SERVICE, config.env, () => emitir(c, inv, { ptoVta, tipoCbte, concepto, idem }));
+  // Lock por (cuit, entorno, ptoVta, tipoCbte): serializa la emision para que dos
+  // requests no lean el mismo "ultimo autorizado" y colisionen el numero.
+  return withTokenRetry(c, SERVICE, config.env, () =>
+    db.withLock(`emit:wsfe:${c}:${config.env}:${ptoVta}:${tipoCbte}`, () => emitir(c, inv, { ptoVta, tipoCbte, concepto, idem })));
 }
 
 async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {

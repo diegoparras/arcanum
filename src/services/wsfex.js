@@ -138,7 +138,8 @@ async function authorize(cuit, inv) {
   const ptoVta = parseInt(inv.puntoVenta, 10);
   if (!ptoVta) throw new SoapError('Falta `puntoVenta`', 422);
 
-  return withTokenRetry(c, SERVICE, config.env, async () => {
+  // Lock por punto de venta: serializa la emision (numeracion ultimo+1 sin carrera).
+  return withTokenRetry(c, SERVICE, config.env, () => db.withLock(`emit:wsfex:${c}:${config.env}:${ptoVta}`, async () => {
     const numero = inv.numero ? parseInt(inv.numero, 10) : (await lastAuthorized(c, ptoVta)).ultimoNumero + 1;
     const id = inv.id ? parseInt(inv.id, 10) : (await lastId(c)) + 1;
     const permisos =
@@ -221,7 +222,7 @@ async function authorize(cuit, inv) {
     }
     webhooks.emitir(aprobado ? 'comprobante_emitido' : 'comprobante_rechazado', out).catch(() => {});
     return out;
-  });
+  }));
 }
 
 module.exports = { dummy, lastAuthorized, lastId, consultar, authorize };

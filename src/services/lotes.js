@@ -144,41 +144,56 @@ async function getItem(loteId, itemId) {
 async function emitirItem(loteId, itemId, extra = {}) {
   const lote = (await db.query('SELECT * FROM lotes WHERE id=$1', [loteId])).rows[0];
   if (!lote) throw Object.assign(new Error('Lote no encontrado'), { httpStatus: 404 });
-  const it = await getItem(loteId, itemId);
-  if (it.estado === 'emitido') return { ...it, yaEmitido: true };
-
-  const tipo = it.tipo_comprobante || extra.tipoComprobante;
-  const pv = it.punto_venta || extra.puntoVenta;
-  if (!tipo || !pv) throw Object.assign(new Error('El item necesita tipoComprobante y puntoVenta'), { httpStatus: 422 });
-  // Si solo se cargo el total (caso tipico Factura C / monotributo), el neto = total
-  // y no hay IVA. Si vino el desglose, se respeta.
-  const total = Number(it.importe_total ?? 0);
-  let neto = it.importe_neto != null ? Number(it.importe_neto) : null;
-  let iva = it.importe_iva != null ? Number(it.importe_iva) : null;
-  if (neto == null && iva == null) { neto = total; iva = 0; }
-  else { neto = neto ?? 0; iva = iva ?? 0; }
-
-  const inv = {
-    puntoVenta: pv,
-    tipoComprobante: tipo,
-    concepto: it.concepto || 1,
-    tipoDocReceptor: it.doc_tipo || 99,
-    nroDocReceptor: it.doc_nro || '0',
-    condicionIvaReceptor: extra.condicionIvaReceptor,
-    importeNeto: neto,
-    importeIva: iva,
-    importeTotal: total,
-    alicuotasIva: iva > 0 ? [{ id: alicuotaId(neto, iva, it.alicuota_id ?? extra.alicuotaId), baseImponible: neto, importe: iva }] : [],
-    idempotencyKey: `lote-${loteId}-item-${itemId}`,
-    receptorNombre: it.nombre,
-  };
-  const r = await wsfev1.authorizeInvoice(lote.cuit, inv);
-  if (!r.aprobado) throw Object.assign(new Error('ARCA rechazo la emision: ' + (r.errores?.[0]?.message || r.observaciones?.[0]?.message || 'ver detalle')), { httpStatus: 422, extra: r });
-  await db.query(
-    `UPDATE lote_items SET estado='emitido', cae=$1, numero=$2, cae_vto=to_date($3,'YYYYMMDD'), resuelto_at=now() WHERE id=$4`,
-    [r.cae, r.numero, r.caeVencimiento, itemId],
+  // Reclamo atomico: solo un request pasa el item de pendiente/solicitado a 'emitiendo'
+  // (cierra el TOCTOU frente a dos emisiones concurrentes del mismo item).
+  const claim = await db.query(
+    "UPDATE lote_items SET estado='emitiendo' WHERE id=$1 AND lote_id=$2 AND estado IN ('pendiente','solicitado') RETURNING *",
+    [itemId, loteId],
   );
-  return { ...it, estado: 'emitido', cae: r.cae, numero: r.numero, comprobante: r };
+  if (!claim.rows.length) {
+    const cur = await getItem(loteId, itemId);
+    return { ...cur, yaEmitido: cur.estado === 'emitido' };
+  }
+  const it = claim.rows[0];
+
+  try {
+    const tipo = it.tipo_comprobante || extra.tipoComprobante;
+    const pv = it.punto_venta || extra.puntoVenta;
+    if (!tipo || !pv) throw Object.assign(new Error('El item necesita tipoComprobante y puntoVenta'), { httpStatus: 422 });
+    // Si solo se cargo el total (caso tipico Factura C / monotributo), el neto = total
+    // y no hay IVA. Si vino el desglose, se respeta.
+    const total = Number(it.importe_total ?? 0);
+    let neto = it.importe_neto != null ? Number(it.importe_neto) : null;
+    let iva = it.importe_iva != null ? Number(it.importe_iva) : null;
+    if (neto == null && iva == null) { neto = total; iva = 0; }
+    else { neto = neto ?? 0; iva = iva ?? 0; }
+
+    const inv = {
+      puntoVenta: pv,
+      tipoComprobante: tipo,
+      concepto: it.concepto || 1,
+      tipoDocReceptor: it.doc_tipo || 99,
+      nroDocReceptor: it.doc_nro || '0',
+      condicionIvaReceptor: extra.condicionIvaReceptor,
+      importeNeto: neto,
+      importeIva: iva,
+      importeTotal: total,
+      alicuotasIva: iva > 0 ? [{ id: alicuotaId(neto, iva, it.alicuota_id ?? extra.alicuotaId), baseImponible: neto, importe: iva }] : [],
+      idempotencyKey: `lote-${loteId}-item-${itemId}`,
+      receptorNombre: it.nombre,
+    };
+    const r = await wsfev1.authorizeInvoice(lote.cuit, inv);
+    if (!r.aprobado) throw Object.assign(new Error('ARCA rechazo la emision: ' + (r.errores?.[0]?.message || r.observaciones?.[0]?.message || 'ver detalle')), { httpStatus: 422, extra: r });
+    await db.query(
+      `UPDATE lote_items SET estado='emitido', cae=$1, numero=$2, cae_vto=to_date($3,'YYYYMMDD'), resuelto_at=now() WHERE id=$4`,
+      [r.cae, r.numero, r.caeVencimiento, itemId],
+    );
+    return { ...it, estado: 'emitido', cae: r.cae, numero: r.numero, comprobante: r };
+  } catch (e) {
+    // Fallo antes de emitir: devolver el item a 'pendiente' para poder reintentar.
+    await db.query("UPDATE lote_items SET estado='pendiente' WHERE id=$1 AND estado='emitiendo'", [itemId]).catch(() => {});
+    throw e;
+  }
 }
 
 /** Emite TODOS los pendientes de un lote (best-effort, informa por item). */

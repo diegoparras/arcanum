@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.6.3] - 2026-07-14
+
+### Confiabilidad (cierre de los 2 hallazgos bajos de la auditoria)
+- **Numeracion sin carrera**: la emision (WSFEv1, WSFEX, WSMTXCA) se serializa por punto de
+  venta con un `pg_advisory_xact_lock` (nuevo helper `db.withLock`), igual que el token WSAA.
+  Evita que dos requests concurrentes lean el mismo "ultimo autorizado" y colisionen el numero.
+- **TOCTOU en el facturador**: `emitirItem` ahora reclama el item de forma atomica
+  (`UPDATE ... WHERE estado IN ('pendiente','solicitado') RETURNING`, estado transitorio
+  'emitiendo'); si la emision falla, el item vuelve a 'pendiente' para reintentar. Verificado.
+
 ## [0.6.2] - 2026-07-14
 
 ### Tests

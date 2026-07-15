@@ -33,6 +33,16 @@ async function tx(fn) {
   }
 }
 
+// Corre fn() serializado por `key` con un advisory lock de Postgres (distribuido,
+// entre requests y entre instancias). Se libera al terminar la transaccion. Se usa
+// para serializar la emision por punto de venta (numeracion ultimo+1 sin carrera).
+async function withLock(key, fn) {
+  return tx(async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [String(key)]);
+    return fn(client);
+  });
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tenants (
   id              SERIAL PRIMARY KEY,
@@ -220,4 +230,4 @@ async function waitForDb(retries = 30, delayMs = 2000) {
   }
 }
 
-module.exports = { pool, query, tx, migrate, waitForDb };
+module.exports = { pool, query, tx, withLock, migrate, waitForDb };
