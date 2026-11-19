@@ -10,6 +10,7 @@ const { config } = require('../config');
 const { getAccessTicket } = require('../auth/wsaa');
 const { post, SoapError } = require('../soap/client');
 const { normalizeCuit } = require('../auth/tenants');
+const { crearCache } = require('../lib/cacheTtl');
 
 const PADRONES = {
   // A5 (constancia) usa getPersona_v2; A13 usa getPersona.
@@ -17,18 +18,44 @@ const PADRONES = {
   a5: { service: 'ws_sr_constancia_inscripcion', ns: 'http://a5.soap.ws.server.puc.sr/', op: 'getPersona_v2', endpoint: () => config.endpoints.constancia },
 };
 
+// Cache corto del padron (ARCANUM_PADRON_CACHE_S, default 1 hora; 0 lo apaga).
+// Clave: entorno + alcance + representada + consultado. Solo se guardan respuestas OK.
+const cache = crearCache({
+  ttlMs: parseInt(process.env.ARCANUM_PADRON_CACHE_S || '3600', 10) * 1000,
+  max: parseInt(process.env.ARCANUM_PADRON_CACHE_MAX || '2000', 10),
+});
+
 /**
  * Consulta los datos de `idPersona` (CUIT a consultar) usando el certificado
  * del CUIT `cuitRepresentada` (el contador / representante).
  * @param {string} alcance  'a13' | 'a5'
  */
-async function consultarPersona(alcance, cuitRepresentada, idPersona) {
-  const cfg = PADRONES[alcance];
-  if (!cfg) throw new SoapError(`Alcance de padron desconocido: ${alcance}`, 404);
+async function consultarPersona(alcance, cuitRepresentada, idPersona, opts = {}) {
+  return (await consultarPersonaConMeta(alcance, cuitRepresentada, idPersona, opts)).datos;
+}
 
+/**
+ * Igual que consultarPersona, pero informa si salio del cache.
+ * @param {object} [opts] { fresco: true } ignora el cache y vuelve a consultar a ARCA.
+ * @returns {Promise<{datos, cache: {usado: boolean, consultado: string}}>}
+ */
+async function consultarPersonaConMeta(alcance, cuitRepresentada, idPersona, opts = {}) {
+  if (!PADRONES[alcance]) throw new SoapError(`Alcance de padron desconocido: ${alcance}`, 404);
   const repre = normalizeCuit(cuitRepresentada);
   const target = normalizeCuit(idPersona);
   if (!target) throw new SoapError('idPersona (CUIT a consultar) invalido', 400);
+  const clave = `${config.env}:${alcance}:${repre}:${target}`;
+  if (!opts.fresco) {
+    const e = cache.leer(clave);
+    if (e) return { datos: e.valor, cache: { usado: true, consultado: new Date(e.guardado).toISOString() } };
+  }
+  const datos = await consultarArca(alcance, repre, target);
+  cache.guardar(clave, datos);
+  return { datos, cache: { usado: false, consultado: new Date().toISOString() } };
+}
+
+async function consultarArca(alcance, repre, target) {
+  const cfg = PADRONES[alcance];
 
   const ta = await getAccessTicket(repre, cfg.service);
   const envelope =
@@ -52,4 +79,4 @@ async function consultarPersona(alcance, cuitRepresentada, idPersona) {
   return resp;
 }
 
-module.exports = { consultarPersona, PADRONES };
+module.exports = { consultarPersona, consultarPersonaConMeta, PADRONES, _cache: cache };

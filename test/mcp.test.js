@@ -85,9 +85,11 @@ test('mcp: respuestas largas se recortan bajo 20.000 caracteres', async () => {
 });
 
 // ---------- catalogo real de herramientas ----------
-test('mcp: exactamente las 5 herramientas de consulta pedidas', () => {
-  assert.deepStrictEqual(HERRAMIENTAS.map((x) => x.nombre).sort(),
-    ['comprobante', 'estado_arca', 'padron', 'puntos_de_venta', 'ultimo_comprobante']);
+test('mcp: exactamente las 10 herramientas de consulta', () => {
+  assert.deepStrictEqual(HERRAMIENTAS.map((x) => x.nombre).sort(), [
+    'comprobante', 'comprobantes_recientes', 'comunicaciones_ventanilla', 'estado_arca', 'padron',
+    'puntos_de_venta', 'riesgo_fiscal', 'ultimo_comprobante', 'vencimiento_certificado', 'vista_previa_comprobante',
+  ]);
 });
 test('mcp: ninguna herramienta emite ni expone el motor generico', async () => {
   const lista = (await servidorCon(HERRAMIENTAS).atender(rpc('tools/list'), ctx)).result.tools;

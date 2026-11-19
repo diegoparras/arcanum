@@ -473,4 +473,10 @@ module.exports = {
   consultar,
   getParams,
   PARAMS,
+  // Para la vista previa (services/vistaPrevia.js): mismas reglas que la emision real.
+  validarImportes,
+  validarIdentificacionConsumidorFinal,
+  previoIdempotente,
+  fmtDate,
+  UMBRAL_CF_IDENTIFICACION,
 };

@@ -37,6 +37,8 @@ const metrics = require('./services/metrics');
 const webhooks = require('./services/webhooks');
 const lotes = require('./services/lotes');
 const apikeys = require('./auth/apikeys');
+const vistaPrevia = require('./services/vistaPrevia');
+const { crearLimitador, crearDetector } = require('./auth/limites');
 const { requireRole, assertCuitAllowed, scopedRequiresCuit, assertPuedeEscribir } = require('./auth/permisos');
 const { crearServidor: crearServidorMcp } = require('./mcp/servidor');
 const { HERRAMIENTAS: HERRAMIENTAS_MCP } = require('./mcp/herramientas');
@@ -71,10 +73,31 @@ async function principalDeClave(req) {
   throw Object.assign(new Error('Clave invalida o dada de baja.'), { httpStatus: 401 });
 }
 
+// Limite de pedidos por clave de API (por minuto) y deteccion de uso anomalo.
+const limitador = crearLimitador();
+const detector = crearDetector();
+
+/** Marca el pedido con la clave (para la auditoria) y aplica su limite por minuto. */
+function aplicarLimiteDeClave(req, res, principal) {
+  if (principal.via !== 'clave') return;
+  req._claveId = principal.claveId;
+  req._claveNombre = principal.username;
+  req._user = principal.username;
+  const r = limitador.permitir(principal.claveId, principal.limitePorMinuto);
+  if (r.restantes !== null) res.setHeader('X-RateLimit-Remaining', String(r.restantes));
+  if (!r.ok) {
+    res.setHeader('Retry-After', String(r.reintentarEnS));
+    throw Object.assign(new Error(`Limite de pedidos de esta clave alcanzado. Proba de nuevo en ${r.reintentarEnS} s.`), { httpStatus: 429 });
+  }
+}
+
 // Autenticacion: clave maestra (rol admin, para n8n), clave con rol, o sesion de UI.
-async function checkAuth(req) {
+async function checkAuth(req, res) {
   const p = await principalDeClave(req);
-  if (p) return p;
+  if (p) {
+    aplicarLimiteDeClave(req, res, p);
+    return p;
+  }
   const sess = session.fromRequest(req);
   if (sess) return sess;
   throw Object.assign(new Error(MSG_SIN_CLAVE), { httpStatus: 401 });
@@ -87,7 +110,10 @@ const mcp = crearServidorMcp({
   version: config.version,
   herramientas: HERRAMIENTAS_MCP,
   timeoutMs: parseInt(process.env.ARCANUM_MCP_TIMEOUT_MS || '80000', 10),
-  instrucciones: 'Consulta de padron y comprobantes de ARCA a traves de Arcanum. Todas las herramientas son de solo lectura.',
+  instrucciones:
+    'Consulta de ARCA a traves de Arcanum: padron y riesgo fiscal de un CUIT, comprobantes, numeracion, puntos de venta, '
+    + 'e-Ventanilla, certificados y estado de ARCA. Todas las herramientas son de solo lectura; vista_previa_comprobante '
+    + 'valida un comprobante sin emitirlo.',
 });
 
 /** POST /mcp — Streamable HTTP sin estado. Solo con clave (Bearer o X-API-Key), nunca con cookie. */
@@ -109,12 +135,14 @@ async function handleMcp(req, res) {
   }
   req._user = principal.username;
   req._ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null;
+  aplicarLimiteDeClave(req, res, principal);
   const ctx = {
     principal,
     alLlamar: (herramienta) => { req._op = herramienta; },
   };
   const salida = await mcp.atender(await readTextBody(req), ctx);
   if (ctx.cuit) req._cuit = ctx.cuit;
+  if (ctx.cuitConsultado) req._cuitConsultado = ctx.cuitConsultado;
   if (salida === null) {
     res.writeHead(202);
     return res.end();
@@ -238,11 +266,12 @@ async function route(req, res, url) {
   if (url.pathname === '/mcp') return handleMcp(req, res);
 
   // A partir de aca, todo requiere autenticacion (clave o sesion).
-  const principal = await checkAuth(req);
-  req._user = principal.username;
   req._ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null;
-  // Rol "lectura" (usuario o clave): solo GET/HEAD, en todas las rutas. Falla cerrado.
-  assertPuedeEscribir(principal, req.method);
+  const principal = await checkAuth(req, res);
+  req._user = principal.username;
+  // Rol "lectura" (usuario o clave): solo GET/HEAD (mas una lista cerrada de POST que
+  // no escriben, como la vista previa), en todas las rutas. Falla cerrado.
+  assertPuedeEscribir(principal, req.method, url.pathname);
 
   // GET /api/auth/me  -> quien soy
   if (req.method === 'GET' && url.pathname === '/api/auth/me') {
@@ -391,8 +420,15 @@ async function route(req, res, url) {
       for (const inv of invoices) if (inv.cuit) assertCuitAllowed(principal, inv.cuit);
       return sendJson(res, 200, { ok: true, ...(await wsfev1.authorizeBatch(invoices)) });
     }
+    // POST /api/wsfev1/comprobantes/vista-previa  { cuit, ...comprobante } -> valida, NO emite
+    if (req.method === 'POST' && seg[2] === 'comprobantes' && seg[3] === 'vista-previa' && !seg[4]) {
+      const inv = conIdempotencia(req, await readJsonBody(req));
+      if (!inv.cuit) throw badRequest('Falta "cuit" (emisor) en el body');
+      assertCuitAllowed(principal, inv.cuit);
+      return sendJson(res, 200, { ok: true, vistaPrevia: await vistaPrevia.vistaPrevia(inv.cuit, inv) });
+    }
     // POST /api/wsfev1/comprobantes   { cuit, ...comprobante }
-    if (req.method === 'POST' && seg[2] === 'comprobantes') {
+    if (req.method === 'POST' && seg[2] === 'comprobantes' && !seg[3]) {
       requireRole(principal, 'superadmin', 'admin', 'operador');
       const inv = conIdempotencia(req, await readJsonBody(req));
       if (!inv.cuit) throw badRequest('Falta "cuit" (emisor) en el body');
@@ -566,8 +602,21 @@ async function route(req, res, url) {
       }
       return sendJson(res, 200, { ok: true, clave: await apikeys.crear(body, principal.username) });
     }
+    // POST /api/claves/:id/rotar  { graciaDias? } -> clave nueva; la anterior vence en N dias
+    if (req.method === 'POST' && seg[2] && seg[3] === 'rotar' && !seg[4]) {
+      const { rows } = await db.query('SELECT role FROM api_keys WHERE id = $1', [parseInt(seg[2], 10) || 0]);
+      if (rows[0] && rows[0].role === 'admin' && principal.role !== 'superadmin' && principal.via !== 'maestra') {
+        throw Object.assign(new Error('Solo un superadmin rota claves con rol admin'), { httpStatus: 403 });
+      }
+      const body = await readJsonBody(req).catch(() => ({}));
+      return sendJson(res, 200, { ok: true, clave: await apikeys.rotar(seg[2], body, principal.username) });
+    }
+    // GET /api/claves/:id/uso?dias=30
+    if (req.method === 'GET' && seg[2] && seg[3] === 'uso' && !seg[4]) {
+      return sendJson(res, 200, { ok: true, uso: await apikeys.uso(seg[2], q.get('dias')) });
+    }
     // DELETE /api/claves/:id  -> la da de baja (deja de funcionar al instante)
-    if (req.method === 'DELETE' && seg[2]) return sendJson(res, 200, { ok: true, ...(await apikeys.darDeBaja(seg[2])) });
+    if (req.method === 'DELETE' && seg[2] && !seg[3]) return sendJson(res, 200, { ok: true, ...(await apikeys.darDeBaja(seg[2])) });
   }
 
   // --- Webhooks (configuracion del sistema: solo admin/superadmin) ---
@@ -575,7 +624,9 @@ async function route(req, res, url) {
     requireRole(principal, 'superadmin', 'admin');
     if (req.method === 'GET' && !seg[2]) return sendJson(res, 200, { ok: true, webhooks: await webhooks.listar(), eventos: webhooks.EVENTOS });
     if (req.method === 'POST' && !seg[2]) return sendJson(res, 200, { ok: true, webhook: await webhooks.crear(await readJsonBody(req)) });
-    if (req.method === 'DELETE' && seg[2]) return sendJson(res, 200, { ok: true, ...(await webhooks.eliminar(seg[2])) });
+    // POST /api/webhooks/:id/probar -> manda un evento "prueba" y devuelve la respuesta del destino
+    if (req.method === 'POST' && seg[2] && seg[3] === 'probar') return sendJson(res, 200, { ok: true, prueba: await webhooks.probar(seg[2]) });
+    if (req.method === 'DELETE' && seg[2] && !seg[3]) return sendJson(res, 200, { ok: true, ...(await webhooks.eliminar(seg[2])) });
   }
 
   // --- Facturador masivo (lotes con seguimiento y aging) ---
@@ -666,8 +717,10 @@ async function route(req, res, url) {
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'padron' && seg[2] && seg[3]) {
     const cuitRepre = requireQ(q, 'cuit');
     assertCuitAllowed(principal, cuitRepre);
-    const datos = await padron.consultarPersona(seg[2], cuitRepre, seg[3]);
-    return sendJson(res, 200, { ok: true, alcance: seg[2], cuit: seg[3], datos });
+    req._cuitConsultado = tenants.normalizeCuit(seg[3]);
+    // ?fresco=1 ignora el cache del padron (por defecto se reusa la respuesta de la ultima hora).
+    const { datos, cache } = await padron.consultarPersonaConMeta(seg[2], cuitRepre, seg[3], { fresco: q.get('fresco') === '1' });
+    return sendJson(res, 200, { ok: true, alcance: seg[2], cuit: seg[3], datos, cache });
   }
 
   // --- WSAPOC (base de apocrifos) ---
@@ -675,6 +728,7 @@ async function route(req, res, url) {
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'apoc' && seg[2]) {
     const cuitRepre = requireQ(q, 'cuit');
     assertCuitAllowed(principal, cuitRepre);
+    req._cuitConsultado = tenants.normalizeCuit(seg[2]);
     const datos = await apoc.consultar(cuitRepre, seg[2]);
     return sendJson(res, 200, { ok: true, ...datos });
   }
@@ -684,7 +738,10 @@ async function route(req, res, url) {
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'contribuyente' && seg[2]) {
     const cuitRepre = requireQ(q, 'cuit');
     assertCuitAllowed(principal, cuitRepre);
-    const datos = await contribuyente.consolidar(cuitRepre, seg[2]);
+    req._cuitConsultado = tenants.normalizeCuit(seg[2]);
+    let emisorCondicion = '';
+    try { emisorCondicion = (await emisores.get(cuitRepre)).condicionIva || ''; } catch { /* sin datos del emisor */ }
+    const datos = await contribuyente.consolidar(cuitRepre, seg[2], { emisorCondicion, fresco: q.get('fresco') === '1' });
     return sendJson(res, 200, { ok: true, ...datos });
   }
 
@@ -781,11 +838,18 @@ function logRequest(req, res, url, startedAt) {
   const ok = res.statusCode < 400;
   // No bloqueamos la respuesta: log best-effort.
   db.query(
-    `INSERT INTO requests (cuit, service, operation, http_method, path, status, ok, duration_ms, usuario, ip)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    `INSERT INTO requests (cuit, service, operation, http_method, path, status, ok, duration_ms, usuario, ip, clave_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
     [req._cuit || url.searchParams.get('cuit') || null, service || null, req._op || null, req.method, url.pathname,
-      res.statusCode, ok, duration, req._user || null, req._ip || null],
+      res.statusCode, ok, duration, req._user || null, req._ip || null, req._claveId || null],
   ).catch(() => {});
+  // Uso anomalo de una clave (barrido de CUITs, muchos rechazos): aviso por webhook/email.
+  if (req._claveId) {
+    for (const a of detector.registrar({ id: req._claveId, nombre: req._claveNombre, status: res.statusCode, cuitConsultado: req._cuitConsultado })) {
+      console.warn(`[arcanum] uso anomalo de ${a.clave}: ${a.detalle}`);
+      webhooks.emitir('clave_anomala', a).catch(() => {});
+    }
+  }
 }
 
 const server = http.createServer(async (req, res) => {

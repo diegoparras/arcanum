@@ -82,3 +82,30 @@ La interfaz web y la documentacion quedan en `https://TU-DOMINIO/`.
 
 El esquema de la base se migra solo al arrancar (idempotente). Tus datos viven en
 el volumen de Postgres; respaldalo (`pg_dump`) junto con tu `ARCANUM_MASTER_KEY`.
+
+---
+
+## Prueba de emision en homologacion (antes de facturar en produccion)
+
+Saca un CAE real **de prueba** contra los servidores de homologacion de ARCA y verifica
+todo el circuito: ARCA responde, ultimo numero, vista previa, emision, que ARCA devuelva
+el mismo CAE al consultarlo y que un reintento con la misma clave de idempotencia no
+saque otro. Nunca toca produccion: el script fuerza el entorno `homo` y aborta si el
+endpoint no es de homologacion.
+
+1. En Arcanum (instancia local o con el entorno en `homo`), en **Clientes**, da de alta
+   el CUIT y descarga el CSR que genera.
+2. Entra a ARCA con clave fiscal y abri **WSASS - Autogestion Certificados Homologacion**
+   (adherilo en "Administrador de relaciones" si no aparece).
+3. En WSASS: *Nuevo certificado*, pega el CSR y copia el certificado que devuelve.
+4. En WSASS: *Crear autorizacion a servicio*, elegi el certificado y el servicio
+   **wsfe** (Facturacion electronica).
+5. En Arcanum, en **Clientes**, pega el certificado en ese CUIT.
+6. Corre la prueba:
+
+```bash
+docker compose exec arcanum node src/tools/prueba-homologacion.js --cuit 20111111112
+```
+
+Opciones: `--pv 1` (punto de venta), `--tipo 11` (11 = Factura C, 6 = Factura B,
+1 = Factura A) y `--total 100`. Termina con `PRUEBA OK` o con el paso que fallo.

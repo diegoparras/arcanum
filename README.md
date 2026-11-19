@@ -162,6 +162,10 @@ Además de la clave maestra (`API_KEY` del entorno), en **Usuarios → Claves de
 - **Rol por clave**: `lectura` (solo consulta: ni por la API REST ni por MCP puede emitir ni modificar nada), `operador` (puede emitir) o `admin`.
 - **CUITs permitidos** opcionales: la clave queda limitada a esos contribuyentes.
 - **Baja individual**: dar de baja una clave la corta al instante sin tocar las demás.
+- **Vencimiento** opcional (en días) y **rotación**: rotar crea una clave nueva con los mismos permisos y deja la anterior andando los días de gracia que elijas (7 por defecto), así cambiás la integración sin cortes.
+- **Límite por minuto** por clave (120 por defecto, `ARCANUM_CLAVE_LIMITE_MIN`; 0 lo apaga). Al pasarse responde `429` con `Retry-After`.
+- **Uso por clave**: pedidos, errores, rechazos, CUITs consultados, operaciones y últimos pedidos (botón "Uso").
+- **Alertas de uso anómalo**: si una clave consulta muchos CUITs distintos en una hora (`ARCANUM_ANOMALIA_CUITS_HORA`, 50) o acumula rechazos por permiso o por límite (`ARCANUM_ANOMALIA_RECHAZOS_HORA`, 20), se dispara el evento `clave_anomala`.
 - La clave se muestra **una sola vez** al crearla; Arcanum guarda solo su hash SHA-256 y nunca la escribe en los logs.
 
 ## Servidor MCP (solo consulta)
@@ -175,8 +179,13 @@ Además de la clave maestra (`API_KEY` del entorno), en **Usuarios → Claves de
 | `ultimo_comprobante` | Último número autorizado y próximo número para un punto de venta y tipo |
 | `puntos_de_venta` | Puntos de venta habilitados en ARCA para facturación electrónica |
 | `estado_arca` | Si ARCA responde ahora y el último estado conocido de cada servicio |
+| `riesgo_fiscal` | Semáforo (verde, amarillo, rojo) que cruza padrón A5 y base de apócrifos, con el comprobante sugerido |
+| `comprobantes_recientes` | Últimos comprobantes emitidos o importados por Arcanum, con filtros por fecha y receptor |
+| `comunicaciones_ventanilla` | Comunicaciones de e-Ventanilla de los últimos días (solo el listado: no las marca como leídas) |
+| `vencimiento_certificado` | Hasta cuándo sirve cada certificado cargado |
+| `vista_previa_comprobante` | Revisa un comprobante sin emitirlo: problemas, advertencias, número que le tocaría y el cuerpo listo para emitir |
 
-Todas son de solo lectura: la emisión y el motor genérico `/api/ws/...` no se exponen por MCP. Cada llamada corta a los 80 s (`ARCANUM_MCP_TIMEOUT_MS`) con un error claro y las respuestas se recortan por debajo de 20.000 caracteres. Las respuestas son datos JSON, nunca texto dirigido al asistente.
+Todas son de solo lectura: la emisión y el motor genérico `/api/ws/...` no se exponen por MCP. Para que un asistente facture, el flujo es: `vista_previa_comprobante`, la persona aprueba, y la emisión va por `POST /api/wsfev1/comprobantes` con una clave aparte de rol `operador` y el `idempotencyKey` que propone la vista previa. Cada llamada corta a los 80 s (`ARCANUM_MCP_TIMEOUT_MS`) con un error claro y las respuestas se recortan por debajo de 20.000 caracteres. Las respuestas son datos JSON, nunca texto dirigido al asistente.
 
 ```bash
 curl -s -X POST https://tu-arcanum/mcp \
@@ -184,6 +193,29 @@ curl -s -X POST https://tu-arcanum/mcp \
   -H "authorization: Bearer ark_..." \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"prueba","version":"1"}}}'
 ```
+
+## Vista previa de emisión
+
+`POST /api/wsfev1/comprobantes/vista-previa` recibe el mismo cuerpo que la emisión y **no emite nada**: valida importes, IVA, tipo, receptor (con su padrón si es CUIT), condición de IVA, fecha y RG 5866, sugiere la letra según emisor y receptor, y devuelve el número que le tocaría. Es la única excepción de `POST` permitida a las claves de rol `lectura`. En la UI es el botón **Vista previa** de Emitir.
+
+## Avisos proactivos
+
+Arcanum avisa por webhook (firmado con HMAC) y por email si hay SMTP configurado:
+
+| Evento | Cuándo |
+|---|---|
+| `arca_caido` / `arca_restablecido` | WSFEv1 deja de responder o vuelve (monitor cada 5 min) |
+| `cert_por_vencer` | Un certificado vence en menos de 30 días |
+| `comunicacion_nueva` | ARCA publica una comunicación en la e-Ventanilla de un CUIT (revisión cada hora, `ARCANUM_VENTANILLA_MIN`; la primera vez toma línea de base sin avisar lo viejo) |
+| `clave_por_vencer` | Una clave de API vence en menos de 7 días |
+| `clave_anomala` | Uso anómalo de una clave |
+| `comprobante_emitido` / `comprobante_rechazado` | Cada emisión |
+
+En **Webhooks**, el botón **Probar** manda un evento `prueba` y muestra qué contestó el destino.
+
+## Caché del padrón
+
+Las consultas de padrón se guardan en memoria una hora (`ARCANUM_PADRON_CACHE_S`, 0 lo apaga): ARCA se pone lenta en horas pico y los datos de un CUIT cambian poco. `?fresco=1` en `/api/padron` y `/api/contribuyente` (o `actualizar: true` en la herramienta MCP `padron`) fuerza la consulta a ARCA. Los errores nunca se guardan.
 
 ---
 

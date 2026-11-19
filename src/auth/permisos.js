@@ -30,10 +30,13 @@ function scopedRequiresCuit(principal) {
 // Solo lectura, fallando cerrado: un usuario o clave con rol "lectura" no puede hacer
 // nada que no sea GET/HEAD en la API REST. Asi no hay que acordarse de poner el chequeo
 // en cada ruta de escritura (emision, passthrough generico /api/ws, configuracion...).
-function assertPuedeEscribir(principal, method) {
-  if (principal.role === 'lectura' && method !== 'GET' && method !== 'HEAD') {
-    throw Object.assign(new Error('Acceso de solo lectura: este usuario o clave no puede emitir ni modificar nada.'), { httpStatus: 403 });
-  }
+// Excepcion explicita (lista cerrada): POST que solo calculan y no escriben nada.
+const POST_SOLO_LECTURA = new Set(['/api/wsfev1/comprobantes/vista-previa']);
+
+function assertPuedeEscribir(principal, method, pathname = '') {
+  if (principal.role !== 'lectura' || method === 'GET' || method === 'HEAD') return;
+  if (method === 'POST' && POST_SOLO_LECTURA.has(pathname)) return;
+  throw Object.assign(new Error('Acceso de solo lectura: este usuario o clave no puede emitir ni modificar nada.'), { httpStatus: 403 });
 }
 
-module.exports = { requireRole, assertCuitAllowed, scopedRequiresCuit, assertPuedeEscribir };
+module.exports = { requireRole, assertCuitAllowed, scopedRequiresCuit, assertPuedeEscribir, POST_SOLO_LECTURA };

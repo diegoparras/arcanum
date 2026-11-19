@@ -8,6 +8,11 @@
 //   ultimo_comprobante  -> ultimo numero autorizado (FECompUltimoAutorizado)
 //   puntos_de_venta     -> puntos de venta habilitados (FEParamGetPtosVenta)
 //   estado_arca         -> si ARCA responde (FEDummy en vivo + monitor de Arcanum)
+//   riesgo_fiscal       -> semaforo padron A5 + apocrifos (WSAPOC)
+//   comprobantes_recientes -> ultimos comprobantes registrados en Arcanum
+//   comunicaciones_ventanilla -> listado de e-Ventanilla (sin abrirlas: no las marca leidas)
+//   vencimiento_certificado -> vigencia de los certificados cargados
+//   vista_previa_comprobante -> valida un comprobante y muestra su numero, SIN emitir
 //
 // Las respuestas son datos (JSON), no instrucciones para un asistente.
 
@@ -17,8 +22,12 @@ const tenants = require('../auth/tenants');
 const { assertCuitAllowed } = require('../auth/permisos');
 const wsfev1 = require('../services/wsfev1');
 const padron = require('../services/padron');
-const { analizarPadron, asArray } = require('../services/contribuyente');
+const contribuyente = require('../services/contribuyente');
+const { analizarPadron, asArray } = contribuyente;
 const reglas = require('../services/reglas-comprobante');
+const emisores = require('../services/emisores');
+const eventanilla = require('../services/eventanilla');
+const vistaPrevia = require('../services/vistaPrevia');
 
 const TIPOS = {
   1: 'Factura A', 2: 'Nota de Debito A', 3: 'Nota de Credito A',
@@ -156,6 +165,7 @@ const padronTool = {
     properties: {
       cuit: { type: 'string', description: 'CUIT a consultar, 11 digitos (con o sin guiones).' },
       cuit_representada: { type: 'string', description: 'CUIT con certificado en Arcanum con el que se consulta. Opcional si hay uno solo.' },
+      actualizar: { type: 'boolean', description: 'Opcional. true = consultar a ARCA aunque haya una respuesta reciente guardada (por defecto se reusa la de la ultima hora).' },
     },
     required: ['cuit'],
     additionalProperties: false,
@@ -164,8 +174,9 @@ const padronTool = {
     const objetivo = cuit11(args.cuit, 'cuit');
     const repre = await resolverEmisor(ctx, args.cuit_representada, 'cuit_representada');
     ctx.cuit = repre;
-    const datos = await padron.consultarPersona('a5', repre, objetivo);
-    return resumirPadron(objetivo, datos);
+    ctx.cuitConsultado = objetivo;
+    const { datos, cache } = await padron.consultarPersonaConMeta('a5', repre, objetivo, { fresco: args.actualizar === true });
+    return { ...resumirPadron(objetivo, datos), consultadoEnArca: cache.consultado, desdeCache: cache.usado };
   },
 };
 
@@ -400,10 +411,279 @@ const estadoTool = {
   },
 };
 
-const HERRAMIENTAS = [padronTool, comprobanteTool, ultimoTool, puntosTool, estadoTool];
+// ---------- riesgo_fiscal ----------
+const riesgoTool = {
+  nombre: 'riesgo_fiscal',
+  titulo: 'Riesgo fiscal de un CUIT',
+  descripcion:
+    'Cruza el padron A5 con la base de apocrifos de ARCA (WSAPOC) y devuelve un semaforo para decidir si conviene facturarle '
+    + 'o comprarle a un CUIT. JSON con: semaforo (VERDE, AMARILLO o ROJO), motivo, nombre, condicion frente al IVA, estado de '
+    + 'la clave, domicilio, si figura como apocrifo (y desde cuando) y el comprobante sugerido segun la condicion del emisor '
+    + 'y del receptor. Solo lectura.',
+  esquema: {
+    type: 'object',
+    properties: {
+      cuit: { type: 'string', description: 'CUIT a evaluar, 11 digitos.' },
+      cuit_representada: { type: 'string', description: 'CUIT con certificado en Arcanum con el que se consulta. Opcional si hay uno solo.' },
+    },
+    required: ['cuit'],
+    additionalProperties: false,
+  },
+  async ejecutar(args, ctx) {
+    const objetivo = cuit11(args.cuit, 'cuit');
+    const repre = await resolverEmisor(ctx, args.cuit_representada, 'cuit_representada');
+    ctx.cuit = repre;
+    ctx.cuitConsultado = objetivo;
+    let emisorCondicion = '';
+    try { emisorCondicion = (await emisores.get(repre)).condicionIva || ''; } catch { /* sin datos */ }
+    const r = await contribuyente.consolidar(repre, objetivo, { emisorCondicion });
+    return {
+      cuit: r.cuit,
+      nombre: r.nombre,
+      semaforo: r.semaforo,
+      motivo: r.motivoRiesgo || (r.semaforo === 'VERDE' ? 'Clave activa, condicion de IVA determinada y no figura como apocrifo.' : null),
+      fiscal: {
+        tipoContribuyente: r.fiscal.tipoContribuyente,
+        condicionIVA: r.fiscal.condicionIVA,
+        estadoClave: r.fiscal.estadoClave,
+        domicilio: r.fiscal.domicilio,
+      },
+      apocrifo: r.apoc,
+      comprobanteSugerido: r.comprobanteSugerido,
+      advertencias: r.advertencias,
+      consultadoEnArca: r.padronCache && r.padronCache.consultado,
+      fuente: 'ARCA, padron A5 + base de apocrifos (WSAPOC)',
+      entorno: config.env,
+    };
+  },
+};
+
+// ---------- comprobantes_recientes ----------
+const recientesTool = {
+  nombre: 'comprobantes_recientes',
+  titulo: 'Comprobantes recientes',
+  descripcion:
+    'Lista los ultimos comprobantes que el emisor saco (o importo) a traves de Arcanum, del mas nuevo al mas viejo. JSON con '
+    + 'cantidad, suma de importes y, por cada uno: comprobante (0003-00000124), tipo, fecha, importe, CAE, vencimiento del CAE y '
+    + 'documento del receptor. Se puede filtrar por fechas y por documento del receptor. Los comprobantes hechos por fuera de '
+    + 'Arcanum (por ejemplo en la web de ARCA) no aparecen: para esos, usar "comprobante". Solo lectura.',
+  esquema: {
+    type: 'object',
+    properties: {
+      desde: { type: 'string', description: 'Opcional. Fecha minima del comprobante, AAAA-MM-DD.' },
+      hasta: { type: 'string', description: 'Opcional. Fecha maxima del comprobante, AAAA-MM-DD.' },
+      receptor: { type: 'string', description: 'Opcional. CUIT, CUIL o DNI del receptor.' },
+      limite: { type: 'integer', minimum: 1, maximum: 50, description: 'Cuantos devolver (1 a 50, por defecto 20).' },
+      cuit_emisor: { type: 'string', description: 'CUIT emisor con certificado en Arcanum. Opcional si hay uno solo.' },
+    },
+    additionalProperties: false,
+  },
+  async ejecutar(args, ctx) {
+    const emisor = await resolverEmisor(ctx, args.cuit_emisor);
+    ctx.cuit = emisor;
+    const fecha = (v, campo) => {
+      if (!v) return null;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw error(`"${campo}" debe tener la forma AAAA-MM-DD`);
+      return String(v);
+    };
+    const limite = Math.min(Math.max(parseInt(args.limite, 10) || 20, 1), 50);
+    const cond = ['cuit = $1', 'entorno = $2'];
+    const params = [emisor, config.env];
+    const desde = fecha(args.desde, 'desde');
+    const hasta = fecha(args.hasta, 'hasta');
+    if (desde) { params.push(desde); cond.push(`fecha >= $${params.length}`); }
+    if (hasta) { params.push(hasta); cond.push(`fecha <= $${params.length}`); }
+    if (args.receptor) { params.push(tenants.normalizeCuit(args.receptor)); cond.push(`doc_nro = $${params.length}`); }
+    params.push(limite);
+    const { rows } = await db.query(
+      `SELECT punto_venta, tipo_cbte, numero, cae, cae_vto, fecha, importe_total, doc_tipo, doc_nro, resultado, origen, raw->>'receptorNombre' AS receptor_nombre
+       FROM comprobantes WHERE ${cond.join(' AND ')} ORDER BY fecha DESC NULLS LAST, created_at DESC LIMIT $${params.length}`,
+      params,
+    );
+    const lista = rows.map((r) => ({
+      comprobante: formatearNumero(r.punto_venta, r.numero),
+      tipo: Number(r.tipo_cbte),
+      tipoNombre: TIPOS[r.tipo_cbte] || null,
+      fecha: fechaIso(r.fecha),
+      importeTotal: Number(r.importe_total),
+      cae: r.cae,
+      caeVencimiento: fechaIso(r.cae_vto),
+      receptor: {
+        tipoDocumento: DOC_TIPOS[r.doc_tipo] || (r.doc_tipo != null ? String(r.doc_tipo) : null),
+        numeroDocumento: r.doc_nro && r.doc_nro !== '0' ? r.doc_nro : null,
+        nombre: r.receptor_nombre || null,
+      },
+      origen: r.origen === 'importado' ? 'importado por QR' : 'emitido por Arcanum',
+    }));
+    return {
+      emisor,
+      cantidad: lista.length,
+      sumaImportes: +lista.reduce((a, x) => a + (x.importeTotal || 0), 0).toFixed(2),
+      filtros: { desde, hasta, receptor: args.receptor || null, limite },
+      comprobantes: lista,
+      fuente: 'Registro de Arcanum',
+      entorno: config.env,
+    };
+  },
+};
+
+// ---------- comunicaciones_ventanilla ----------
+/** "Leida" / "No leida" (con o sin tilde) -> true / false; otro texto -> null. */
+function estadoLeida(desc) {
+  const e = String(desc || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  if (!e.includes('leid')) return null;
+  return !/\bno\s+leid/.test(e);
+}
+
+const ventanillaTool = {
+  nombre: 'comunicaciones_ventanilla',
+  titulo: 'Comunicaciones de e-Ventanilla',
+  descripcion:
+    'Lista las comunicaciones que ARCA publico en la e-Ventanilla (domicilio fiscal electronico) del CUIT, de los ultimos dias '
+    + '(hasta 31). JSON con, por cada una: id, fecha de publicacion, vencimiento, asunto, organismo que la envio, prioridad, '
+    + 'estado (leida o no) y si trae adjunto. Solo muestra el listado: no abre el mensaje, asi que no la marca como leida en '
+    + 'ARCA. Solo lectura.',
+  esquema: {
+    type: 'object',
+    properties: {
+      dias: { type: 'integer', minimum: 1, maximum: 31, description: 'Cuantos dias para atras (1 a 31, por defecto 30).' },
+      solo_no_leidas: { type: 'boolean', description: 'Opcional. true = solo las que todavia no se leyeron.' },
+      cuit: { type: 'string', description: 'CUIT con certificado en Arcanum cuya e-Ventanilla se consulta. Opcional si hay uno solo.' },
+    },
+    additionalProperties: false,
+  },
+  async ejecutar(args, ctx) {
+    const cuit = await resolverEmisor(ctx, args.cuit, 'cuit');
+    ctx.cuit = cuit;
+    const dias = Math.min(Math.max(parseInt(args.dias, 10) || 30, 1), 31);
+    const desde = new Date(Date.now() - dias * 86400000).toISOString().slice(0, 10);
+    const r = await eventanilla.consultarComunicaciones(cuit, { desde, entorno: config.env });
+    let lista = r.comunicaciones.map((c) => ({
+      id: c.idComunicacion,
+      fechaPublicacion: c.fechaPublicacion,
+      fechaVencimiento: c.fechaVencimiento,
+      asunto: c.asunto,
+      organismo: c.sistemaPublicadorDesc,
+      prioridad: c.prioridad,
+      estado: c.estadoDesc,
+      leida: estadoLeida(c.estadoDesc),
+      tieneAdjunto: c.tieneAdjunto,
+    }));
+    if (args.solo_no_leidas === true) lista = lista.filter((c) => c.leida !== true);
+    lista.sort((a, b) => String(b.fechaPublicacion || '').localeCompare(String(a.fechaPublicacion || '')));
+    return {
+      cuit,
+      rango: r.rango,
+      cantidad: lista.length,
+      comunicaciones: lista.slice(0, 100),
+      fuente: 'ARCA, e-Ventanilla (consultarComunicaciones)',
+      entorno: config.env,
+    };
+  },
+};
+
+// ---------- vencimiento_certificado ----------
+const certTool = {
+  nombre: 'vencimiento_certificado',
+  titulo: 'Vencimiento de los certificados',
+  descripcion:
+    'Indica hasta cuando sirven los certificados digitales de ARCA cargados en Arcanum (sin ellos no se puede facturar ni '
+    + 'consultar). JSON con, por cada CUIT: nombre, fecha de vencimiento, dias que faltan y estado (vigente, por vencer si '
+    + 'faltan 30 dias o menos, o vencido). Solo lectura.',
+  esquema: {
+    type: 'object',
+    properties: {
+      cuit: { type: 'string', description: 'Opcional. Un CUIT puntual; si falta, se listan todos los que ve la clave.' },
+    },
+    additionalProperties: false,
+  },
+  async ejecutar(args, ctx) {
+    let lista = await tenants.list(config.env);
+    const p = ctx.principal;
+    if (p.cuitAllow && p.cuitAllow.length && !['superadmin', 'admin'].includes(p.role)) lista = lista.filter((t) => p.cuitAllow.includes(t.cuit));
+    if (args.cuit) {
+      const c = cuit11(args.cuit);
+      assertCuitAllowed(p, c);
+      lista = lista.filter((t) => t.cuit === c);
+      ctx.cuit = c;
+    }
+    const certificados = lista.map((t) => ({
+      cuit: t.cuit,
+      nombre: t.nombre || null,
+      tieneCertificado: t.tieneCertificado,
+      vence: fechaIso(t.certVigenciaHasta),
+      diasParaVencer: t.diasParaVencer,
+      estado: !t.tieneCertificado ? 'sin certificado' : t.certVencido ? 'vencido' : t.diasParaVencer <= 30 ? 'por vencer' : 'vigente',
+    }));
+    return { entorno: config.env, cantidad: certificados.length, certificados, fuente: 'Arcanum' };
+  },
+};
+
+// ---------- vista_previa_comprobante ----------
+const vistaPreviaTool = {
+  nombre: 'vista_previa_comprobante',
+  titulo: 'Vista previa de un comprobante (no emite)',
+  descripcion:
+    'Revisa un comprobante antes de emitirlo, sin emitirlo ni reservar numero. Valida importes, IVA, receptor (consulta su '
+    + 'padron si es CUIT), condicion de IVA, fecha y tipo, y devuelve JSON con: valido (si/no), problemas que harian que ARCA lo '
+    + 'rechace, advertencias, el numero que le tocaria, la letra sugerida y "cuerpoParaEmitir": el cuerpo listo para '
+    + 'POST /api/wsfev1/comprobantes, con clave de idempotencia. Emitir requiere una clave de emision aparte: esta herramienta '
+    + 'nunca emite. Solo lectura.',
+  esquema: {
+    type: 'object',
+    properties: {
+      puntoVenta: { type: 'integer', minimum: 1, description: 'Punto de venta.' },
+      tipoComprobante: { type: 'integer', description: 'Codigo ARCA: 11 Factura C, 6 Factura B, 1 Factura A, 13/8/3 notas de credito.' },
+      concepto: { type: 'integer', enum: [1, 2, 3], description: '1 productos, 2 servicios, 3 ambos. Por defecto 1.' },
+      tipoDocReceptor: { type: 'integer', description: '80 CUIT, 86 CUIL, 96 DNI, 99 consumidor final sin identificar.' },
+      nroDocReceptor: { type: 'string', description: 'Numero de documento del receptor ("0" si es consumidor final sin identificar).' },
+      condicionIvaReceptor: { type: 'integer', description: '1 Responsable Inscripto, 4 Exento, 5 Consumidor Final, 6 Monotributo. Si falta y el receptor es CUIT, se sugiere segun el padron.' },
+      receptorNombre: { type: 'string', description: 'Opcional. Nombre o razon social del receptor (para el PDF).' },
+      fecha: { type: 'string', description: 'Opcional. AAAA-MM-DD; por defecto hoy.' },
+      importeNeto: { type: 'number', description: 'Neto gravado. En comprobantes C, el total.' },
+      importeIva: { type: 'number', description: 'IVA total (0 en comprobantes C).' },
+      importeExento: { type: 'number' },
+      importeNoGravado: { type: 'number' },
+      importeTributos: { type: 'number' },
+      importeTotal: { type: 'number', description: 'Total del comprobante.' },
+      alicuotasIva: {
+        type: 'array',
+        description: 'IVA por alicuota (A y B). id: 5 = 21%, 4 = 10,5%, 6 = 5%, 3 = 27%, 8 = 2,5%, 9 = 0%.',
+        items: { type: 'object', properties: { id: { type: 'integer' }, baseImponible: { type: 'number' }, importe: { type: 'number' } }, required: ['id', 'baseImponible', 'importe'] },
+      },
+      comprobantesAsociados: {
+        type: 'array',
+        description: 'Obligatorio en notas de credito y debito: el comprobante que corrigen.',
+        items: { type: 'object', properties: { tipo: { type: 'integer' }, puntoVenta: { type: 'integer' }, numero: { type: 'integer' }, cuit: { type: 'string' }, fecha: { type: 'string' } }, required: ['tipo', 'puntoVenta', 'numero'] },
+      },
+      fechaServicioDesde: { type: 'string' },
+      fechaServicioHasta: { type: 'string' },
+      fechaVtoPago: { type: 'string' },
+      moneda: { type: 'string', description: 'PES por defecto. DOL, 060 (euro), etc.' },
+      cotizacion: { type: 'number', description: 'Obligatoria si la moneda no es PES.' },
+      idempotencyKey: { type: 'string', description: 'Opcional. Si ya se emitio uno con esta clave, se avisa.' },
+      cuit_emisor: { type: 'string', description: 'CUIT emisor con certificado en Arcanum. Opcional si hay uno solo.' },
+    },
+    required: ['puntoVenta', 'tipoComprobante', 'importeTotal'],
+    additionalProperties: false,
+  },
+  async ejecutar(args, ctx) {
+    const emisor = await resolverEmisor(ctx, args.cuit_emisor);
+    ctx.cuit = emisor;
+    const inv = { ...args };
+    delete inv.cuit_emisor;
+    if (inv.tipoDocReceptor === 80 && inv.nroDocReceptor) ctx.cuitConsultado = tenants.normalizeCuit(inv.nroDocReceptor);
+    return vistaPrevia.vistaPrevia(emisor, inv);
+  },
+};
+
+const HERRAMIENTAS = [
+  padronTool, comprobanteTool, ultimoTool, puntosTool, estadoTool,
+  riesgoTool, recientesTool, ventanillaTool, certTool, vistaPreviaTool,
+];
 
 module.exports = {
   HERRAMIENTAS,
   // Funciones puras expuestas para tests.
-  _internos: { parseTipo, parseComprobante, formatearNumero, fechaIso, cuit11, resumirPadron, TIPOS },
+  _internos: { parseTipo, parseComprobante, formatearNumero, fechaIso, cuit11, resumirPadron, estadoLeida, TIPOS },
 };

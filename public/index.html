@@ -374,23 +374,47 @@ async function vEmitir(){
     <div class="f3"><div><label>Alícuota IVA</label><select id="e_alic" onchange="recalc()"><option value="5">21%</option><option value="4">10.5%</option><option value="6">5%</option><option value="3">27%</option><option value="9">0%</option></select></div>
     <div><label>IVA</label><input id="e_iva" class="mono" readonly></div>
     <div><label>Total</label><input id="e_total" class="mono" readonly></div></div>
-    <button class="primary" style="margin-top:16px" onclick="emitir()">Emitir y obtener CAE</button>
+    <div class="f2"><div><label>Condición IVA del receptor</label><select id="e_condiva"><option value="5">Consumidor Final</option><option value="1">Responsable Inscripto</option><option value="6">Monotributo</option><option value="4">Exento</option></select></div><div></div></div>
+    <div class="row" style="margin-top:16px"><button onclick="previsualizar()">Vista previa</button>
+    <button class="primary" onclick="emitir()">Emitir y obtener CAE</button></div>
    </div><div id="e_result" style="margin-top:16px"></div>`;
   recalc();
 }
 const ALIC={5:21,4:10.5,6:5,3:27,9:0};
 function recalc(){const neto=parseFloat($('#e_neto').value||0);const p=ALIC[$('#e_alic').value]||0;const iva=+(neto*p/100).toFixed(2);
   $('#e_iva').value=iva.toFixed(2);$('#e_total').value=(neto+iva).toFixed(2);}
-async function emitir(){
+function cuerpoEmision(){
   const neto=parseFloat($('#e_neto').value||0),iva=parseFloat($('#e_iva').value||0),tipo=+$('#e_tipo').value,alic=+$('#e_alic').value;
   const tipoC=[11,13].includes(tipo);
   const body={cuit:$('#e_cuit').value,puntoVenta:+$('#e_pv').value,tipoComprobante:tipo,concepto:+$('#e_concepto').value,
-    tipoDocReceptor:+$('#e_doctipo').value,nroDocReceptor:$('#e_docnro').value,
+    tipoDocReceptor:+$('#e_doctipo').value,nroDocReceptor:$('#e_docnro').value,condicionIvaReceptor:+$('#e_condiva').value,
     importeNeto:tipoC?0:neto,importeIva:tipoC?0:iva,importeTotal:tipoC?neto+iva:neto+iva,
     alicuotasIva:tipoC?[]:[{id:alic,baseImponible:neto,importe:iva}]};
-  if(tipoC){body.importeNeto=neto+iva;body.importeIva=0;body.importeTotal=neto+iva;}
+  if(tipoC){body.importeNeto=+(neto+iva).toFixed(2);body.importeIva=0;body.importeTotal=+(neto+iva).toFixed(2);}
+  // Clave de idempotencia por formulario: un doble clic o un reintento no saca dos CAE.
+  if(!window._idemEmitir)window._idemEmitir='ui-'+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));
+  body.idempotencyKey=window._idemEmitir;
+  return body;
+}
+async function previsualizar(){
+  $('#e_result').innerHTML='<p class="hint">Revisando con ARCA…</p>';
+  try{const {vistaPrevia:p}=await api('/api/wsfev1/comprobantes/vista-previa',{method:'POST',body:JSON.stringify(cuerpoEmision())});
+    const li=a=>a.map(x=>`<li>${esc(x)}</li>`).join('');
+    const rec=p.receptor&&p.receptor.padron?`<tr><th>Receptor</th><td>${esc(p.receptor.padron.nombre||'')} <span class="hint">${esc(p.receptor.padron.condicionIVA||'')}</span></td></tr>`:'';
+    $('#e_result').innerHTML=`<div class="card"><span class="tag ${p.valido?'ok':'no'}">${p.valido?'LISTO PARA EMITIR':'CON PROBLEMAS'}</span> <span class="hint">No se emitió nada.</span>
+      <table style="margin-top:10px">${p.comprobante?`<tr><th>Comprobante</th><td class="mono">${esc(p.comprobante)}</td></tr>`:''}
+      <tr><th>Fecha</th><td class="mono">${esc(p.fecha||'')}</td></tr><tr><th>Total</th><td class="mono">$${Number(p.importes?p.importes.total:0).toFixed(2)}</td></tr>${rec}
+      ${p.letraSugerida?`<tr><th>Letra sugerida</th><td>${esc(p.letraSugerida)}</td></tr>`:''}</table>
+      ${p.problemas.length?`<h4>Problemas</h4><ul>${li(p.problemas)}</ul>`:''}
+      ${p.advertencias.length?`<h4>Advertencias</h4><ul class="hint">${li(p.advertencias)}</ul>`:''}
+      ${p.numeroPropuesto?`<p class="hint">${esc(p.numeroNota)}</p>`:''}</div>`;
+  }catch(e){$('#e_result').innerHTML=`<div class="card"><span class="tag no">ERROR</span><p>${esc(e.message)}</p></div>`;}
+}
+async function emitir(){
+  const body=cuerpoEmision();
   $('#e_result').innerHTML='<p class="hint">Emitiendo…</p>';
   try{ const r=await api('/api/wsfev1/comprobantes',{method:'POST',body:JSON.stringify(body)});const c=r.comprobante;
+    window._idemEmitir=null; // el proximo comprobante lleva clave nueva
     $('#e_result').innerHTML=`<div class="card"><span class="tag ok">APROBADO</span>
       <table style="margin-top:10px"><tr><th>CAE</th><td class="mono">${c.cae}</td></tr>
       <tr><th>Vto CAE</th><td class="mono">${c.caeVencimiento}</td></tr>
@@ -438,7 +462,7 @@ async function doImportarQr(){
 async function vWebhooks(){
   const v=$('#view');const {webhooks,eventos}=await api('/api/webhooks');
   const rows=webhooks.map(w=>`<tr><td class="mono">${w.url}</td><td class="hint">${(w.eventos||[]).join(', ')}</td>
-    <td><button class="ghost" onclick="delWebhook(${w.id})">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="3" class="hint">Sin webhooks.</td></tr>';
+    <td style="white-space:nowrap"><button class="ghost" onclick="probarWebhook(${Number(w.id)})">Probar</button> <button class="ghost" onclick="delWebhook(${Number(w.id)})">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="3" class="hint">Sin webhooks.</td></tr>';
   v.innerHTML=`<h2>Webhooks</h2><div class="card"><table><thead><tr><th>URL</th><th>Eventos</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
    <div class="card" style="margin-top:14px;max-width:560px"><h3 style="margin-top:0">Nuevo webhook</h3>
    <label>URL (n8n, etc.)</label><input id="w_url" class="mono" placeholder="https://...">
@@ -449,6 +473,11 @@ async function vWebhooks(){
 async function addWebhook(){const ev=[...document.querySelectorAll('#w_ev input:checked')].map(o=>o.value);
   if(!ev.length){toast('Elegí al menos un evento',true);return;}
   try{await api('/api/webhooks',{method:'POST',body:JSON.stringify({url:$('#w_url').value,eventos:ev,secret:$('#w_secret').value||null})});toast('Webhook creado');vWebhooks();}catch(e){toast(e.message,true);}}
+async function probarWebhook(id){
+  toast('Enviando prueba…');
+  try{const {prueba:p}=await api(`/api/webhooks/${id}/probar`,{method:'POST',body:'{}'});
+    toast(p.entregado?`Entregado (HTTP ${p.status}, ${p.ms} ms)`:`No se entregó: ${p.error||('HTTP '+p.status)}`,!p.entregado);}catch(e){toast(e.message,true);}
+}
 async function delWebhook(id){try{await api('/api/webhooks/'+id,{method:'DELETE'});vWebhooks();}catch(e){toast(e.message,true);}}
 
 /* ---------- FACTURADOR MASIVO (lotes con aging) ---------- */
@@ -530,27 +559,64 @@ async function cargarClaves(){
   try{
     const {claves}=await api('/api/claves');
     const f=d=>d?new Date(d).toLocaleString('es-AR'):'nunca';
-    const rows=claves.map(c=>`<tr${c.dadaDeBaja?' style="opacity:.55"':''}><td>${esc(c.nombre)}</td><td><code>${esc(c.prefijo||'')}</code></td><td><span class="tag">${esc(c.rol)}</span></td>
-      <td class="hint">${c.cuits&&c.cuits.length?c.cuits.map(esc).join(', '):'todos'}</td><td class="hint">${f(c.ultimoUso)}</td>
-      <td>${c.dadaDeBaja?`<span class="hint">de baja ${f(c.dadaDeBaja)}</span>`:`<button onclick="bajaClave(${Number(c.id)},'${esc(c.nombre).replace(/'/g,'')}')">Dar de baja</button>`}</td></tr>`).join('');
-    box.innerHTML=`<div class="card">${claves.length?`<table><thead><tr><th>Nombre</th><th>Prefijo</th><th>Rol</th><th>CUITs</th><th>Último uso</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="hint" style="margin:0">Todavía no hay claves.</p>'}</div>
-     <div class="card" style="margin-top:14px;max-width:480px"><h3 style="margin-top:0">Nueva clave</h3>
+    const fd=d=>d?new Date(d).toLocaleDateString('es-AR'):'';
+    const est=c=>c.estado==='activa'?(c.vence&&new Date(c.vence)-Date.now()<7*864e5?`<span class="tag warn">vence ${fd(c.vence)}</span>`:`<span class="tag ok">activa</span>`)
+      :c.estado==='vencida'?`<span class="tag no">vencida</span>`:`<span class="tag no">de baja</span>`;
+    const rows=claves.map(c=>{const n=esc(c.nombre).replace(/'/g,'');const act=c.estado==='activa';
+      return `<tr${act?'':' style="opacity:.55"'}><td>${esc(c.nombre)}${c.rotadaDe?' <span class="hint">(rotada)</span>':''}</td><td><code>${esc(c.prefijo||'')}</code></td><td><span class="tag">${esc(c.rol)}</span></td>
+      <td class="hint">${c.cuits&&c.cuits.length?c.cuits.map(esc).join(', '):'todos'}</td>
+      <td>${est(c)}${act&&c.vence&&new Date(c.vence)-Date.now()>=7*864e5?`<div class="hint">vence ${fd(c.vence)}</div>`:''}</td>
+      <td class="hint">${f(c.ultimoUso)}<div>${c.usos30d||0} pedidos en 30 días${c.limitePorMinuto?` · tope ${c.limitePorMinuto}/min`:''}</div></td>
+      <td style="white-space:nowrap"><button class="ghost" onclick="usoClave(${Number(c.id)})">Uso</button>
+      ${act?`<button class="ghost" onclick="rotarClave(${Number(c.id)},'${n}')">Rotar</button> <button class="ghost" onclick="bajaClave(${Number(c.id)},'${n}')">Dar de baja</button>`:''}</td></tr>`;}).join('');
+    box.innerHTML=`<div class="card">${claves.length?`<table><thead><tr><th>Nombre</th><th>Prefijo</th><th>Rol</th><th>CUITs</th><th>Estado</th><th>Uso</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="hint" style="margin:0">Todavía no hay claves.</p>'}</div>
+     <div class="card" style="margin-top:14px;max-width:520px"><h3 style="margin-top:0">Nueva clave</h3>
       <label>Nombre</label><input id="k_nom" placeholder="SecretarIA">
       <label>Rol</label><select id="k_rol"><option value="lectura">lectura (solo consulta)</option><option value="operador">operador (puede emitir)</option>${ME.role==='superadmin'?'<option value="admin">admin</option>':''}</select>
       <label>CUITs permitidos (opcional, separados por coma)</label><input id="k_cuits" placeholder="Vacío = todos">
+      <div class="f2"><div><label>Vence en (días, opcional)</label><input id="k_vence" class="mono" inputmode="numeric" placeholder="Sin vencimiento"></div>
+      <div><label>Límite por minuto (opcional)</label><input id="k_lim" class="mono" inputmode="numeric" placeholder="Por defecto 120"></div></div>
       <button class="primary" style="margin-top:14px" onclick="crearClave()">Crear clave</button></div>`;
   }catch(e){box.innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
+function mostrarClaveNueva(clave,extra){
+  window._claveNueva=clave.clave;
+  modal(`<h3 style="margin-top:0">${extra?'Clave rotada':'Clave creada'}</h3>
+    <p class="hint">Clave <b>${esc(clave.nombre)}</b> (${esc(clave.rol)}). Copiala ahora: no se vuelve a mostrar. Arcanum solo guarda su huella (hash).${extra||''}</p>
+    <pre style="white-space:pre-wrap;word-break:break-all;overflow:hidden">${esc(clave.clave)}</pre>
+    <div class="row"><button onclick="navigator.clipboard.writeText(window._claveNueva);toast('Clave copiada')">Copiar</button>
+    <button class="primary" onclick="window._claveNueva=null;closeModal();cargarClaves()">Listo, ya la guardé</button></div>`);
+}
 async function crearClave(){
   const cuits=$('#k_cuits').value.split(',').map(s=>s.replace(/\D/g,'')).filter(Boolean);
-  try{
-    const {clave}=await api('/api/claves',{method:'POST',body:JSON.stringify({nombre:$('#k_nom').value.trim(),rol:$('#k_rol').value,cuits})});
-    window._claveNueva=clave.clave;
-    modal(`<h3 style="margin-top:0">Clave creada</h3>
-      <p class="hint">Clave <b>${esc(clave.nombre)}</b> (${esc(clave.rol)}). Copiala ahora: no se vuelve a mostrar. Arcanum solo guarda su huella (hash).</p>
-      <pre style="white-space:pre-wrap;word-break:break-all;overflow:hidden">${esc(clave.clave)}</pre>
-      <div class="row"><button onclick="navigator.clipboard.writeText(window._claveNueva);toast('Clave copiada')">Copiar</button>
-      <button class="primary" onclick="window._claveNueva=null;closeModal();cargarClaves()">Listo, ya la guardé</button></div>`);
+  const body={nombre:$('#k_nom').value.trim(),rol:$('#k_rol').value,cuits};
+  if($('#k_vence').value.trim())body.venceDias=$('#k_vence').value.trim();
+  if($('#k_lim').value.trim())body.limitePorMinuto=$('#k_lim').value.trim();
+  try{const {clave}=await api('/api/claves',{method:'POST',body:JSON.stringify(body)});mostrarClaveNueva(clave);}catch(e){toast(e.message,true);}
+}
+async function rotarClave(id,nombre){
+  const g=prompt(`Rotar la clave "${nombre}": se crea una nueva con los mismos permisos. ¿Cuántos días sigue funcionando la anterior? (0 a 90)`,'7');
+  if(g===null)return;
+  try{const {clave}=await api(`/api/claves/${id}/rotar`,{method:'POST',body:JSON.stringify({graciaDias:g})});
+    mostrarClaveNueva(clave,` La anterior deja de funcionar el ${new Date(clave.anterior.vence).toLocaleString('es-AR')}: reemplazala antes en la integración.`);}catch(e){toast(e.message,true);}
+}
+async function usoClave(id){
+  try{const {uso:u}=await api(`/api/claves/${id}/uso?dias=30`);
+    // Eje de 30 dias completo (los dias sin pedidos quedan en cero).
+    const porDia={};u.porDia.forEach(d=>{porDia[String(d.dia).slice(0,10)]=d;});
+    const dias=[...Array(u.dias)].map((_,i)=>{const t=new Date(Date.now()-(u.dias-1-i)*864e5).toISOString().slice(0,10);return porDia[t]||{dia:t,n:0,errores:0};});
+    const max=Math.max(1,...dias.map(d=>d.n));
+    const barras=`<div style="display:flex;align-items:flex-end;gap:2px;height:60px;margin:10px 0 2px;border-bottom:1px solid var(--line,#ddd)">${dias.map(d=>`<div title="${d.dia.split('-').reverse().join('/')}: ${d.n} pedidos, ${d.errores} con error" style="flex:1;height:${d.n?Math.max(3,Math.round(d.n/max*58)):0}px;background:var(--accent);border-radius:2px 2px 0 0;opacity:${d.errores&&d.errores===d.n?'.55':'1'}"></div>`).join('')}</div><p class="hint" style="margin:0">Pedidos por día, últimos ${u.dias} días</p>`;
+    const ops=u.porOperacion.map(o=>`<tr><td class="mono">${esc(o.operacion||'')}</td><td>${o.n}</td><td>${o.errores}</td><td style="white-space:nowrap">${o.latenciaMedia} ms</td></tr>`).join('')||'<tr><td colspan="4" class="hint">Sin pedidos.</td></tr>';
+    const ult=u.ultimos.map(r=>`<tr><td class="hint" style="white-space:nowrap">${new Date(r.ts).toLocaleString('es-AR')}</td><td class="mono">${esc(r.operacion||(r.metodo+' '+r.ruta))}</td><td><span class="tag ${r.status<400?'ok':'no'}">${r.status}</span></td><td style="white-space:nowrap">${r.ms} ms</td></tr>`).join('')||'<tr><td colspan="4" class="hint">Sin pedidos.</td></tr>';
+    modal(`<h3 style="margin-top:0">Uso de la clave</h3><p class="hint" style="margin-top:-6px"><b>${esc(u.clave.nombre)}</b> · <code>${esc(u.clave.prefijo||'')}</code> · ${esc(u.clave.rol)}</p>
+      <div class="row" style="gap:18px;flex-wrap:wrap"><div><b>${u.total}</b> <span class="hint">pedidos</span></div><div><b>${u.errores}</b> <span class="hint">con error</span></div>
+      <div><b>${u.denegados}</b> <span class="hint">sin permiso</span></div><div><b>${u.limitados}</b> <span class="hint">por límite</span></div>
+      <div><b>${u.cuitsDistintos}</b> <span class="hint">CUITs</span></div><div><b>${u.latenciaMedia} ms</b> <span class="hint">promedio</span></div></div>
+      ${barras}
+      <h4>Por operación</h4><div style="max-height:180px;overflow:auto"><table><thead><tr><th>Operación</th><th>Pedidos</th><th>Errores</th><th>Latencia</th></tr></thead><tbody>${ops}</tbody></table></div>
+      <h4>Últimos pedidos</h4><div style="max-height:200px;overflow:auto"><table><tbody>${ult}</tbody></table></div>
+      <div class="row" style="margin-top:12px"><button class="primary" onclick="closeModal()">Cerrar</button></div>`);
   }catch(e){toast(e.message,true);}
 }
 async function bajaClave(id,nombre){

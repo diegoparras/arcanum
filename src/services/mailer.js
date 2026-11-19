@@ -36,6 +36,9 @@ const ASUNTOS = {
   cert_por_vencer: 'Certificado por vencer',
   arca_caido: 'ARCA no responde',
   arca_restablecido: 'ARCA restablecido',
+  comunicacion_nueva: 'Nueva comunicacion en e-Ventanilla',
+  clave_por_vencer: 'Clave de API por vencer',
+  clave_anomala: 'Uso anomalo de una clave de API',
 };
 
 async function notify(evento, data) {

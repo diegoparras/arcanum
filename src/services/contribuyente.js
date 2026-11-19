@@ -90,7 +90,7 @@ function analizarPadron(datos = {}) {
 /**
  * @param {string} cuitRepresentada  CUIT del titular del certificado (contador)
  * @param {string} cuitConsulta      CUIT a analizar
- * @param {object} [opts]            { entorno }
+ * @param {object} [opts]            { entorno, fresco, emisorCondicion }
  */
 async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
   const repre = normalizeCuit(cuitRepresentada);
@@ -99,13 +99,13 @@ async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
 
   // Las dos consultas en paralelo. APOC es best-effort: si falla, no abortamos.
   const [pRes, aRes] = await Promise.allSettled([
-    padron.consultarPersona('a5', repre, target),
+    padron.consultarPersonaConMeta('a5', repre, target, { fresco: opts.fresco }),
     apoc.consultar(repre, target, opts.entorno),
   ]);
 
   if (pRes.status === 'rejected') throw pRes.reason; // sin padron no hay analisis
 
-  const datos = pRes.value || {};
+  const datos = pRes.value.datos || {};
   const { dg, estadoClave, nombre, esMonotributo, tipoContribuyente, condicionIVA, tipoComprobante } = analizarPadron(datos);
 
   // --- APOC ---
@@ -139,8 +139,9 @@ async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
 
   // Sugerencia de comprobante a emitir (requiere condicion del emisor configurada).
   const receptorCondicionId = reglas.idDesdeTipoContribuyente(tipoContribuyente);
+  // Condicion del emisor: la del CUIT (opts.emisorCondicion) o la global por env.
   const sugerencia = reglas.sugerirComprobante({
-    emisorCondicion: (config.emisor && config.emisor.condicionIva) || '',
+    emisorCondicion: opts.emisorCondicion || (config.emisor && config.emisor.condicionIva) || '',
     receptorCondicionId,
   });
 
@@ -173,6 +174,7 @@ async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
     },
     advertencias,
     fuentes: ['padron_a5', 'wsapoc'],
+    padronCache: pRes.value.cache,
   };
 }
 

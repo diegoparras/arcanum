@@ -184,6 +184,22 @@ ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS cuit_allow TEXT[];
 ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS created_by TEXT;
 ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS api_keys_hash_idx ON api_keys (key_hash);
+-- Vencimiento, limite por minuto y rotacion (la nueva apunta a la anterior).
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS rate_limit INT;
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS rotated_from INT;
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS aviso_vence_at TIMESTAMPTZ;
+-- Uso por clave (auditoria): que clave hizo cada pedido.
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS clave_id INT;
+CREATE INDEX IF NOT EXISTS requests_clave_idx ON requests (clave_id, ts DESC) WHERE clave_id IS NOT NULL;
+-- e-Ventanilla: comunicaciones ya vistas (para avisar solo las nuevas).
+CREATE TABLE IF NOT EXISTS ventanilla_vistas (
+  cuit             TEXT NOT NULL,
+  entorno          TEXT NOT NULL,
+  id_comunicacion  BIGINT NOT NULL,
+  vista_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (cuit, entorno, id_comunicacion)
+);
 
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS csr_pem TEXT;
 -- Datos fiscales del emisor POR CUIT (para el encabezado legal del PDF).

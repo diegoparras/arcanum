@@ -3,6 +3,37 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.8.0] - 2026-11-18
+
+### Nuevo
+- **5 herramientas MCP mas, todas de solo lectura**: `riesgo_fiscal` (semaforo padron A5 +
+  apocrifos con comprobante sugerido), `comprobantes_recientes`, `comunicaciones_ventanilla`
+  (solo el listado: no las marca como leidas), `vencimiento_certificado` y
+  `vista_previa_comprobante`. Total 10.
+- **Vista previa de emision** (`POST /api/wsfev1/comprobantes/vista-previa` y boton en Emitir):
+  valida importes, IVA, tipo, receptor con su padron, condicion de IVA, fecha y RG 5866,
+  sugiere la letra y muestra el numero que le tocaria, sin emitir ni reservar numero.
+- **Claves de API**: vencimiento opcional, rotacion con dias de gracia, limite de pedidos por
+  minuto (429 con Retry-After) y panel de uso por clave (pedidos, errores, rechazos, CUITs,
+  operaciones, ultimos pedidos).
+- **Alertas de uso anomalo** por clave (barrido de CUITs o muchos rechazos) con el evento
+  `clave_anomala`.
+- **Avisos proactivos**: eventos `comunicacion_nueva` (e-Ventanilla, revision cada hora con
+  linea de base), `clave_por_vencer` y `clave_anomala`; boton "Probar" en Webhooks.
+- **Cache del padron** de una hora (`ARCANUM_PADRON_CACHE_S`), con `?fresco=1` para forzar.
+- **Prueba de emision en homologacion**: `src/tools/prueba-homologacion.js` saca un CAE de
+  prueba y verifica numeracion, CAE en ARCA e idempotencia. Pasos en DESPLIEGUE.md.
+
+### Corregido
+- La pantalla Emitir no mandaba `condicionIvaReceptor` (obligatoria por RG 5616) ni clave de
+  idempotencia: ahora manda las dos, y un doble clic ya no puede sacar dos CAE.
+- `riesgo_fiscal` y `/api/contribuyente` sugieren la letra con la condicion del emisor de ESE
+  CUIT (antes, solo la global por variable de entorno).
+
+### Tests
+- `test/mejoras.test.js` (20 tests): cache, limite, anomalias, vista previa, estado de claves,
+  excepcion de solo lectura. Total 67.
+
 ## [0.7.0] - 2026-11-18
 
 ### Nuevo

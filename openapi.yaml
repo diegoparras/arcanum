@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arcanum — Gateway REST para ARCA (ex-AFIP)
-  version: 0.7.0
+  version: 0.8.0
   description: >
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
@@ -121,8 +121,23 @@ paths:
     post:
       tags: [Claves]
       summary: Crea una clave de API. La clave en claro se devuelve una sola vez.
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [nombre, rol], properties: { nombre: { type: string, example: SecretarIA }, rol: { type: string, enum: [lectura, operador, admin] }, cuits: { type: array, items: { type: string } } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [nombre, rol], properties: { nombre: { type: string, example: SecretarIA }, rol: { type: string, enum: [lectura, operador, admin] }, cuits: { type: array, items: { type: string } }, venceDias: { type: integer, minimum: 1, maximum: 3650 }, limitePorMinuto: { type: integer, minimum: 1 } } } } } }
       responses: { '200': { description: clave creada }, '400': { description: datos invalidos }, '403': { description: rol insuficiente } }
+  /api/claves/{id}/rotar:
+    post:
+      tags: [Claves]
+      summary: Rota una clave. Crea una nueva con los mismos permisos; la anterior vence en graciaDias (7 por defecto).
+      parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
+      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { graciaDias: { type: integer, minimum: 0, maximum: 90 } } } } } }
+      responses: { '200': { description: clave nueva (en claro, una sola vez) y vencimiento de la anterior }, '404': { description: no existe, vencida o dada de baja } }
+  /api/claves/{id}/uso:
+    get:
+      tags: [Claves]
+      summary: Uso de una clave (totales, por operacion, por dia y ultimos pedidos)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: dias, in: query, required: false, schema: { type: integer, default: 30, maximum: 365 } }
+      responses: { '200': { description: ok } }
   /api/claves/{id}:
     delete:
       tags: [Claves]
@@ -250,6 +265,16 @@ paths:
         - { name: tipoComprobante, in: query, required: true, schema: { type: integer } }
         - { name: numero, in: query, required: true, schema: { type: integer } }
       responses: { '200': { description: ok } }
+  /api/wsfev1/comprobantes/vista-previa:
+    post:
+      tags: [WSFEv1]
+      summary: Vista previa de un comprobante (NO emite ni reserva numero)
+      description: >
+        Mismo cuerpo que la emision. Valida importes, IVA, tipo, receptor (con su padron si es CUIT), condicion de IVA,
+        fecha y RG 5866, sugiere la letra y devuelve el numero que le tocaria y el cuerpo listo para emitir.
+        Permitido tambien a las claves de rol lectura.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Comprobante' } } } }
+      responses: { '200': { description: "vistaPrevia: { valido, problemas, advertencias, numeroPropuesto, cuerpoParaEmitir, ... }" } }
   /api/wsfev1/comprobantes:
     post:
       tags: [WSFEv1]
@@ -315,7 +340,8 @@ paths:
         - { name: alcance, in: path, required: true, schema: { type: string, enum: [a13, a5] } }
         - { name: cuit, in: path, required: true, schema: { type: string, description: CUIT a consultar } }
         - { name: cuit, in: query, required: true, schema: { type: string, description: CUIT representante (cert cargado) } }
-      responses: { '200': { description: datos del contribuyente } }
+        - { name: fresco, in: query, required: false, schema: { type: string, enum: ['1'] }, description: "1 = ignorar el cache de una hora y consultar a ARCA" }
+      responses: { '200': { description: "datos del contribuyente + cache: { usado, consultado }" } }
 
   /api/apoc/{cuit}:
     get:
@@ -441,6 +467,8 @@ paths:
       responses: { '200': { description: ok } }
   /api/webhooks/{id}:
     delete: { tags: [Webhooks], summary: Borra un webhook (admin+), parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
+  /api/webhooks/{id}/probar:
+    post: { tags: [Webhooks], summary: Manda un evento "prueba" y devuelve lo que contesto el destino (admin+), parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: "prueba: { entregado, status, ms }" }, '404': { description: no existe } } }
 
   /api/wsaa/{cuit}/{service}:
     get:

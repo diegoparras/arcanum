@@ -3,8 +3,11 @@
 // Claves de API con rol, para integraciones (n8n, SecretarIA, scripts).
 // - En la base se guarda solo el hash SHA-256: la clave en claro se muestra UNA vez,
 //   al crearla. Son 192 bits aleatorios, asi que un hash rapido alcanza.
-// - Cada clave tiene rol (lectura | operador | admin) y, opcionalmente, CUITs permitidos.
+// - Cada clave tiene rol (lectura | operador | admin) y, opcionalmente, CUITs permitidos,
+//   fecha de vencimiento y limite de pedidos por minuto.
 // - Se dan de baja de a una (revoked_at) sin tocar las demas ni la clave maestra.
+// - Rotar crea una clave nueva con los mismos permisos; la anterior sigue andando
+//   unos dias de gracia y despues vence sola.
 // - Se aceptan en X-API-Key o en Authorization: Bearer <clave>.
 
 const crypto = require('crypto');
@@ -13,6 +16,14 @@ const { normalizeCuit } = require('./tenants');
 
 const ROLES = ['lectura', 'operador', 'admin'];
 const PREFIJO = 'ark_';
+const MAX_VENCE_DIAS = 3650;
+const GRACIA_DEFAULT = 7;
+
+const COLS = 'id, nombre, role, prefix, cuit_allow, created_at, created_by, last_used, revoked_at, expires_at, rate_limit, rotated_from';
+
+function err(message, httpStatus) {
+  return Object.assign(new Error(message), { httpStatus });
+}
 
 function hash(clave) {
   return crypto.createHash('sha256').update(String(clave)).digest('hex');
@@ -32,6 +43,27 @@ function normCuits(lista) {
   return out.length ? [...new Set(out)] : null;
 }
 
+/** Dias hasta el vencimiento (entero, null = no vence, 0 o 1-n para dias corridos). */
+function normDias(v, campo, max) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = parseInt(v, 10);
+  if (!Number.isFinite(n) || n < 1 || n > max) throw err(`"${campo}" debe ser un numero de 1 a ${max}`, 400);
+  return n;
+}
+
+function normLimite(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = parseInt(v, 10);
+  if (!Number.isFinite(n) || n < 1 || n > 100000) throw err('"limitePorMinuto" debe ser un numero de 1 a 100000', 400);
+  return n;
+}
+
+function estadoDe(r, ahora = Date.now()) {
+  if (r.revoked_at) return 'dada_de_baja';
+  if (r.expires_at && new Date(r.expires_at).getTime() <= ahora) return 'vencida';
+  return 'activa';
+}
+
 function fmt(r) {
   return {
     id: r.id,
@@ -43,30 +75,41 @@ function fmt(r) {
     creadaPor: r.created_by || null,
     ultimoUso: r.last_used || null,
     dadaDeBaja: r.revoked_at || null,
+    vence: r.expires_at || null,
+    limitePorMinuto: r.rate_limit || null,
+    rotadaDe: r.rotated_from || null,
+    estado: estadoDe(r),
+    ...(r.usos_30d !== undefined ? { usos30d: Number(r.usos_30d) } : {}),
   };
 }
 
+function nuevaClave() {
+  return PREFIJO + crypto.randomBytes(24).toString('hex');
+}
+
 /** Crea una clave. Devuelve la clave en claro (unica vez) + sus datos. */
-async function crear({ nombre, rol, cuits } = {}, creadaPor = null) {
+async function crear({ nombre, rol, cuits, venceDias, limitePorMinuto } = {}, creadaPor = null) {
   const n = String(nombre || '').trim().slice(0, 80);
-  if (!n) throw Object.assign(new Error('Falta el nombre de la clave (ej. "SecretarIA")'), { httpStatus: 400 });
-  if (!ROLES.includes(rol)) {
-    throw Object.assign(new Error(`Rol invalido: usa ${ROLES.join(', ')}`), { httpStatus: 400 });
-  }
-  const clave = PREFIJO + crypto.randomBytes(24).toString('hex');
+  if (!n) throw err('Falta el nombre de la clave (ej. "SecretarIA")', 400);
+  if (!ROLES.includes(rol)) throw err(`Rol invalido: usa ${ROLES.join(', ')}`, 400);
+  const dias = normDias(venceDias, 'venceDias', MAX_VENCE_DIAS);
+  const limite = normLimite(limitePorMinuto);
+  const clave = nuevaClave();
   const { rows } = await db.query(
-    `INSERT INTO api_keys (nombre, key_hash, role, prefix, cuit_allow, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6)
-     RETURNING id, nombre, role, prefix, cuit_allow, created_at, created_by, last_used, revoked_at`,
-    [n, hash(clave), rol, clave.slice(0, 10), normCuits(cuits), creadaPor],
+    `INSERT INTO api_keys (nombre, key_hash, role, prefix, cuit_allow, created_by, expires_at, rate_limit)
+     VALUES ($1,$2,$3,$4,$5,$6, CASE WHEN $7::int IS NULL THEN NULL ELSE now() + make_interval(days => $7::int) END, $8)
+     RETURNING ${COLS}`,
+    [n, hash(clave), rol, clave.slice(0, 10), normCuits(cuits), creadaPor, dias, limite],
   );
   return { ...fmt(rows[0]), clave };
 }
 
 async function listar() {
   const { rows } = await db.query(
-    `SELECT id, nombre, role, prefix, cuit_allow, created_at, created_by, last_used, revoked_at
-     FROM api_keys ORDER BY (revoked_at IS NULL) DESC, created_at DESC`,
+    `SELECT ${COLS.split(', ').map((c) => `k.${c}`).join(', ')},
+            (SELECT count(*) FROM requests r WHERE r.clave_id = k.id AND r.ts > now() - interval '30 days') AS usos_30d
+     FROM api_keys k
+     ORDER BY (k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > now())) DESC, k.created_at DESC`,
   );
   return rows.map(fmt);
 }
@@ -76,15 +119,50 @@ async function darDeBaja(id) {
     'UPDATE api_keys SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL RETURNING id, nombre',
     [parseInt(id, 10) || 0],
   );
-  if (!rows.length) throw Object.assign(new Error('Clave no encontrada o ya dada de baja'), { httpStatus: 404 });
+  if (!rows.length) throw err('Clave no encontrada o ya dada de baja', 404);
   return { id: rows[0].id, nombre: rows[0].nombre, dadaDeBaja: true };
 }
 
-/** Devuelve el principal de una clave vigente, o null si no existe o esta dada de baja. */
+/**
+ * Rota una clave: crea una nueva con el mismo nombre, rol, CUITs, limite y politica de
+ * vencimiento, y deja la anterior andando `graciaDias` mas (despues vence sola).
+ */
+async function rotar(id, { graciaDias } = {}, creadaPor = null) {
+  const gracia = graciaDias === undefined || graciaDias === null || graciaDias === ''
+    ? GRACIA_DEFAULT
+    : parseInt(graciaDias, 10);
+  if (!Number.isFinite(gracia) || gracia < 0 || gracia > 90) throw err('"graciaDias" debe ser un numero de 0 a 90', 400);
+  return db.tx(async (client) => {
+    const { rows: viejas } = await client.query(
+      `SELECT ${COLS} FROM api_keys WHERE id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now()) FOR UPDATE`,
+      [parseInt(id, 10) || 0],
+    );
+    const v = viejas[0];
+    if (!v) throw err('Clave no encontrada, vencida o dada de baja', 404);
+    // Misma duracion que la original (si vencia), contada desde hoy.
+    const duracionMs = v.expires_at ? new Date(v.expires_at).getTime() - new Date(v.created_at).getTime() : null;
+    const clave = nuevaClave();
+    const { rows } = await client.query(
+      `INSERT INTO api_keys (nombre, key_hash, role, prefix, cuit_allow, created_by, expires_at, rate_limit, rotated_from)
+       VALUES ($1,$2,$3,$4,$5,$6, CASE WHEN $7::bigint IS NULL THEN NULL ELSE now() + ($7::bigint * interval '1 millisecond') END, $8, $9)
+       RETURNING ${COLS}`,
+      [v.nombre, hash(clave), v.role, clave.slice(0, 10), v.cuit_allow, creadaPor, duracionMs, v.rate_limit, v.id],
+    );
+    const { rows: vieja } = await client.query(
+      `UPDATE api_keys SET expires_at = LEAST(COALESCE(expires_at, 'infinity'::timestamptz), now() + make_interval(days => $2::int))
+       WHERE id = $1 RETURNING expires_at`,
+      [v.id, gracia],
+    );
+    return { ...fmt(rows[0]), clave, anterior: { id: v.id, vence: vieja[0].expires_at } };
+  });
+}
+
+/** Devuelve el principal de una clave vigente, o null si no existe, vencio o esta dada de baja. */
 async function verificar(clave) {
   if (!clave || !String(clave).startsWith(PREFIJO)) return null;
   const { rows } = await db.query(
-    'SELECT id, nombre, role, cuit_allow, last_used FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL',
+    `SELECT id, nombre, role, cuit_allow, last_used, rate_limit, expires_at FROM api_keys
+     WHERE key_hash = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`,
     [hash(clave)],
   );
   const k = rows[0];
@@ -99,7 +177,69 @@ async function verificar(clave) {
     cuitAllow: k.cuit_allow && k.cuit_allow.length ? k.cuit_allow : null,
     via: 'clave',
     claveId: k.id,
+    limitePorMinuto: k.rate_limit || null,
+    vence: k.expires_at || null,
   };
 }
 
-module.exports = { crear, listar, darDeBaja, verificar, extraerClave, hash, ROLES, PREFIJO };
+/** Uso de una clave en los ultimos `dias`: totales, por operacion, por dia y ultimos pedidos. */
+async function uso(id, dias = 30) {
+  const i = parseInt(id, 10) || 0;
+  const d = Math.min(Math.max(parseInt(dias, 10) || 30, 1), 365);
+  const { rows: k } = await db.query(`SELECT ${COLS} FROM api_keys WHERE id = $1`, [i]);
+  if (!k.length) throw err('Clave no encontrada', 404);
+  const desde = `now() - make_interval(days => ${d})`;
+  const [tot, ops, serie, ult] = await Promise.all([
+    db.query(
+      `SELECT count(*) AS total, count(*) FILTER (WHERE NOT ok) AS errores,
+              count(*) FILTER (WHERE status = 429) AS limitados, count(*) FILTER (WHERE status = 403) AS denegados,
+              round(avg(duration_ms)) AS latencia, count(DISTINCT cuit) AS cuits
+       FROM requests WHERE clave_id = $1 AND ts > ${desde}`, [i]),
+    db.query(
+      `SELECT service, coalesce(operation, http_method || ' ' || path) AS operacion, count(*) AS n,
+              count(*) FILTER (WHERE NOT ok) AS errores, round(avg(duration_ms)) AS latencia
+       FROM requests WHERE clave_id = $1 AND ts > ${desde}
+       GROUP BY 1, 2 ORDER BY n DESC LIMIT 30`, [i]),
+    db.query(
+      `SELECT ts::date AS dia, count(*) AS n, count(*) FILTER (WHERE NOT ok) AS errores
+       FROM requests WHERE clave_id = $1 AND ts > ${desde} GROUP BY 1 ORDER BY 1`, [i]),
+    db.query(
+      `SELECT ts, http_method, path, service, operation, status, duration_ms, cuit
+       FROM requests WHERE clave_id = $1 ORDER BY ts DESC LIMIT 25`, [i]),
+  ]);
+  const t = tot.rows[0];
+  return {
+    clave: fmt(k[0]),
+    dias: d,
+    total: Number(t.total),
+    errores: Number(t.errores),
+    limitados: Number(t.limitados),
+    denegados: Number(t.denegados),
+    latenciaMedia: Number(t.latencia) || 0,
+    cuitsDistintos: Number(t.cuits),
+    porOperacion: ops.rows.map((r) => ({ servicio: r.service, operacion: r.operacion, n: Number(r.n), errores: Number(r.errores), latenciaMedia: Number(r.latencia) || 0 })),
+    porDia: serie.rows.map((r) => ({ dia: r.dia, n: Number(r.n), errores: Number(r.errores) })),
+    ultimos: ult.rows.map((r) => ({ ts: r.ts, metodo: r.http_method, ruta: r.path, servicio: r.service, operacion: r.operation, status: r.status, ms: r.duration_ms, cuit: r.cuit })),
+  };
+}
+
+/**
+ * Claves activas que vencen dentro de `dias` y todavia no se avisaron (marca el aviso).
+ * La usa el daemon de vencimientos para el webhook clave_por_vencer.
+ */
+async function porVencerSinAviso(dias = 7) {
+  const { rows } = await db.query(
+    `UPDATE api_keys SET aviso_vence_at = now()
+     WHERE revoked_at IS NULL AND expires_at IS NOT NULL
+       AND expires_at > now() AND expires_at < now() + make_interval(days => $1::int)
+       AND (aviso_vence_at IS NULL OR aviso_vence_at < expires_at - make_interval(days => $1::int))
+     RETURNING id, nombre, role, expires_at`,
+    [dias],
+  );
+  return rows.map((r) => ({ id: r.id, nombre: r.nombre, rol: r.role, vence: r.expires_at, dias: Math.ceil((new Date(r.expires_at).getTime() - Date.now()) / 86400000) }));
+}
+
+module.exports = {
+  crear, listar, darDeBaja, rotar, verificar, uso, porVencerSinAviso,
+  extraerClave, hash, estadoDe, ROLES, PREFIJO, GRACIA_DEFAULT,
+};
