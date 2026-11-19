@@ -151,7 +151,39 @@ Arcanum también te puede avisar a vos: configurás **webhooks** (firmados con H
 | `GET  /api/metrics` · `/metrics` | Métricas (JSON y Prometheus) |
 | `GET /docs` | OpenAPI interactivo |
 
-Toda la API se autentica con `X-API-Key` (ideal para n8n) o con la sesión del panel.
+Toda la API se autentica con `X-API-Key`, con `Authorization: Bearer <clave>` o con la sesión del panel. Las emisiones aceptan el encabezado `Idempotency-Key` (o `idempotencyKey` en el cuerpo): un reintento devuelve el comprobante ya emitido, sin pedir otro CAE.
+
+---
+
+## Claves de API
+
+Además de la clave maestra (`API_KEY` del entorno), en **Usuarios → Claves de API** se crean claves propias para cada integración:
+
+- **Rol por clave**: `lectura` (solo consulta: ni por la API REST ni por MCP puede emitir ni modificar nada), `operador` (puede emitir) o `admin`.
+- **CUITs permitidos** opcionales: la clave queda limitada a esos contribuyentes.
+- **Baja individual**: dar de baja una clave la corta al instante sin tocar las demás.
+- La clave se muestra **una sola vez** al crearla; Arcanum guarda solo su hash SHA-256 y nunca la escribe en los logs.
+
+## Servidor MCP (solo consulta)
+
+`POST /mcp` publica un servidor [Model Context Protocol](https://modelcontextprotocol.io) sobre Streamable HTTP, sin estado, para asistentes como SecretarIA. Exige una clave (`Authorization: Bearer <clave>` o `X-API-Key`); sin clave o con una clave inválida responde `401`.
+
+| Herramienta | Devuelve |
+|---|---|
+| `padron` | Razón social, condición frente al IVA, domicilio fiscal, actividades y estado de la clave (padrón A5) |
+| `comprobante` | Fecha, importes, CAE, vencimiento del CAE y receptor de un comprobante (ej. `0003-00000124`) |
+| `ultimo_comprobante` | Último número autorizado y próximo número para un punto de venta y tipo |
+| `puntos_de_venta` | Puntos de venta habilitados en ARCA para facturación electrónica |
+| `estado_arca` | Si ARCA responde ahora y el último estado conocido de cada servicio |
+
+Todas son de solo lectura: la emisión y el motor genérico `/api/ws/...` no se exponen por MCP. Cada llamada corta a los 80 s (`ARCANUM_MCP_TIMEOUT_MS`) con un error claro y las respuestas se recortan por debajo de 20.000 caracteres. Las respuestas son datos JSON, nunca texto dirigido al asistente.
+
+```bash
+curl -s -X POST https://tu-arcanum/mcp \
+  -H "content-type: application/json" -H "accept: application/json, text/event-stream" \
+  -H "authorization: Bearer ark_..." \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"prueba","version":"1"}}}'
+```
 
 ---
 
@@ -159,7 +191,7 @@ Toda la API se autentica con `X-API-Key` (ideal para n8n) o con la sesión del p
 
 - **Firma local**: la clave privada se usa solo para firmar el TRA, en memoria, dentro del contenedor. No se transmite a ningún lado.
 - **Cifrado en reposo**: claves privadas cifradas con AES-256-GCM; la master key vive fuera de la base.
-- **Roles**: superadmin / admin / operador / lectura. Las operaciones sensibles (clientes, webhooks, usuarios, catálogo) exigen rol.
+- **Roles**: superadmin / admin / operador / lectura. Las operaciones sensibles (clientes, webhooks, usuarios, catálogo) exigen rol. El rol `lectura` (usuario o clave) solo puede hacer `GET`: la regla falla cerrada, para cualquier ruta nueva también.
 - **Scope por CUIT** opcional: un usuario puede quedar limitado a ciertos CUITs (cierra el acceso cruzado).
 - **Anti fuerza bruta** en el login, **anti-SSRF** en los webhooks, comparaciones en tiempo constante, imagen sin root, auditoría de peticiones (usuario + IP).
 - En producción: `ARCANUM_ENV=prod`, secretos propios y detrás de HTTPS.

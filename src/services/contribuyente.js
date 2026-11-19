@@ -45,29 +45,14 @@ function nombreDe(dg) {
 }
 
 /**
- * @param {string} cuitRepresentada  CUIT del titular del certificado (contador)
- * @param {string} cuitConsulta      CUIT a analizar
- * @param {object} [opts]            { entorno }
+ * Analiza la respuesta del padron A5: nombre, estado de la clave y condicion frente
+ * al IVA. Funcion pura (la usan el semaforo y la herramienta MCP "padron").
  */
-async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
-  const repre = normalizeCuit(cuitRepresentada);
-  const target = normalizeCuit(cuitConsulta);
-  if (!target) throw new SoapError('CUIT a consultar invalido', 400);
-
-  // Las dos consultas en paralelo. APOC es best-effort: si falla, no abortamos.
-  const [pRes, aRes] = await Promise.allSettled([
-    padron.consultarPersona('a5', repre, target),
-    apoc.consultar(repre, target, opts.entorno),
-  ]);
-
-  if (pRes.status === 'rejected') throw pRes.reason; // sin padron no hay analisis
-
-  const datos = pRes.value || {};
+function analizarPadron(datos = {}) {
   const dg = datos.datosGenerales || {};
   const estadoClave = dg.estadoClave || null;
   const nombre = nombreDe(dg) || 'N/A';
 
-  // --- Condicion frente al IVA ---
   const esMonotributo = !!(datos.datosMonotributo && datos.datosMonotributo.categoriaMonotributo);
   const impuestos = asArray(datos.datosRegimenGeneral && datos.datosRegimenGeneral.impuesto);
   const tieneImp = (id) => impuestos.some((i) => String(i.idImpuesto) === id);
@@ -99,6 +84,29 @@ async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
     condicionIVA = 'No determinado';
     tipoComprobante = 'Consultar';
   }
+  return { dg, estadoClave, nombre, esMonotributo, impuestos, tipoContribuyente, condicionIVA, tipoComprobante };
+}
+
+/**
+ * @param {string} cuitRepresentada  CUIT del titular del certificado (contador)
+ * @param {string} cuitConsulta      CUIT a analizar
+ * @param {object} [opts]            { entorno }
+ */
+async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
+  const repre = normalizeCuit(cuitRepresentada);
+  const target = normalizeCuit(cuitConsulta);
+  if (!target) throw new SoapError('CUIT a consultar invalido', 400);
+
+  // Las dos consultas en paralelo. APOC es best-effort: si falla, no abortamos.
+  const [pRes, aRes] = await Promise.allSettled([
+    padron.consultarPersona('a5', repre, target),
+    apoc.consultar(repre, target, opts.entorno),
+  ]);
+
+  if (pRes.status === 'rejected') throw pRes.reason; // sin padron no hay analisis
+
+  const datos = pRes.value || {};
+  const { dg, estadoClave, nombre, esMonotributo, tipoContribuyente, condicionIVA, tipoComprobante } = analizarPadron(datos);
 
   // --- APOC ---
   const apocOk = aRes.status === 'fulfilled';
@@ -168,4 +176,4 @@ async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
   };
 }
 
-module.exports = { consolidar };
+module.exports = { consolidar, analizarPadron, asArray };

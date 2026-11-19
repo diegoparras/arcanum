@@ -3,6 +3,38 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.7.0] - 2026-11-18
+
+### Nuevo
+- **Servidor MCP de solo consulta** en `POST /mcp` (JSON-RPC 2.0, Streamable HTTP, sin estado)
+  para asistentes como SecretarIA. Herramientas: `padron`, `comprobante`, `ultimo_comprobante`,
+  `puntos_de_venta` y `estado_arca`, todas marcadas `readOnlyHint`. No expone la emision ni el
+  motor generico. Corte por llamada a los 80 s (`ARCANUM_MCP_TIMEOUT_MS`) con error claro,
+  respuestas recortadas por debajo de 20.000 caracteres y siempre como datos JSON.
+- **Claves de API con rol** (`lectura`, `operador`, `admin`), CUITs permitidos opcionales y baja
+  individual. Se guardan como hash SHA-256 y se muestran una sola vez. Panel en
+  Usuarios > Claves de API y endpoints `/api/claves`.
+- La clave (maestra o de la tabla) se acepta tambien como `Authorization: Bearer <clave>`.
+- Encabezado `Idempotency-Key` en las emisiones de WSFEv1, WSFEX y WSMTXCA.
+
+### Seguridad
+- **Regla de solo lectura que falla cerrada**: el rol `lectura` (usuario o clave) solo puede
+  hacer GET/HEAD en toda la API, incluidas las rutas futuras.
+- `/api/ws/{servicio}/{op}` exigia solo autenticacion: un usuario `lectura` podia invocar
+  `FECAESolicitar`. Ahora requiere rol operador o superior.
+- Faltaba el chequeo de CUIT permitido en `GET /api/wsfev1/parametros`, `/ultimo-autorizado`,
+  `/consultar` y en `/api/wsaa`; `DELETE /api/wsaa` ahora pide rol operador.
+- `/mcp` solo acepta clave (nunca la cookie del panel) y rechaza Origin ajeno: sin CSRF.
+- El registro de peticiones nunca guarda encabezados, claves ni cuerpos.
+
+### Confiabilidad
+- La verificacion de idempotencia se repite dentro del lock de emision: dos reintentos
+  simultaneos con la misma clave ya no pueden sacar dos CAE.
+
+### Tests
+- `test/mcp.test.js` (20 tests): protocolo MCP, catalogo de herramientas, parsers, claves y
+  regla de solo lectura. Total 47.
+
 ## [0.6.3] - 2026-07-14
 
 ### Confiabilidad (cierre de los 2 hallazgos bajos de la auditoria)

@@ -193,15 +193,20 @@ function validarIdentificacionConsumidorFinal(inv, tipoCbte) {
  * y persiste el resultado en la tabla comprobantes.
  * Si no se pasa `numero`, lo calcula como ultimo autorizado + 1.
  */
+/** Comprobante ya emitido con esta clave de idempotencia, o null. */
+async function previoIdempotente(idem) {
+  if (!idem) return null;
+  const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
+  return prev.rows.length ? { ...prev.rows[0].raw, idempotente: true } : null;
+}
+
 async function authorizeInvoice(cuit, inv) {
   const c = normalizeCuit(cuit);
   const idem = inv.idempotencyKey || null;
 
   // Idempotencia: si ya emitimos con esta clave, devolvemos el resultado guardado.
-  if (idem) {
-    const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
-    if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
-  }
+  const previo = await previoIdempotente(idem);
+  if (previo) return previo;
 
   validarImportes(inv);
 
@@ -217,6 +222,12 @@ async function authorizeInvoice(cuit, inv) {
 }
 
 async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
+  // Re-chequeo de idempotencia YA DENTRO del lock: si un reintento llego mientras el
+  // primer pedido seguia hablando con ARCA, espero al lock y devuelvo ese comprobante
+  // en vez de emitir otro con el numero siguiente.
+  const previo = await previoIdempotente(idem);
+  if (previo) return previo;
+
   let numero = inv.numero;
   if (!numero) {
     const last = await lastAuthorized(cuit, ptoVta, tipoCbte);

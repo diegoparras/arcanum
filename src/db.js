@@ -178,6 +178,13 @@ CREATE TABLE IF NOT EXISTS lote_items (
 );
 CREATE INDEX IF NOT EXISTS lote_items_lote_idx ON lote_items (lote_id);
 
+-- Claves de API con rol (integraciones: n8n, SecretarIA). Solo se guarda el hash.
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS prefix TEXT;
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS cuit_allow TEXT[];
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS created_by TEXT;
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS api_keys_hash_idx ON api_keys (key_hash);
+
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS csr_pem TEXT;
 -- Datos fiscales del emisor POR CUIT (para el encabezado legal del PDF).
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS emisor JSONB;

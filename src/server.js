@@ -36,6 +36,10 @@ const importar = require('./services/importar');
 const metrics = require('./services/metrics');
 const webhooks = require('./services/webhooks');
 const lotes = require('./services/lotes');
+const apikeys = require('./auth/apikeys');
+const { requireRole, assertCuitAllowed, scopedRequiresCuit, assertPuedeEscribir } = require('./auth/permisos');
+const { crearServidor: crearServidorMcp } = require('./mcp/servidor');
+const { HERRAMIENTAS: HERRAMIENTAS_MCP } = require('./mcp/herramientas');
 
 // Si no se definio API key, generamos una y la mostramos una sola vez.
 let API_KEY = config.apiKey;
@@ -46,39 +50,76 @@ if (!API_KEY) {
   console.log('[arcanum] Guardala: la necesitas en el header X-API-Key.\n');
 }
 
-function apiKeyValid(req) {
-  const provided = req.headers['x-api-key'] || '';
-  const a = Buffer.from(String(provided));
+function esClaveMaestra(clave) {
+  const a = Buffer.from(String(clave || ''));
   const b = Buffer.from(API_KEY);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// Autenticacion: acepta API key (rol admin, para n8n) o sesion de UI (con su rol).
-function checkAuth(req) {
-  if (apiKeyValid(req)) return { username: 'apikey', role: 'admin' };
+const MSG_SIN_CLAVE = 'No autenticado: enviá la clave en X-API-Key o en Authorization: Bearer <clave>, o iniciá sesion.';
+
+/**
+ * Principal de una clave (maestra o de la tabla api_keys), o null si no hay clave.
+ * Una clave presente pero invalida o dada de baja es 401 (no se cae a la sesion).
+ */
+async function principalDeClave(req) {
+  const clave = apikeys.extraerClave(req.headers);
+  if (!clave) return null;
+  if (esClaveMaestra(clave)) return { username: 'apikey', role: 'admin', via: 'maestra' };
+  const p = await apikeys.verificar(clave);
+  if (p) return p;
+  throw Object.assign(new Error('Clave invalida o dada de baja.'), { httpStatus: 401 });
+}
+
+// Autenticacion: clave maestra (rol admin, para n8n), clave con rol, o sesion de UI.
+async function checkAuth(req) {
+  const p = await principalDeClave(req);
+  if (p) return p;
   const sess = session.fromRequest(req);
   if (sess) return sess;
-  throw Object.assign(new Error('No autenticado: pegá tu X-API-Key o inicia sesion'), { httpStatus: 401 });
+  throw Object.assign(new Error(MSG_SIN_CLAVE), { httpStatus: 401 });
 }
 
-function requireRole(principal, ...roles) {
-  if (!roles.includes(principal.role)) {
-    throw Object.assign(new Error(`Requiere rol: ${roles.join(' o ')}`), { httpStatus: 403 });
+// Servidor MCP de solo consulta (POST /mcp). Ver src/mcp/.
+const mcp = crearServidorMcp({
+  nombre: 'arcanum',
+  titulo: 'Arcanum (ARCA, solo consulta)',
+  version: config.version,
+  herramientas: HERRAMIENTAS_MCP,
+  timeoutMs: parseInt(process.env.ARCANUM_MCP_TIMEOUT_MS || '80000', 10),
+  instrucciones: 'Consulta de padron y comprobantes de ARCA a traves de Arcanum. Todas las herramientas son de solo lectura.',
+});
+
+/** POST /mcp — Streamable HTTP sin estado. Solo con clave (Bearer o X-API-Key), nunca con cookie. */
+async function handleMcp(req, res) {
+  if (req.method !== 'POST') {
+    res.writeHead(405, { Allow: 'POST', 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ ok: false, error: 'Servidor MCP sin estado: usa POST /mcp (no ofrece stream SSE).' }));
   }
-}
-
-// Scoping por CUIT: admin/superadmin y la API key ven todo. Un usuario con
-// cuit_allow definido solo puede operar esos CUITs (cierra el IDOR multi-tenant).
-// Sin cuit_allow (default) = todos, para el modelo "un contador, todos sus CUITs".
-function assertCuitAllowed(principal, cuit) {
-  if (['superadmin', 'admin'].includes(principal.role)) return;
-  const allow = principal.cuitAllow;
-  if (!allow || !allow.length) return;
-  const c = tenants.normalizeCuit(cuit);
-  if (!c || !allow.includes(c)) throw Object.assign(new Error('No autorizado para ese CUIT'), { httpStatus: 403 });
-}
-function scopedRequiresCuit(principal) {
-  return !['superadmin', 'admin'].includes(principal.role) && principal.cuitAllow && principal.cuitAllow.length;
+  // Anti DNS-rebinding: si el pedido viene de un navegador, el Origin debe ser este host.
+  if (req.headers.origin) {
+    let mismo = false;
+    try { mismo = new URL(req.headers.origin).host === req.headers.host; } catch { mismo = false; }
+    if (!mismo) throw Object.assign(new Error('Origin no permitido para /mcp'), { httpStatus: 403 });
+  }
+  const principal = await principalDeClave(req).catch((e) => { res.setHeader('WWW-Authenticate', 'Bearer realm="arcanum"'); throw e; });
+  if (!principal) {
+    res.setHeader('WWW-Authenticate', 'Bearer realm="arcanum"');
+    throw Object.assign(new Error('Falta la clave: enviá Authorization: Bearer <clave> (o X-API-Key).'), { httpStatus: 401 });
+  }
+  req._user = principal.username;
+  req._ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null;
+  const ctx = {
+    principal,
+    alLlamar: (herramienta) => { req._op = herramienta; },
+  };
+  const salida = await mcp.atender(await readTextBody(req), ctx);
+  if (ctx.cuit) req._cuit = ctx.cuit;
+  if (salida === null) {
+    res.writeHead(202);
+    return res.end();
+  }
+  return sendJson(res, 200, salida);
 }
 
 // Rate-limit en memoria para el login (anti fuerza bruta).
@@ -193,10 +234,15 @@ async function route(req, res, url) {
     return sendJson(res, 200, { ok: true });
   }
 
-  // A partir de aca, todo requiere autenticacion (API key o sesion).
-  const principal = checkAuth(req);
+  // Servidor MCP de solo consulta (autentica por su cuenta: solo con clave).
+  if (url.pathname === '/mcp') return handleMcp(req, res);
+
+  // A partir de aca, todo requiere autenticacion (clave o sesion).
+  const principal = await checkAuth(req);
   req._user = principal.username;
   req._ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null;
+  // Rol "lectura" (usuario o clave): solo GET/HEAD, en todas las rutas. Falla cerrado.
+  assertPuedeEscribir(principal, req.method);
 
   // GET /api/auth/me  -> quien soy
   if (req.method === 'GET' && url.pathname === '/api/auth/me') {
@@ -281,6 +327,8 @@ async function route(req, res, url) {
   // --- Passthrough generico: invocar cualquier operacion de cualquier servicio ---
   // POST /api/ws/:serviceId/:operacion   { cuit, params }
   if (req.method === 'POST' && seg[0] === 'api' && seg[1] === 'ws' && seg[2] && seg[3]) {
+    // Por aca se llega a operaciones que escriben (ej. FECAESolicitar): rol de emision.
+    requireRole(principal, 'superadmin', 'admin', 'operador');
     const body = await readJsonBody(req);
     if (body.cuit) assertCuitAllowed(principal, body.cuit);
     const result = await engine.call(seg[2], seg[3], body.params || {}, { cuit: body.cuit, entorno: body.entorno });
@@ -289,11 +337,14 @@ async function route(req, res, url) {
 
   // GET /api/wsaa/:cuit/:service  -> fuerza/inspecciona el TA (diagnostico)
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'wsaa' && seg[2] && seg[3]) {
+    assertCuitAllowed(principal, seg[2]);
     const ta = await wsaa.getAccessTicket(seg[2], seg[3]);
     return sendJson(res, 200, { ok: true, token: ta.token.slice(0, 12) + '…', sign: '***', expirationTime: ta.expirationTime, service: ta.service });
   }
   // DELETE /api/wsaa/:cuit/:service -> invalida el TA cacheado
   if (req.method === 'DELETE' && seg[0] === 'api' && seg[1] === 'wsaa' && seg[2] && seg[3]) {
+    requireRole(principal, 'superadmin', 'admin', 'operador');
+    assertCuitAllowed(principal, seg[2]);
     await tokenStore.invalidate(tenants.normalizeCuit(seg[2]), seg[3], config.env);
     return sendJson(res, 200, { ok: true, mensaje: 'Ticket de acceso invalidado' });
   }
@@ -307,11 +358,13 @@ async function route(req, res, url) {
     // GET /api/wsfev1/parametros/:nombre?cuit=
     if (req.method === 'GET' && seg[2] === 'parametros' && seg[3]) {
       const cuit = requireQ(q, 'cuit');
+      assertCuitAllowed(principal, cuit);
       return sendJson(res, 200, { ok: true, parametro: seg[3], valores: await wsfev1.getParams(cuit, seg[3]) });
     }
     // GET /api/wsfev1/ultimo-autorizado?cuit=&puntoVenta=&tipoComprobante=
     if (req.method === 'GET' && seg[2] === 'ultimo-autorizado') {
       const cuit = requireQ(q, 'cuit');
+      assertCuitAllowed(principal, cuit);
       const pv = requireQ(q, 'puntoVenta');
       const tc = requireQ(q, 'tipoComprobante');
       return sendJson(res, 200, { ok: true, ...(await wsfev1.lastAuthorized(cuit, pv, tc)) });
@@ -319,6 +372,7 @@ async function route(req, res, url) {
     // GET /api/wsfev1/consultar?cuit=&puntoVenta=&tipoComprobante=&numero=
     if (req.method === 'GET' && seg[2] === 'consultar') {
       const cuit = requireQ(q, 'cuit');
+      assertCuitAllowed(principal, cuit);
       const r = await wsfev1.consultar(cuit, requireQ(q, 'puntoVenta'), requireQ(q, 'tipoComprobante'), requireQ(q, 'numero'));
       return sendJson(res, 200, { ok: true, comprobante: r });
     }
@@ -340,7 +394,7 @@ async function route(req, res, url) {
     // POST /api/wsfev1/comprobantes   { cuit, ...comprobante }
     if (req.method === 'POST' && seg[2] === 'comprobantes') {
       requireRole(principal, 'superadmin', 'admin', 'operador');
-      const inv = await readJsonBody(req);
+      const inv = conIdempotencia(req, await readJsonBody(req));
       if (!inv.cuit) throw badRequest('Falta "cuit" (emisor) en el body');
       assertCuitAllowed(principal, inv.cuit);
       const result = await wsfev1.authorizeInvoice(inv.cuit, inv);
@@ -365,7 +419,7 @@ async function route(req, res, url) {
     }
     if (req.method === 'POST' && seg[2] === 'comprobantes') {
       requireRole(principal, 'superadmin', 'admin', 'operador');
-      const inv = await readJsonBody(req);
+      const inv = conIdempotencia(req, await readJsonBody(req));
       if (!inv.cuit) throw badRequest('Falta "cuit" (emisor) en el body');
       assertCuitAllowed(principal, inv.cuit);
       const result = await wsfex.authorize(inv.cuit, inv);
@@ -390,7 +444,7 @@ async function route(req, res, url) {
     }
     if (req.method === 'POST' && seg[2] === 'comprobantes') {
       requireRole(principal, 'superadmin', 'admin', 'operador');
-      const inv = await readJsonBody(req);
+      const inv = conIdempotencia(req, await readJsonBody(req));
       if (!inv.cuit) throw badRequest('Falta "cuit" (emisor) en el body');
       assertCuitAllowed(principal, inv.cuit);
       const result = await wsmtxca.authorize(inv.cuit, inv);
@@ -495,6 +549,25 @@ async function route(req, res, url) {
       requireRole(principal, 'superadmin');
       return sendJson(res, 200, { ok: true, usuario: await users.crear(await readJsonBody(req)) });
     }
+  }
+
+  // --- Claves de API con rol (integraciones: n8n, SecretarIA) ---
+  if (seg[0] === 'api' && seg[1] === 'claves') {
+    requireRole(principal, 'superadmin', 'admin');
+    // Una clave de API no administra claves (evita que una clave filtrada se multiplique).
+    if (principal.via === 'clave') throw Object.assign(new Error('Las claves se administran desde la UI o con la clave maestra.'), { httpStatus: 403 });
+    // GET /api/claves
+    if (req.method === 'GET' && !seg[2]) return sendJson(res, 200, { ok: true, claves: await apikeys.listar(), roles: apikeys.ROLES });
+    // POST /api/claves  { nombre, rol, cuits? }  -> devuelve la clave en claro UNA vez
+    if (req.method === 'POST' && !seg[2]) {
+      const body = await readJsonBody(req);
+      if (body.rol === 'admin' && principal.role !== 'superadmin' && principal.via !== 'maestra') {
+        throw Object.assign(new Error('Solo un superadmin crea claves con rol admin'), { httpStatus: 403 });
+      }
+      return sendJson(res, 200, { ok: true, clave: await apikeys.crear(body, principal.username) });
+    }
+    // DELETE /api/claves/:id  -> la da de baja (deja de funcionar al instante)
+    if (req.method === 'DELETE' && seg[2]) return sendJson(res, 200, { ok: true, ...(await apikeys.darDeBaja(seg[2])) });
   }
 
   // --- Webhooks (configuracion del sistema: solo admin/superadmin) ---
@@ -618,6 +691,14 @@ async function route(req, res, url) {
   throw notFound();
 }
 
+// Clave de idempotencia: campo idempotencyKey del body o cabecera estandar Idempotency-Key.
+// Si se reintenta el mismo pedido, se devuelve el comprobante ya emitido en vez de otro.
+function conIdempotencia(req, inv) {
+  const h = req.headers['idempotency-key'];
+  if (!inv.idempotencyKey && h) inv.idempotencyKey = String(h).trim().slice(0, 200);
+  return inv;
+}
+
 function requireQ(q, name) {
   const v = q.get(name);
   if (!v) throw badRequest(`Falta el parametro de query "${name}"`);
@@ -690,17 +771,20 @@ function serveDocsPage(res) {
   res.end(html);
 }
 
+// Auditoria de pedidos. Nunca se registran cabeceras (ni la clave), ni bodies.
 function logRequest(req, res, url, startedAt) {
-  if (!url.pathname.startsWith('/api/')) return;
+  const esMcp = url.pathname === '/mcp';
+  if (!url.pathname.startsWith('/api/') && !esMcp) return;
   const seg = url.pathname.split('/').filter(Boolean);
-  const service = seg[1] === 'ws' ? seg[2] : seg[1];
+  const service = esMcp ? 'mcp' : seg[1] === 'ws' ? seg[2] : seg[1];
   const duration = Date.now() - startedAt;
   const ok = res.statusCode < 400;
   // No bloqueamos la respuesta: log best-effort.
   db.query(
-    `INSERT INTO requests (cuit, service, http_method, path, status, ok, duration_ms, usuario, ip)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [url.searchParams.get('cuit') || null, service || null, req.method, url.pathname, res.statusCode, ok, duration, req._user || null, req._ip || null],
+    `INSERT INTO requests (cuit, service, operation, http_method, path, status, ok, duration_ms, usuario, ip)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [req._cuit || url.searchParams.get('cuit') || null, service || null, req._op || null, req.method, url.pathname,
+      res.statusCode, ok, duration, req._user || null, req._ip || null],
   ).catch(() => {});
 }
 

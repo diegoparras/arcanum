@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arcanum — Gateway REST para ARCA (ex-AFIP)
-  version: 0.2.0
+  version: 0.7.0
   description: >
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
@@ -12,7 +12,10 @@ servers:
     description: Instancia local
 security:
   - ApiKeyAuth: []
+  - BearerAuth: []
 tags:
+  - name: MCP
+  - name: Claves
   - name: Auth
   - name: Config
   - name: Clientes
@@ -27,6 +30,14 @@ tags:
 components:
   securitySchemes:
     ApiKeyAuth: { type: apiKey, in: header, name: X-API-Key }
+    BearerAuth: { type: http, scheme: bearer, description: "La misma clave, como Authorization: Bearer <clave>" }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string }
+      description: Un reintento con la misma clave devuelve el comprobante ya emitido (no pide otro CAE). Equivale a idempotencyKey en el cuerpo.
   schemas:
     AlicuotaIva:
       type: object
@@ -93,6 +104,31 @@ paths:
     get: { tags: [Auth], summary: Inicia el login OIDC (redirect), security: [], responses: { '302': { description: redirect al issuer } } }
   /api/auth/oidc/callback:
     get: { tags: [Auth], summary: Callback OIDC (verifica id_token), security: [], responses: { '302': { description: redirect a / } } }
+
+  /mcp:
+    post:
+      tags: [MCP]
+      summary: Servidor MCP de solo consulta (JSON-RPC 2.0, Streamable HTTP, sin estado)
+      description: >
+        Herramientas padron, comprobante, ultimo_comprobante, puntos_de_venta y estado_arca.
+        Ninguna emite ni modifica nada. Exige clave (Bearer o X-API-Key); no acepta la cookie del panel.
+      security: [ { BearerAuth: [] }, { ApiKeyAuth: [] } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, example: { jsonrpc: "2.0", id: 1, method: tools/list } } } } }
+      responses: { '200': { description: respuesta JSON-RPC }, '202': { description: notificacion aceptada (sin cuerpo) }, '401': { description: falta la clave o es invalida }, '405': { description: solo POST } }
+
+  /api/claves:
+    get: { tags: [Claves], summary: Lista las claves de API (rol admin+), responses: { '200': { description: ok } } }
+    post:
+      tags: [Claves]
+      summary: Crea una clave de API. La clave en claro se devuelve una sola vez.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [nombre, rol], properties: { nombre: { type: string, example: SecretarIA }, rol: { type: string, enum: [lectura, operador, admin] }, cuits: { type: array, items: { type: string } } } } } } }
+      responses: { '200': { description: clave creada }, '400': { description: datos invalidos }, '403': { description: rol insuficiente } }
+  /api/claves/{id}:
+    delete:
+      tags: [Claves]
+      summary: Da de baja una clave (deja de funcionar al instante)
+      parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
+      responses: { '200': { description: ok }, '404': { description: no existe o ya dada de baja } }
 
   /api/config:
     get: { tags: [Config], summary: Entorno activo y version, responses: { '200': { description: ok } } }
@@ -218,8 +254,11 @@ paths:
     post:
       tags: [WSFEv1]
       summary: Emitir comprobante y obtener CAE
+      description: Requiere rol operador o superior (una clave de rol lectura recibe 403).
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Comprobante' } } } }
-      responses: { '200': { description: aprobado }, '422': { description: rechazado } }
+      responses: { '200': { description: aprobado }, '403': { description: solo lectura o rol insuficiente }, '422': { description: rechazado } }
   /api/wsfev1/lote:
     post:
       tags: [WSFEv1]

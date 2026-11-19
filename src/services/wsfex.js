@@ -140,6 +140,11 @@ async function authorize(cuit, inv) {
 
   // Lock por punto de venta: serializa la emision (numeracion ultimo+1 sin carrera).
   return withTokenRetry(c, SERVICE, config.env, () => db.withLock(`emit:wsfex:${c}:${config.env}:${ptoVta}`, async () => {
+    // Re-chequeo de idempotencia dentro del lock (reintento concurrente -> mismo comprobante).
+    if (idem) {
+      const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
+      if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
+    }
     const numero = inv.numero ? parseInt(inv.numero, 10) : (await lastAuthorized(c, ptoVta)).ultimoNumero + 1;
     const id = inv.id ? parseInt(inv.id, 10) : (await lastId(c)) + 1;
     const permisos =

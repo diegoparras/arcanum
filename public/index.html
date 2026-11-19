@@ -519,7 +519,43 @@ async function vUsuarios(){
    ${puede?`<div class="card" style="margin-top:14px;max-width:480px"><h3 style="margin-top:0">Nuevo usuario</h3>
     <label>Usuario</label><input id="u_user"><label>Contraseña</label>${pwField('u_pass')}
     <label>Rol</label><select id="u_role"><option value="operador">operador</option><option value="lectura">lectura</option><option value="admin">admin</option><option value="superadmin">superadmin</option></select>
-    <button class="primary" style="margin-top:14px" onclick="addUser()">Crear</button></div>`:'<p class="hint">Solo un superadmin puede crear usuarios.</p>'}`;
+    <button class="primary" style="margin-top:14px" onclick="addUser()">Crear</button></div>`:'<p class="hint">Solo un superadmin puede crear usuarios.</p>'}
+   <h2 style="margin-top:28px">Claves de API</h2>
+   <p class="hint">Para integraciones (SecretarIA, sistemas propios). Se envían como <code>Authorization: Bearer &lt;clave&gt;</code> o <code>X-API-Key</code>. Una clave con rol <b>lectura</b> solo consulta: no puede emitir ni modificar nada, ni por la API ni por <code>/mcp</code>. Cada clave se da de baja por separado.</p>
+   <div id="clavesBox"><p class="hint">Cargando…</p></div>`;
+  cargarClaves();
+}
+async function cargarClaves(){
+  const box=$('#clavesBox');if(!box)return;
+  try{
+    const {claves}=await api('/api/claves');
+    const f=d=>d?new Date(d).toLocaleString('es-AR'):'nunca';
+    const rows=claves.map(c=>`<tr${c.dadaDeBaja?' style="opacity:.55"':''}><td>${esc(c.nombre)}</td><td><code>${esc(c.prefijo||'')}</code></td><td><span class="tag">${esc(c.rol)}</span></td>
+      <td class="hint">${c.cuits&&c.cuits.length?c.cuits.map(esc).join(', '):'todos'}</td><td class="hint">${f(c.ultimoUso)}</td>
+      <td>${c.dadaDeBaja?`<span class="hint">de baja ${f(c.dadaDeBaja)}</span>`:`<button onclick="bajaClave(${Number(c.id)},'${esc(c.nombre).replace(/'/g,'')}')">Dar de baja</button>`}</td></tr>`).join('');
+    box.innerHTML=`<div class="card">${claves.length?`<table><thead><tr><th>Nombre</th><th>Prefijo</th><th>Rol</th><th>CUITs</th><th>Último uso</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="hint" style="margin:0">Todavía no hay claves.</p>'}</div>
+     <div class="card" style="margin-top:14px;max-width:480px"><h3 style="margin-top:0">Nueva clave</h3>
+      <label>Nombre</label><input id="k_nom" placeholder="SecretarIA">
+      <label>Rol</label><select id="k_rol"><option value="lectura">lectura (solo consulta)</option><option value="operador">operador (puede emitir)</option>${ME.role==='superadmin'?'<option value="admin">admin</option>':''}</select>
+      <label>CUITs permitidos (opcional, separados por coma)</label><input id="k_cuits" placeholder="Vacío = todos">
+      <button class="primary" style="margin-top:14px" onclick="crearClave()">Crear clave</button></div>`;
+  }catch(e){box.innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+async function crearClave(){
+  const cuits=$('#k_cuits').value.split(',').map(s=>s.replace(/\D/g,'')).filter(Boolean);
+  try{
+    const {clave}=await api('/api/claves',{method:'POST',body:JSON.stringify({nombre:$('#k_nom').value.trim(),rol:$('#k_rol').value,cuits})});
+    window._claveNueva=clave.clave;
+    modal(`<h3 style="margin-top:0">Clave creada</h3>
+      <p class="hint">Clave <b>${esc(clave.nombre)}</b> (${esc(clave.rol)}). Copiala ahora: no se vuelve a mostrar. Arcanum solo guarda su huella (hash).</p>
+      <pre style="white-space:pre-wrap;word-break:break-all;overflow:hidden">${esc(clave.clave)}</pre>
+      <div class="row"><button onclick="navigator.clipboard.writeText(window._claveNueva);toast('Clave copiada')">Copiar</button>
+      <button class="primary" onclick="window._claveNueva=null;closeModal();cargarClaves()">Listo, ya la guardé</button></div>`);
+  }catch(e){toast(e.message,true);}
+}
+async function bajaClave(id,nombre){
+  if(!confirm(`¿Dar de baja la clave "${nombre}"? Deja de funcionar al instante y no se puede reactivar.`))return;
+  try{await api('/api/claves/'+id,{method:'DELETE'});toast('Clave dada de baja');cargarClaves();}catch(e){toast(e.message,true);}
 }
 async function addUser(){try{await api('/api/usuarios',{method:'POST',body:JSON.stringify({username:$('#u_user').value,password:$('#u_pass').value,role:$('#u_role').value})});toast('Usuario creado');vUsuarios();}catch(e){toast(e.message,true);}}
 
