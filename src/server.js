@@ -45,7 +45,9 @@ const { HERRAMIENTAS: HERRAMIENTAS_MCP } = require('./mcp/herramientas');
 const { crearRutas: crearRutasMc } = require('./rutas/misComprobantes');
 
 const { crearRutas: crearRutasMono } = require('./rutas/monotributo');
+const { crearRutas: crearRutasCola, emitirOEncolar } = require('./rutas/cola');
 const rutasMc = crearRutasMc();
+const rutasCola = crearRutasCola();
 const rutasMono = crearRutasMono();
 
 // Si no se definio API key, generamos una y la mostramos una sola vez.
@@ -286,6 +288,7 @@ async function route(req, res, url) {
   // Mis Comprobantes (via Fisherboy) y la conexion con Fisherboy: ver src/rutas/misComprobantes.js
   if (await rutasMc(req, res, url, seg, principal)) return;
   if (await rutasMono(req, res, url, seg, principal)) return;
+  if (await rutasCola(req, res, url, seg, principal)) return;
 
   // --- Config del sistema ---
   // GET /api/config  -> entorno activo + version (para el "Acerca de")
@@ -442,8 +445,11 @@ async function route(req, res, url) {
       const inv = conIdempotencia(req, await readJsonBody(req));
       if (!inv.cuit) throw badRequest('Falta "cuit" (emisor) en el body');
       assertCuitAllowed(principal, inv.cuit);
-      const result = await wsfev1.authorizeInvoice(inv.cuit, inv);
-      return sendJson(res, result.aprobado ? 200 : 422, { ok: result.aprobado, comprobante: result });
+      // contingencia: si ARCA no responde, el comprobante queda en la cola (202) y sale solo.
+      const contingencia = inv.contingencia === true || req.headers['x-arcanum-contingencia'] === '1';
+      delete inv.contingencia;
+      const r = await emitirOEncolar(inv.cuit, inv, { contingencia, usuario: principal.username, origen: req._claveId ? 'api' : 'ui' });
+      return sendJson(res, r.status, r.body);
     }
   }
 
@@ -894,6 +900,10 @@ async function start() {
     console.log(`[arcanum]   contrasena: ${seeded.pass}`);
     console.log('[arcanum] Cambiala despues de entrar. (definí ARCANUM_ADMIN_PASS para fijarla)\n');
   }
+  try {
+    const n = await require('./services/colaEmision').servicio().reencolarProcesando();
+    if (n) console.log(`[arcanum] ${n} comprobante(s) de la cola vuelven a pendiente tras el reinicio`);
+  } catch (e) { console.error('[arcanum] cola de emision:', e.message); }
   try {
     const n = await require('./services/misComprobantes').servicio().marcarHuerfanas();
     if (n) console.log(`[arcanum] ${n} corrida(s) de Mis Comprobantes interrumpidas por el reinicio`);

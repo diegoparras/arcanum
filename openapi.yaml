@@ -17,6 +17,7 @@ tags:
   - name: MCP
   - name: Mis Comprobantes
   - name: Monotributo
+  - name: Contingencia
   - name: Claves
   - name: Auth
   - name: Config
@@ -278,6 +279,7 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Comprobante' } } } }
       responses: { '200': { description: "vistaPrevia: { valido, problemas, advertencias, numeroPropuesto, cuerpoParaEmitir, ... }" } }
   /api/wsfev1/comprobantes:
+    # contingencia: true (o header X-Arcanum-Contingencia: 1) => si ARCA no responde, 202 { encolado, cola }
     post:
       tags: [WSFEv1]
       summary: Emitir comprobante y obtener CAE
@@ -538,6 +540,21 @@ paths:
       responses: { '200': { description: "constatacion: { cantidad, validos, invalidos, conError, emisoresApocrifos, resultados }" }, '413': { description: mas de 500 } }
   /api/mis-comprobantes/{cuit}/constatar:
     post: { tags: [Mis Comprobantes], summary: Constata los recibidos de Mis Comprobantes que no se constataron y guarda el resultado, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "constatacion: { cantidad, validos, invalidos, pendientes, observados }" } } }
+
+  /api/cola:
+    get:
+      tags: [Contingencia]
+      summary: Comprobantes en la cola de contingencia (los que se pidieron con ARCA caido)
+      parameters:
+        - { name: cuit, in: query, schema: { type: string } }
+        - { name: estado, in: query, schema: { type: string, enum: [pendiente, procesando, emitido, rechazado, requiere_humano, cancelado] } }
+      responses: { '200': { description: cola } }
+  /api/cola/{id}:
+    get: { tags: [Contingencia], summary: Un item de la cola, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: item } } }
+  /api/cola/{id}/reintentar:
+    post: { tags: [Contingencia], summary: "Reintenta ya. Con fechaHoy=true lo emite con la fecha de hoy (solo si una persona lo decide)", parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], requestBody: { content: { application/json: { schema: { type: object, properties: { fechaHoy: { type: boolean } } } } } }, responses: { '200': { description: item }, '409': { description: ya emitido o cancelado } } }
+  /api/cola/{id}/cancelar:
+    post: { tags: [Contingencia], summary: Cancela un item que todavia no salio, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: item }, '409': { description: ya emitido } } }
 
   /api/wsaa/{cuit}/{service}:
     get:

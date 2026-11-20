@@ -54,7 +54,10 @@ async function monitor() {
     // Aviso de caida/restablecimiento de ARCA basado en wsfev1 (el termometro).
     if (s.id === 'wsfev1') {
       if (!ok && lastArcaOk) webhooks.emitir('arca_caido', { servicio: s.id, detail }).catch(() => {});
-      if (ok && !lastArcaOk) webhooks.emitir('arca_restablecido', { servicio: s.id }).catch(() => {});
+      if (ok && !lastArcaOk) {
+        webhooks.emitir('arca_restablecido', { servicio: s.id }).catch(() => {});
+        procesarCola().catch((e) => console.error('[arcanum][cola]', e.message)); // volvio ARCA: sale lo encolado
+      }
       lastArcaOk = ok;
     }
   }
@@ -154,6 +157,14 @@ async function revisarVentanilla() {
   }
 }
 
+// --- Cola de emision (contingencia) ---
+async function procesarCola() {
+  const hechos = await require('./services/colaEmision').servicio().procesarPendientes();
+  const emitidos = hechos.filter((h) => h && h.estado === 'emitido').length;
+  if (emitidos) console.log(`[arcanum][cola] ${emitidos} comprobante(s) emitidos desde la cola`);
+  return hechos;
+}
+
 // --- Mis Comprobantes diario ---
 const AR_OFFSET_MS = 3 * 60 * 60 * 1000; // Argentina: UTC-3 todo el ano
 function fechaAr(ahora) { return new Date(ahora.getTime() - AR_OFFSET_MS); }
@@ -217,6 +228,8 @@ function start() {
     setTimeout(() => revisarVentanilla().catch((e) => console.error('[arcanum][ventanilla]', e.message)), 2 * 60 * 1000);
     every(ventanillaMin * 60 * 1000, revisarVentanilla);
   }
+  // Cola de emision: cada minuto intenta lo que ya toca (espera creciente por item).
+  every(60 * 1000, procesarCola);
   // Mis Comprobantes: se fija cada 10 minutos si ya toca la corrida diaria.
   setTimeout(() => sincronizarMisComprobantes().catch((e) => console.error('[arcanum][mis-comprobantes]', e.message)), 3 * 60 * 1000);
   every(10 * 60 * 1000, sincronizarMisComprobantes);
@@ -227,4 +240,4 @@ function stop() {
   timers.forEach(clearInterval);
 }
 
-module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, tocaDiaria, rangoDiario };
+module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, tocaDiaria, rangoDiario };

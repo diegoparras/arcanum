@@ -42,6 +42,8 @@ const ASUNTOS = {
   mis_comprobantes_sincronizado: 'Mis Comprobantes sincronizado',
   mis_comprobantes_fallo: 'Mis Comprobantes necesita atencion',
   tope_monotributo: 'Aviso de tope de Monotributo',
+  comprobante_encolado: 'Comprobante en cola: ARCA no responde',
+  cola_requiere_humano: 'Un comprobante de la cola necesita tu decision',
 };
 
 async function notify(evento, data) {

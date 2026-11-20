@@ -185,12 +185,12 @@ async function doLogin(){
 }
 async function logout(){ await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); showLogin(); }
 
-const VIEWS=[['panel','Panel'],['clientes','Clientes'],['servicios','Servicios'],['emitir','Emitir'],['facturador','Facturador'],['comprobantes','Comprobantes'],['mis','Mis Comprobantes'],['generador','Generador'],['webhooks','Webhooks'],['usuarios','Usuarios']];
+const VIEWS=[['panel','Panel'],['clientes','Clientes'],['servicios','Servicios'],['emitir','Emitir'],['facturador','Facturador'],['comprobantes','Comprobantes'],['mis','Mis Comprobantes'],['contingencia','Contingencia'],['generador','Generador'],['webhooks','Webhooks'],['usuarios','Usuarios']];
 function renderNav(cur){
   $('#nav').innerHTML=VIEWS.filter(v=>v[0]!=='usuarios'||['superadmin','admin'].includes(ME.role))
     .map(v=>`<button class="${v[0]===cur?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('');
 }
-function go(v){if(typeof mcPararTimers==='function')mcPararTimers();renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
+function go(v){if(typeof mcPararTimers==='function')mcPararTimers();renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
 
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; }catch(e){ showLogin(); return; }
@@ -377,6 +377,7 @@ async function vEmitir(){
     <div class="f2"><div><label>Condición IVA del receptor</label><select id="e_condiva"><option value="5">Consumidor Final</option><option value="1">Responsable Inscripto</option><option value="6">Monotributo</option><option value="4">Exento</option></select></div><div></div></div>
     <div class="f2"><div><label>Modelo del PDF</label><select id="e_pdfmodelo"><option value="arca">Igual al de ARCA</option><option value="arcanum">Arcanum</option></select></div>
     <div><label>Nombre del archivo</label><input id="e_pdfnombre" placeholder="El de ARCA: CUIT_TIPO_PV_NUMERO.pdf" oninput="nombrePdfAyuda()"></div></div>
+    <label class="chk" style="margin-top:12px"><input type="checkbox" id="e_contingencia" checked> Si ARCA no responde, dejarlo en cola y emitirlo solo cuando vuelva</label>
     <p class="hint" id="e_pdfayuda">Vacío = el nombre de ARCA. Podés usar {receptor}, {numero}, {pv}, {letra}, {tipo}, {fecha}, {cuit} y {total}.</p>
     <div class="row" style="margin-top:16px"><button onclick="previsualizar()">Vista previa</button>
     <button class="primary" onclick="emitir()">Emitir y obtener CAE</button></div>
@@ -393,7 +394,8 @@ function cuerpoEmision(){
     tipoDocReceptor:+$('#e_doctipo').value,nroDocReceptor:$('#e_docnro').value,condicionIvaReceptor:+$('#e_condiva').value,
     importeNeto:tipoC?0:neto,importeIva:tipoC?0:iva,importeTotal:tipoC?neto+iva:neto+iva,
     alicuotasIva:tipoC?[]:[{id:alic,baseImponible:neto,importe:iva}],
-    pdf:{modelo:$('#e_pdfmodelo').value,nombreArchivo:$('#e_pdfnombre').value.trim()||undefined}};
+    pdf:{modelo:$('#e_pdfmodelo').value,nombreArchivo:$('#e_pdfnombre').value.trim()||undefined},
+    contingencia:$('#e_contingencia').checked};
   if(tipoC){body.importeNeto=+(neto+iva).toFixed(2);body.importeIva=0;body.importeTotal=+(neto+iva).toFixed(2);}
   // Clave de idempotencia por formulario: un doble clic o un reintento no saca dos CAE.
   if(!window._idemEmitir)window._idemEmitir='ui-'+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));
@@ -419,7 +421,12 @@ async function previsualizar(){
 async function emitir(){
   const body=cuerpoEmision();
   $('#e_result').innerHTML='<p class="hint">Emitiendo…</p>';
-  try{ const r=await api('/api/wsfev1/comprobantes',{method:'POST',body:JSON.stringify(body)});const c=r.comprobante;
+  try{ const r=await api('/api/wsfev1/comprobantes',{method:'POST',body:JSON.stringify(body)});
+    if(r.encolado){window._idemEmitir=null;
+      $('#e_result').innerHTML=`<div class="card"><span class="tag warn">EN COLA</span> <span class="hint">${esc(r.mensaje||'')}</span>
+        <p class="hint">Item ${r.cola.id}. Seguilo en la pestaña Contingencia.</p><button onclick="go('contingencia')">Ver la cola</button></div>`;
+      toast('ARCA no responde: quedó en la cola');return;}
+    const c=r.comprobante;
     window._idemEmitir=null; // el proximo comprobante lleva clave nueva
     $('#e_result').innerHTML=`<div class="card"><span class="tag ok">APROBADO</span>
       <table style="margin-top:10px"><tr><th>CAE</th><td class="mono">${c.cae}</td></tr>
@@ -620,6 +627,37 @@ async function ajGuardarFb(){const b={url:$('#aj_fburl').value.trim()};const t=$
 async function ajGuardarReceta(){try{const r=JSON.parse($('#aj_receta').value);await api('/api/mis-comprobantes/receta',{method:'PUT',body:JSON.stringify(r)});toast('Receta guardada');}catch(e){toast(e.message||'JSON inválido',true);}}
 async function ajRestaurarReceta(){if(!confirm('¿Volver a la receta de fábrica?'))return;try{const {receta}=await api('/api/mis-comprobantes/receta',{method:'DELETE'});$('#aj_receta').value=JSON.stringify(receta,null,2);toast('Receta restaurada');}catch(e){toast(e.message,true);}}
 async function ajGuardarCats(){try{const c=JSON.parse($('#aj_cats').value);await api('/api/monotributo/categorias',{method:'PUT',body:JSON.stringify(c)});toast('Topes guardados');}catch(e){toast(e.message||'JSON inválido',true);}}
+
+/* ---------- CONTINGENCIA (cola de emision) ---------- */
+const COLA_ESTADO={pendiente:['warn','En espera'],procesando:['warn','Emitiendo'],emitido:['ok','Emitido'],rechazado:['no','Rechazado'],requiere_humano:['no','Necesita tu decisión'],cancelado:['','Cancelado']};
+async function vContingencia(){
+  const v=$('#view');const opera=['superadmin','admin','operador'].includes(ME.role);
+  v.innerHTML=`<h2>Contingencia</h2>
+   <p class="hint">Si al emitir ARCA no responde, el comprobante queda acá y sale solo cuando vuelve. Antes de reintentar se consulta en ARCA el número que se intentó: si ya se había otorgado, se usa ese CAE y no se saca otro. Nunca se cambia la fecha sin que lo pidas.</p>
+   <div class="card"><div class="row"><select id="cl_estado" style="width:auto" onchange="clCargar()"><option value="">Todos</option><option value="pendiente">En espera</option><option value="requiere_humano">Necesitan tu decisión</option><option value="emitido">Emitidos</option><option value="rechazado">Rechazados</option><option value="cancelado">Cancelados</option></select>
+   <button onclick="clCargar()">Actualizar</button></div>
+   <div id="cl_tabla" style="margin-top:10px;overflow-x:auto"><p class="hint">Cargando…</p></div></div>
+   <div id="cl_caea"></div>`;
+  window._clOpera=opera;clCargar();
+  if(typeof caeaCargar==='function')caeaCargar();
+}
+async function clCargar(){
+  try{const est=$('#cl_estado').value;const {cola}=await api('/api/cola'+(est?'?estado='+est:''));
+    const pesos=n=>Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2});
+    $('#cl_tabla').innerHTML=cola.length?`<table><tr><th>#</th><th>CUIT</th><th>Fecha</th><th>Total</th><th>Estado</th><th>Intentos</th><th>Próximo intento</th><th>Detalle</th><th></th></tr>${cola.map(x=>{const e=COLA_ESTADO[x.estado]||['',x.estado];
+      const acc=window._clOpera&&['pendiente','requiere_humano'].includes(x.estado)?`<button class="ghost" onclick="clAccion(${x.id},'reintentar')">Reintentar</button>${x.estado==='requiere_humano'?`<button class="ghost" onclick="clAccion(${x.id},'hoy')">Emitir con fecha de hoy</button>`:''}<button class="ghost" onclick="clAccion(${x.id},'cancelar')">Cancelar</button>`:'';
+      const det=x.estado==='emitido'&&x.resultado?`CAE ${esc(x.resultado.cae||'')}${x.modo==='CAEA'?' (CAEA)':''}${x.resultado.adoptado?' · recuperado de ARCA':''}`:esc(x.ultimo_error||'');
+      return `<tr><td class="mono">${x.id}</td><td class="mono">${esc(x.cuit)}</td><td class="mono">${String(x.fecha||'').slice(0,10)}</td><td class="mono">$${pesos(x.cuerpo&&x.cuerpo.importeTotal)}</td>
+      <td><span class="tag ${e[0]}">${esc(e[1])}</span></td><td class="mono">${x.intentos}</td><td class="hint">${x.estado==='pendiente'&&x.proximo_intento_at?new Date(x.proximo_intento_at).toLocaleString('es-AR'):''}</td><td class="hint">${det}</td><td>${acc}</td></tr>`;}).join('')}</table>`:'<p class="hint">La cola está vacía.</p>';
+  }catch(e){$('#cl_tabla').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+async function clAccion(id,a){
+  if(a==='cancelar'&&!confirm('¿Cancelar este comprobante? No se va a emitir.'))return;
+  if(a==='hoy'&&!confirm('ARCA ya no acepta la fecha original. ¿Emitirlo con la fecha de hoy?'))return;
+  try{const r=await api(`/api/cola/${id}/${a==='cancelar'?'cancelar':'reintentar'}`,{method:'POST',body:JSON.stringify(a==='hoy'?{fechaHoy:true}:{})});
+    toast(r.item.estado==='emitido'?'Emitido':r.item.estado==='cancelado'?'Cancelado':'Sigue en la cola: '+(r.item.ultimo_error||r.item.estado));clCargar();}
+  catch(e){toast(e.message,true);}
+}
 
 /* ---------- COMPROBANTES ---------- */
 async function vComprobantes(){

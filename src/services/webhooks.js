@@ -17,6 +17,8 @@ const EVENTOS = [
   'mis_comprobantes_sincronizado', // termino una bajada de Mis Comprobantes
   'mis_comprobantes_fallo', // fallo una bajada, o necesita a una persona (captcha)
   'tope_monotributo', // un monotributista paso el 80% o el 100% de su categoria, o toca recategorizar
+  'comprobante_encolado', // ARCA no respondia: el comprobante quedo en la cola de contingencia
+  'cola_requiere_humano', // un comprobante de la cola necesita una decision (fecha vencida, error)
 ];
 
 async function listar() {

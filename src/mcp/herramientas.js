@@ -16,6 +16,7 @@
 //   mis_comprobantes    -> emitidos y recibidos de Mis Comprobantes ya bajados (no entra a ARCA)
 //   topes_monotributo   -> facturado en 12 meses contra el tope de la categoria
 //   constatacion_recibidos -> resultado guardado de constatar los recibidos (WSCDC + APOC)
+//   cola_emision        -> comprobantes en la cola de contingencia y su estado
 //
 // Las respuestas son datos (JSON), no instrucciones para un asistente.
 
@@ -826,10 +827,48 @@ const constatacionTool = {
   },
 };
 
+// ---------- cola_emision ----------
+const colaTool = {
+  nombre: 'cola_emision',
+  titulo: 'Cola de emision (contingencia)',
+  descripcion:
+    'Comprobantes que quedaron en la cola porque ARCA no respondia al emitir: estado (pendiente, emitido, rechazado, '
+    + 'requiere_humano, cancelado), intentos, proximo intento, ultimo error y, si ya salieron, el CAE. Sirve para saber si '
+    + 'una factura pedida durante una caida de ARCA ya se emitio. No reintenta ni cancela nada. Solo lectura.',
+  esquema: {
+    type: 'object',
+    properties: {
+      cuit: { type: 'string', description: 'Opcional. CUIT emisor.' },
+      estado: { type: 'string', enum: ['pendiente', 'procesando', 'emitido', 'rechazado', 'requiere_humano', 'cancelado'], description: 'Opcional.' },
+    },
+    additionalProperties: false,
+  },
+  async ejecutar(args, ctx) {
+    const cuit = args.cuit ? cuit11(args.cuit) : undefined;
+    if (cuit) { assertCuitAllowed(ctx.principal, cuit); ctx.cuit = cuit; }
+    let lista = await require('../services/colaEmision').servicio().listar({ cuit, estado: args.estado, limite: 100 });
+    if (ctx.principal.cuitAllow && ctx.principal.cuitAllow.length) lista = lista.filter((x) => ctx.principal.cuitAllow.includes(x.cuit));
+    const porEstado = {};
+    for (const x of lista) porEstado[x.estado] = (porEstado[x.estado] || 0) + 1;
+    return {
+      cantidad: lista.length,
+      porEstado,
+      items: lista.slice(0, 50).map((x) => ({
+        id: x.id, cuit: x.cuit, estado: x.estado, modo: x.modo, intentos: x.intentos,
+        fecha: fechaIso(x.fecha), importeTotal: Number(x.cuerpo && x.cuerpo.importeTotal),
+        proximoIntento: x.proximo_intento_at, ultimoError: x.ultimo_error || null,
+        cae: x.resultado && x.resultado.cae ? x.resultado.cae : null,
+        comprobante: x.resultado && x.resultado.numero ? formatearNumero(x.resultado.puntoVenta, x.resultado.numero) : null,
+      })),
+      fuente: 'Cola de emision de Arcanum',
+    };
+  },
+};
+
 const HERRAMIENTAS = [
   padronTool, comprobanteTool, ultimoTool, puntosTool, estadoTool,
   riesgoTool, recientesTool, ventanillaTool, certTool, vistaPreviaTool,
-  misComprobantesTool, topesMonotributoTool, constatacionTool,
+  misComprobantesTool, topesMonotributoTool, constatacionTool, colaTool,
 ];
 
 module.exports = {
