@@ -221,22 +221,11 @@ async function authorizeInvoice(cuit, inv) {
     db.withLock(`emit:wsfe:${c}:${config.env}:${ptoVta}:${tipoCbte}`, () => emitir(c, inv, { ptoVta, tipoCbte, concepto, idem })));
 }
 
-async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
-  // Re-chequeo de idempotencia YA DENTRO del lock: si un reintento llego mientras el
-  // primer pedido seguia hablando con ARCA, espero al lock y devuelvo ese comprobante
-  // en vez de emitir otro con el numero siguiente.
-  const previo = await previoIdempotente(idem);
-  if (previo) return previo;
-
-  let numero = inv.numero;
-  if (!numero) {
-    const last = await lastAuthorized(cuit, ptoVta, tipoCbte);
-    numero = last.ultimoNumero + 1;
-  }
-  numero = parseInt(numero, 10);
-
-  const cbteFecha = inv.fecha ? fmtDate(inv.fecha) : todayYmd();
-
+/**
+ * Arma <FeCAEReq> de FECAESolicitar. Nombres y orden segun el WSDL real de WSFEv1
+ * (test/wsfev1Xml.test.js lo valida contra test/fixtures/wsfev1.wsdl).
+ */
+function armarFeCAEReq(inv, { ptoVta, tipoCbte, concepto, numero, cbteFecha }) {
   // Para Servicios (concepto 2 o 3) ARCA exige fechas de servicio y vto de pago.
   let serviceDates = '';
   if (concepto === 2 || concepto === 3) {
@@ -250,13 +239,13 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
   }
 
   const detalle =
-    '<ar:FECAEDetRequest><ar:FECAEDetalle>' +
+    '<ar:FeDetReq><ar:FECAEDetRequest>' +
     `<ar:Concepto>${concepto}</ar:Concepto>` +
     `<ar:DocTipo>${parseInt(inv.tipoDocReceptor ?? 99, 10)}</ar:DocTipo>` +
     `<ar:DocNro>${normalizeCuit(inv.nroDocReceptor ?? 0) || 0}</ar:DocNro>` +
     `<ar:CbteDesde>${numero}</ar:CbteDesde>` +
     `<ar:CbteHasta>${numero}</ar:CbteHasta>` +
-    `<ar:CbteFecha>${cbteFecha}</ar:CbteFecha>` +
+    `<ar:CbteFch>${cbteFecha}</ar:CbteFch>` +
     `<ar:ImpTotal>${fmtMoney(inv.importeTotal)}</ar:ImpTotal>` +
     `<ar:ImpTotConc>${fmtMoney(inv.importeNoGravado)}</ar:ImpTotConc>` +
     `<ar:ImpNeto>${fmtMoney(inv.importeNeto)}</ar:ImpNeto>` +
@@ -278,16 +267,35 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
     buildCbtesAsoc(inv.comprobantesAsociados) +
     buildTributos(inv.tributos) +
     buildAlicuotas(inv.alicuotasIva) +
-    '</ar:FECAEDetalle></ar:FECAEDetRequest>';
+    '</ar:FECAEDetRequest></ar:FeDetReq>';
 
   const cabecera =
-    '<ar:FeCAECabRequest>' +
+    '<ar:FeCabReq>' +
     '<ar:CantReg>1</ar:CantReg>' +
     `<ar:PtoVta>${ptoVta}</ar:PtoVta>` +
     `<ar:CbteTipo>${tipoCbte}</ar:CbteTipo>` +
-    '</ar:FeCAECabRequest>';
+    '</ar:FeCabReq>';
 
-  const inner = (await auth(cuit)) + `<ar:FeCAEReq>${cabecera}${detalle}</ar:FeCAEReq>`;
+  return `<ar:FeCAEReq>${cabecera}${detalle}</ar:FeCAEReq>`;
+}
+
+async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
+  // Re-chequeo de idempotencia YA DENTRO del lock: si un reintento llego mientras el
+  // primer pedido seguia hablando con ARCA, espero al lock y devuelvo ese comprobante
+  // en vez de emitir otro con el numero siguiente.
+  const previo = await previoIdempotente(idem);
+  if (previo) return previo;
+
+  let numero = inv.numero;
+  if (!numero) {
+    const last = await lastAuthorized(cuit, ptoVta, tipoCbte);
+    numero = last.ultimoNumero + 1;
+  }
+  numero = parseInt(numero, 10);
+
+  const cbteFecha = inv.fecha ? fmtDate(inv.fecha) : todayYmd();
+
+  const inner = (await auth(cuit)) + armarFeCAEReq(inv, { ptoVta, tipoCbte, concepto, numero, cbteFecha });
   const result = await call('FECAESolicitar', inner);
 
   const topErrors = collectErrors(result);
@@ -465,6 +473,7 @@ function parseLoteCsv(text) {
 }
 
 module.exports = {
+  armarFeCAEReq,
   dummy,
   lastAuthorized,
   authorizeInvoice,

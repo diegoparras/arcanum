@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.9.1] - 2026-11-20
+
+### Corregido
+- **Emitir con WSFEv1 fallaba en ARCA** con `NullReferenceException` en `FECAESolicitar`: el
+  pedido usaba tres nombres de elemento que no existen en el WSDL (`FeCAECabRequest` en vez de
+  `FeCabReq`, `FECAEDetRequest/FECAEDetalle` en vez de `FeDetReq/FECAEDetRequest` y `CbteFecha`
+  en vez de `CbteFch`). ARCA ignora lo que no conoce y le llegaba la cabecera vacia. Afectaba a
+  Emitir, a la API y a los lotes. Ahora un test valida el pedido, nombre por nombre y en orden,
+  contra el WSDL real de ARCA guardado en `test/fixtures/wsfev1.wsdl`.
+
 ## [0.9.0] - 2026-11-19
 
 ### Nuevo
