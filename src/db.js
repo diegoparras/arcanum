@@ -226,6 +226,59 @@ CREATE TABLE IF NOT EXISTS services (
   updated_by  TEXT
 );
 
+-- Mis Comprobantes (0.9): clave fiscal cifrada por CUIT, corridas y comprobantes bajados.
+CREATE TABLE IF NOT EXISTS mc_credenciales (
+  cuit            TEXT PRIMARY KEY,
+  cuit_login      TEXT NOT NULL,
+  clave_cifrada   TEXT,
+  sincronizar     BOOLEAN NOT NULL DEFAULT false,
+  actualizada_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  actualizada_por TEXT
+);
+CREATE TABLE IF NOT EXISTS mc_corridas (
+  id           SERIAL PRIMARY KEY,
+  cuit         TEXT NOT NULL,
+  tipo         TEXT NOT NULL,
+  desde        DATE NOT NULL,
+  hasta        DATE NOT NULL,
+  estado       TEXT NOT NULL,
+  token_fb     TEXT,
+  origen       TEXT,
+  usuario      TEXT,
+  iniciada_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  terminada_at TIMESTAMPTZ,
+  cantidad     INTEGER NOT NULL DEFAULT 0,
+  error        TEXT,
+  log          JSONB
+);
+CREATE INDEX IF NOT EXISTS mc_corridas_cuit_idx ON mc_corridas (cuit, iniciada_at DESC);
+CREATE TABLE IF NOT EXISTS mc_comprobantes (
+  id             SERIAL PRIMARY KEY,
+  cuit           TEXT NOT NULL,
+  tipo           TEXT NOT NULL,
+  fecha          DATE,
+  cbte_tipo      INTEGER NOT NULL,
+  punto_venta    INTEGER NOT NULL DEFAULT 0,
+  numero_desde   BIGINT NOT NULL,
+  numero_hasta   BIGINT,
+  cae            TEXT,
+  doc_tipo       INTEGER,
+  doc_nro        TEXT NOT NULL DEFAULT '',
+  contraparte    TEXT,
+  moneda         TEXT,
+  tipo_cambio    NUMERIC,
+  neto_gravado   NUMERIC,
+  no_gravado     NUMERIC,
+  exento         NUMERIC,
+  iva            NUMERIC,
+  total          NUMERIC,
+  corrida_id     INTEGER,
+  constatacion   JSONB,
+  actualizado_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (cuit, tipo, cbte_tipo, punto_venta, numero_desde, doc_nro)
+);
+CREATE INDEX IF NOT EXISTS mc_comprobantes_fecha_idx ON mc_comprobantes (cuit, tipo, fecha DESC);
+
 CREATE TABLE IF NOT EXISTS webhooks (
   id          SERIAL PRIMARY KEY,
   url         TEXT NOT NULL,

@@ -14,6 +14,8 @@ const EVENTOS = [
   'comunicacion_nueva', // e-Ventanilla: llego una comunicacion de ARCA
   'clave_por_vencer', // una clave de API vence en menos de 7 dias
   'clave_anomala', // uso raro de una clave (barrido de CUITs, muchos rechazos)
+  'mis_comprobantes_sincronizado', // termino una bajada de Mis Comprobantes
+  'mis_comprobantes_fallo', // fallo una bajada, o necesita a una persona (captcha)
 ];
 
 async function listar() {

@@ -39,6 +39,8 @@ const ASUNTOS = {
   comunicacion_nueva: 'Nueva comunicacion en e-Ventanilla',
   clave_por_vencer: 'Clave de API por vencer',
   clave_anomala: 'Uso anomalo de una clave de API',
+  mis_comprobantes_sincronizado: 'Mis Comprobantes sincronizado',
+  mis_comprobantes_fallo: 'Mis Comprobantes necesita atencion',
 };
 
 async function notify(evento, data) {
