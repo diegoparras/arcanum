@@ -138,18 +138,22 @@ function directorio() {
   return path.join(config.dataDir, 'backups');
 }
 
-function repoSql() {
-  const db = require('../db');
+function repoSql(db = require('../db')) {
   return {
+    // Una sola foto: todas las tablas en la misma transaccion REPEATABLE READ (si no, un lote
+    // creado a mitad del volcado deja items sin su lote y la restauracion rompe la FK).
     async volcar() {
-      const { rows } = await db.query(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name");
-      const out = {};
-      for (const { table_name: t } of rows) {
-        if (TABLAS_EXCLUIDAS.includes(t)) continue;
-        out[t] = (await db.query(`SELECT * FROM "${t}"`)).rows;
-      }
-      return out;
+      return db.tx(async (c) => {
+        await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+        const { rows } = await c.query(
+          "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name");
+        const out = {};
+        for (const { table_name: t } of rows) {
+          if (TABLAS_EXCLUIDAS.includes(t)) continue;
+          out[t] = (await c.query(`SELECT * FROM "${t}"`)).rows;
+        }
+        return out;
+      });
     },
     async reemplazar(tablas) {
       await db.tx(async (c) => {
@@ -167,9 +171,13 @@ function repoSql() {
             const vals = cols.map((k) => (columnas[t][k] === 'jsonb' || columnas[t][k] === 'json') && fila[k] != null ? JSON.stringify(fila[k]) : fila[k]);
             await c.query(`INSERT INTO "${t}" (${cols.map((k) => `"${k}"`).join(', ')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')})`, vals);
           }
+          // Secuencia solo si la tabla la tiene (services.id es TEXT): un setval que falla aborta
+          // la transaccion entera aunque se atrape el error en JS.
           if (columnas[t].id) {
-            await c.query(`SELECT setval(pg_get_serial_sequence('"${t}"', 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM "${t}"), 0), 1), (SELECT COUNT(*) > 0 FROM "${t}"))`)
-              .catch(() => {}); // tablas con id sin secuencia
+            const { rows: sq } = await c.query("SELECT pg_get_serial_sequence($1, 'id') AS seq", [`"${t}"`]);
+            if (sq[0] && sq[0].seq) {
+              await c.query(`SELECT setval(pg_get_serial_sequence('"${t}"', 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM "${t}"), 0), 1), (SELECT COUNT(*) > 0 FROM "${t}"))`);
+            }
           }
         }
       });
@@ -179,5 +187,5 @@ function repoSql() {
 
 module.exports = {
   MAGIA, TABLAS_EXCLUIDAS, clave, huella, empaquetar, desempaquetar, ruta, listar, podar, ordenRestauracion,
-  restaurar, crear, directorio,
+  restaurar, crear, directorio, repoSql,
 };

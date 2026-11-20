@@ -81,3 +81,34 @@ test('lotes se restaura antes que lote_items', () => {
   assert.ok(o.indexOf('lotes') < o.indexOf('lote_items'));
   assert.deepStrictEqual([...o].sort(), ['comprobantes', 'lote_items', 'lotes']);
 });
+
+function clienteFalso(serial) {
+  const c = { q: [] };
+  c.query = async (sql, vals) => {
+    c.q.push(sql);
+    if (/information_schema\.columns/.test(sql)) return { rows: [{ table_name: 'services', column_name: 'id', data_type: 'text' }, { table_name: 'lotes', column_name: 'id', data_type: 'bigint' }] };
+    if (/pg_get_serial_sequence/.test(sql) && /AS seq/.test(sql)) return { rows: [{ seq: serial[String(vals[0]).replace(/"/g, '')] || null }] };
+    if (/setval/.test(sql) && !serial[(sql.match(/'"(\w+)"'/) || [])[1]]) throw new Error('COALESCE types text and integer cannot be matched');
+    return { rows: [] };
+  };
+  return c;
+}
+
+test('restaurar no hace setval en tablas sin secuencia (id de texto)', async () => {
+  const c = clienteFalso({ lotes: 'public.lotes_id_seq' });
+  const repo = backup.repoSql({ tx: async (fn) => fn(c), query: c.query });
+  await repo.reemplazar({ services: [{ id: 'wsfev1' }], lotes: [{ id: 3 }] });
+  const setvals = c.q.filter((s) => /setval/.test(s));
+  assert.strictEqual(setvals.length, 1);
+  assert.match(setvals[0], /lotes/);
+});
+
+test('el volcado es una foto consistente (una transaccion de solo lectura)', async () => {
+  const c = { q: [], query: async (sql) => { c.q.push(sql); return /information_schema\.tables/.test(sql) ? { rows: [{ table_name: 'lotes' }] } : { rows: [] }; } };
+  let enTx = false;
+  const repo = backup.repoSql({ tx: async (fn) => { enTx = true; return fn(c); }, query: async () => { throw new Error('fuera de la transaccion'); } });
+  await repo.volcar();
+  assert.ok(enTx);
+  assert.match(c.q[0], /REPEATABLE READ/i);
+  assert.match(c.q[0], /READ ONLY/i);
+});
