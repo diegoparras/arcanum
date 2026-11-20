@@ -65,4 +65,17 @@ function decrypt(payload) {
   return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
 }
 
-module.exports = { encrypt, decrypt };
+/**
+ * Clave derivada de la master key (HKDF-SHA256) para otro uso, p. ej. backups. Nunca expone la
+ * master key en si.
+ */
+function derivar(info) {
+  return Buffer.from(crypto.hkdfSync('sha256', key(), Buffer.from('arcanum'), Buffer.from(String(info)), 32));
+}
+
+/** Huella corta de la master key (8 hex del SHA-256) para verificar la copia guardada. */
+function huella() {
+  return crypto.createHash('sha256').update(key()).digest('hex').slice(0, 8);
+}
+
+module.exports = { encrypt, decrypt, derivar, huella };

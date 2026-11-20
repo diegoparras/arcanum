@@ -48,6 +48,8 @@ const ASUNTOS = {
   caea_informe_pendiente: 'CAEA: falta informar y vence el plazo',
   caea_informe_error: 'CAEA: ARCA rechazo un informe',
   emitidos_por_fuera: 'Comprobantes emitidos por fuera de Arcanum',
+  backup_creado: 'Backup diario creado',
+  backup_fallo: 'Fallo el backup diario',
 };
 
 async function notify(evento, data) {

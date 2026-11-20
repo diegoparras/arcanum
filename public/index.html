@@ -190,7 +190,7 @@ function renderNav(cur){
   $('#nav').innerHTML=VIEWS.filter(v=>v[0]!=='usuarios'||['superadmin','admin'].includes(ME.role))
     .map(v=>`<button class="${v[0]===cur?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('');
 }
-function go(v){if(typeof mcPararTimers==='function')mcPararTimers();renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
+function go(v){if(typeof mcPararTimers==='function')mcPararTimers();renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();if(v==='panel'||!['clientes','servicios','emitir','facturador','comprobantes','mis','contingencia','generador','webhooks','usuarios'].includes(v))setTimeout(()=>{if(typeof avisoMasterKey==='function')avisoMasterKey();},600);}
 
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; }catch(e){ showLogin(); return; }
@@ -603,6 +603,40 @@ async function mcMonotributo(){
       <p class="hint">Topes cargados: vigencia ${esc(m.vigenciaTopes||'?')}. Verificá los topes vigentes en arca.gob.ar.${m.excedeMaxima?' Supera la categoría máxima: corresponde evaluar el Régimen General.':''}</p>`;
   }catch(e){$('#mc_mono').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
+/* Backups y master key (superadmin) */
+async function verBackups(){
+  $('#appmenu').classList.remove('open');
+  let d={backups:[],masterKey:{}};try{d=await api('/api/backups');}catch(e){toast(e.message,true);return;}
+  const mk=d.masterKey||{};
+  const kb=n=>(n/1024).toFixed(1)+' KB';
+  modal(`<button class="modal-x" onclick="closeModal()" aria-label="Cerrar">&times;</button><h3 style="text-transform:none">Backups y master key</h3>
+   <div class="card" style="margin:10px 0">${mk.respaldadaAt?`<span class="tag ok">MASTER KEY RESGUARDADA</span> <span class="hint">confirmado el ${new Date(mk.respaldadaAt).toLocaleString('es-AR')}</span>`:'<span class="tag no">FALTA CONFIRMAR EL RESGUARDO</span>'}
+    <p class="hint" style="margin-top:8px">Sin la master key (ARCANUM_MASTER_KEY) no se pueden abrir ni los certificados ni los backups. Guardala fuera de este servidor. Huella de la clave actual: <span class="mono">${esc(mk.huella||'?')}</span>. Para comprobar tu copia: <span class="mono">echo -n CLAVE | xxd -r -p | sha256sum | cut -c1-8</span> tiene que dar lo mismo.</p>
+    ${mk.respaldadaAt?'':'<button class="primary" onclick="confirmarMasterKey()">La guardé fuera del servidor</button>'}</div>
+   <div class="row"><button class="primary" onclick="crearBackup()">Crear backup ahora</button><span class="hint">Diario a las 3 (hora argentina). Se guardan los últimos 14 en /data/backups, cifrados.</span></div>
+   <div id="bk_lista" style="margin-top:10px">${d.backups.length?`<table><tr><th>Archivo</th><th>Tamaño</th><th></th></tr>${d.backups.map(b=>`<tr><td class="mono">${esc(b.nombre)}</td><td class="mono">${kb(b.bytes)}</td><td><button class="ghost" onclick="bajarBackup('${esc(b.nombre)}')">Descargar</button></td></tr>`).join('')}</table>`:'<p class="hint">Todavía no hay backups.</p>'}</div>
+   <p class="hint">Restaurar: <span class="mono">docker compose exec arcanum node src/tools/restaurar-backup.js /data/backups/ARCHIVO</span> (simulacro) y después con <span class="mono">--confirmar</span>.</p>`);
+}
+async function confirmarMasterKey(){
+  if(!confirm('¿Confirmás que guardaste la master key fuera de este servidor (gestor de contraseñas, papel en lugar seguro)?'))return;
+  try{await api('/api/sistema/master-key',{method:'POST',body:JSON.stringify({confirmo:true})});toast('Listo');verBackups();if(location.hash==='#panel')go('panel');}catch(e){toast(e.message,true);}
+}
+async function crearBackup(){
+  try{const {backup:b}=await api('/api/backups',{method:'POST',body:'{}'});toast('Backup creado: '+b.nombre);verBackups();}catch(e){toast(e.message,true);}
+}
+async function bajarBackup(n){
+  try{const r=await fetch('/api/backups/'+encodeURIComponent(n),{credentials:'include'});if(!r.ok)throw new Error('HTTP '+r.status);
+    const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
+  catch(e){toast(e.message,true);}
+}
+async function avisoMasterKey(){
+  if(!ME||ME.role!=='superadmin'||!$('#view'))return;
+  try{const {masterKey:mk}=await api('/api/sistema/master-key');
+    if(!mk.respaldadaAt&&!$('#mk_aviso')){const d=document.createElement('div');d.id='mk_aviso';d.className='card';d.style.marginBottom='14px';
+      d.innerHTML='<span class="tag no">IMPORTANTE</span> Todavía no confirmaste que guardaste la master key fuera del servidor. Sin ella no se pueden recuperar los certificados ni los backups. <button class="ghost" onclick="verBackups()">Ver</button>';
+      $('#view').prepend(d);}}catch{}
+}
+
 /* Ajustes de superadmin: Fisherboy, receta y topes de Monotributo */
 async function ajustesMc(){
   $('#appmenu').classList.remove('open');
@@ -1050,7 +1084,7 @@ async function renderMenu(){
          <option value="prod"${cfg.entorno==='prod'?' selected':''}>Producción</option>
        </select></div>
      <div class="hint" style="padding:2px 12px 6px">Cambia los endpoints de ARCA para toda la instancia.</div></div>`:''}
-   ${ME.role==='superadmin'?`<button class="menu-item" onclick="ajustesMc()">${I_GEAR}<span>Fisherboy y Mis Comprobantes</span></button>`:''}
+   ${ME.role==='superadmin'?`<button class="menu-item" onclick="ajustesMc()">${I_GEAR}<span>Fisherboy y Mis Comprobantes</span></button><button class="menu-item" onclick="verBackups()">${I_GEAR}<span>Backups y master key</span></button>`:''}
    <button class="menu-item" onclick="acercaDe()">${I_INFO}<span>Acerca de Arcanum</span></button>
    <div class="menu-sep"></div>
    <button class="menu-item" onclick="logout()">${I_LOGOUT}<span>Cerrar sesión</span></button>`;
