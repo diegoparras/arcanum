@@ -8,7 +8,7 @@ const FAULT_TRANSITORIO = /no disponible|unavailable|temporalmente|timeout|time 
 function esIndisponibilidad(e) {
   if (!e || !e.extra) return false;
   const { tipo, status } = e.extra;
-  if (tipo === 'timeout' || tipo === 'conexion') return true;
+  if (tipo === 'timeout' || tipo === 'conexion' || tipo === 'verificacion') return true;
   if (tipo === 'http') return Number(status) >= 500;
   if (tipo === 'fault') return FAULT_TRANSITORIO.test(String(e.message || ''));
   return false;

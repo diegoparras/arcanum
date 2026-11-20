@@ -290,6 +290,20 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
   const previo = await previoIdempotente(idem);
   if (previo) return previo;
 
+  // Intento anterior con esta clave cuya respuesta no llego (timeout, corte, reinicio): se
+  // resuelve ANTES de numerar. Si ARCA ya lo otorgo, se adopta; si no se puede saber, no se emite.
+  const vuelos = require('./vuelo');
+  const vrepo = vuelos.repoSql(db);
+  if (idem) {
+    const r = await vuelos.resolver(await vrepo.obtener(idem), { consultar });
+    if (r.estado === 'adoptar') {
+      const raw = await registrarAdoptado(cuit, r.consultado, inv, idem);
+      await vrepo.borrar(idem);
+      webhooks.emitir('comprobante_emitido', raw).catch(() => {});
+      return { ...raw, idempotente: true };
+    }
+  }
+
   let numero = inv.numero;
   if (!numero) {
     const last = await lastAuthorized(cuit, ptoVta, tipoCbte);
@@ -300,6 +314,14 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
   const cbteFecha = inv.fecha ? fmtDate(inv.fecha) : todayYmd();
 
   const inner = (await auth(cuit)) + armarFeCAEReq(inv, { ptoVta, tipoCbte, concepto, numero, cbteFecha });
+  // Anotar el vuelo ANTES de llamar: si Arcanum muere con el pedido en el aire, el proximo
+  // intento con esta clave sabe que numero verificar.
+  if (idem) {
+    await vrepo.anotar(idem, {
+      cuit, entorno: config.env, puntoVenta: ptoVta, tipoCbte, numero,
+      importeTotal: Number(inv.importeTotal || 0), docNro: String(normalizeCuit(inv.nroDocReceptor ?? 0) || 0), fecha: cbteFecha,
+    });
+  }
   let result;
   try {
     result = await call('FECAESolicitar', inner);
@@ -308,8 +330,10 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
     // para no sacar dos CAE para la misma venta.
     e.numeroIntentado = numero;
     e.cbteFecha = cbteFecha;
-    throw e;
+    throw e; // el vuelo queda anotado: el proximo intento lo resuelve
   }
+  // ARCA contesto (aprobado o rechazado): ya no hay duda sobre este intento.
+  if (idem) await vrepo.borrar(idem).catch(() => {});
 
   const topErrors = collectErrors(result);
   const det = result?.FeDetResp?.FECAEDetResponse;
@@ -386,6 +410,13 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
  */
 async function registrarAdoptado(cuit, consultado, cuerpo, idem) {
   const c = normalizeCuit(cuit);
+  // Ese numero ya esta registrado para OTRA venta: no se adopta (seria un CAE ajeno).
+  const ya = await db.query(
+    'SELECT idempotency_key FROM comprobantes WHERE cuit = $1 AND entorno = $2 AND punto_venta = $3 AND tipo_cbte = $4 AND numero = $5',
+    [c, config.env, consultado.puntoVenta, consultado.tipoComprobante, consultado.numero]);
+  if (ya.rows[0] && ya.rows[0].idempotency_key !== idem) {
+    throw new SoapError(`El numero ${consultado.numero} ya esta registrado en Arcanum para otra venta: revisa antes de emitir`, 409);
+  }
   const raw = {
     ...cuerpo,
     aprobado: true, resultado: 'A', adoptado: true, cuit: c,
@@ -568,9 +599,16 @@ function parseLoteCsv(text) {
   });
 }
 
+/** ¿Hay una emision en vuelo sin resolver para esta clave? (la cola no usa CAEA si la hay) */
+async function hayVuelo(idem) {
+  if (!idem) return false;
+  return !!(await require('./vuelo').repoSql(db).obtener(idem));
+}
+
 module.exports = {
   armarFeCAEReq,
   registrarAdoptado,
+  hayVuelo,
   caeaConsultar,
   caeaSolicitar,
   caeaInformar,

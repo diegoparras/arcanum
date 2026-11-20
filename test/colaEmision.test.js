@@ -75,33 +75,27 @@ test('encolar fija la fecha, genera la clave y no duplica', async () => {
   assert.strictEqual(b.id, a.id);
 });
 
-test('corte ambiguo adopta el CAE existente sin emitir', async () => {
-  const consulta = { numero: 40, cae: '5555', importeTotal: 100, docNro: '0', resultado: 'A' };
-  const { s, wsfev1, webhooks } = armar({ consulta });
+test('el corte ambiguo lo resuelve la emision (vuelo): la cola no consulta por su cuenta', async () => {
+  const { s, wsfev1 } = armar({ autoriza: () => ({ aprobado: true, adoptado: true, cae: '5555', numero: 40 }) });
   const it = await s.encolar('20263630743', { ...INV }, { numeroIntentado: 40 });
   const fin = await s.procesar(it.id);
   assert.strictEqual(fin.estado, 'emitido');
   assert.strictEqual(fin.resultado.cae, '5555');
-  assert.strictEqual(wsfev1.emitidos.length, 0);
-  assert.strictEqual(wsfev1.adoptados.length, 1);
-  assert.ok(webhooks.ev.some(([e]) => e === 'comprobante_emitido'));
+  assert.strictEqual(wsfev1.consultas.length, 0);
 });
 
-test('numero intentado que no coincide emite de nuevo', async () => {
-  const consulta = { numero: 40, cae: '5555', importeTotal: 999, docNro: '0', resultado: 'A' };
-  const { s, wsfev1 } = armar({ consulta });
+test('si no se puede verificar el intento anterior, el item queda pendiente', async () => {
+  const { s } = armar({ autoriza: () => { throw new SoapError('No se pudo verificar en ARCA si el intento anterior se emitio', 503, { tipo: 'verificacion' }); } });
+  const it = await s.encolar('20263630743', { ...INV }, { numeroIntentado: 40 });
+  assert.strictEqual((await s.procesar(it.id)).estado, 'pendiente');
+});
+
+test('un rechazo de un item con intento ambiguo pide una persona (puede tener CAE)', async () => {
+  const { s } = armar({ autoriza: () => ({ aprobado: false, resultado: 'R', observaciones: [{ code: 10016, message: 'numero' }] }) });
   const it = await s.encolar('20263630743', { ...INV }, { numeroIntentado: 40 });
   const fin = await s.procesar(it.id);
-  assert.strictEqual(fin.estado, 'emitido');
-  assert.strictEqual(wsfev1.emitidos.length, 1);
-  assert.strictEqual(fin.resultado.cae, '7777');
-});
-
-test('numero intentado que ARCA no tiene emite de nuevo', async () => {
-  const { s, wsfev1 } = armar({ consulta: null });
-  const it = await s.encolar('20263630743', { ...INV }, { numeroIntentado: 40 });
-  assert.strictEqual((await s.procesar(it.id)).estado, 'emitido');
-  assert.strictEqual(wsfev1.emitidos.length, 1);
+  assert.strictEqual(fin.estado, 'requiere_humano');
+  assert.match(fin.ultimo_error, /revis/i);
 });
 
 test('fuera de ventana pasa a requiere_humano sin emitir', async () => {
@@ -234,5 +228,16 @@ test('cola nunca usa CAEA si hubo un intento ambiguo con CAE', async () => {
   const it = await s.encolar('20263630743', { ...INV }, { numeroIntentado: 40 });
   const fin = await s.procesar(it.id);
   assert.strictEqual(fin.estado, 'pendiente');
+  assert.deepStrictEqual(caea.usados, []);
+});
+
+test('nunca CAEA con una emision en vuelo pendiente aunque el item no tenga numero intentado', async () => {
+  const caea = caeaFalso(true);
+  const repo = repoFalso();
+  const wsfev1 = wsfeFalso({ autoriza: () => { throw caido(); } });
+  wsfev1.hayVuelo = async () => true;
+  const s = cola.crear({ repo, wsfev1, webhooks: hooks(), ahora: () => AHORA, caea });
+  const it = await s.encolar('20263630743', { ...INV }, {});
+  assert.strictEqual((await s.procesar(it.id)).estado, 'pendiente');
   assert.deepStrictEqual(caea.usados, []);
 });

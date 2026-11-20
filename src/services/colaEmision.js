@@ -47,14 +47,6 @@ function fueraDeVentana(fechaYmd, concepto, hoy) {
   return dias > (Number(concepto) === 1 ? 5 : 10);
 }
 
-/** El comprobante consultado en ARCA es ESTA venta: mismo total y mismo documento del receptor. */
-function coincide(consultado, cuerpo) {
-  if (!consultado) return false;
-  const total = Math.abs(Number(consultado.importeTotal) - Number(cuerpo.importeTotal)) < 0.01;
-  const doc = String(consultado.docNro || '0').replace(/\D/g, '') === String(cuerpo.nroDocReceptor ?? '0').replace(/\D/g, '');
-  return total && doc;
-}
-
 function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null } = {}) {
   async function encolar(cuit, inv, { numeroIntentado = null, usuario = null, origen = 'api' } = {}) {
     const cuerpo = { ...inv, cuit };
@@ -89,35 +81,27 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
     const { cuit } = item;
     const cuerpo = item.cuerpo;
     try {
-      // 1. Corte ambiguo: ¿ese numero ya lo tiene ARCA con esta venta?
-      if (item.numero_intentado) {
-        let consultado = null;
-        try {
-          consultado = await wsfev1.consultar(cuit, cuerpo.puntoVenta, cuerpo.tipoComprobante, item.numero_intentado);
-        } catch (e) {
-          if (esIndisponibilidad(e)) throw e;
-          consultado = null; // 404: ARCA no lo tiene, el numero no se consumio
-        }
-        if (coincide(consultado, cuerpo)) {
-          await wsfev1.registrarAdoptado(cuit, consultado, cuerpo, item.idempotency_key);
-          const resultado = { ...consultado, aprobado: true, adoptado: true, cuit };
-          return terminar(item, { estado: 'emitido', resultado, ultimo_error: null }, 'comprobante_emitido', resultado);
-        }
-      }
-      // 2. Ventana de fecha: nunca re-fechar solo.
-      if (fueraDeVentana(cuerpo.fecha, item.concepto, ahora())) {
+      // 1. Ventana de fecha: nunca re-fechar solo. (Si hubo un intento ambiguo, primero se deja
+      //    que la emision resuelva ese vuelo: puede que el CAE ya exista con la fecha original.)
+      if (!item.numero_intentado && fueraDeVentana(cuerpo.fecha, item.concepto, ahora())) {
         const msg = `ARCA ya no acepta la fecha ${cuerpo.fecha} (${Number(item.concepto) === 1 ? '5' : '10'} dias como maximo). Decidi: emitir con fecha de hoy o cancelar.`;
         return terminar(item, { estado: 'requiere_humano', ultimo_error: msg }, 'cola_requiere_humano', { id: item.id, cuit, motivo: msg });
       }
-      // 3. Emitir (la idempotencyKey evita duplicar si ya salio por otro camino).
+      // 2. Emitir. La emision resuelve primero cualquier intento anterior con esta clave
+      //    (services/vuelo.js): si ARCA ya lo otorgo, lo adopta en vez de sacar otro CAE.
       const out = await wsfev1.authorizeInvoice(cuit, cuerpo);
+      if (!out.aprobado && item.numero_intentado) {
+        const msg = 'ARCA rechazo el reintento de un comprobante cuyo primer intento quedo en duda: revisa en ARCA si ya tiene CAE antes de volver a emitirlo.';
+        return terminar(item, { estado: 'requiere_humano', resultado: out, ultimo_error: msg }, 'cola_requiere_humano', { id: item.id, cuit, motivo: msg });
+      }
       return terminar(item, { estado: out.aprobado ? 'emitido' : 'rechazado', resultado: out, ultimo_error: null }, null);
     } catch (e) {
       if (esIndisponibilidad(e)) {
-        // 4. ARCA sigue sin responder: CAEA, si el CUIT lo prendio y ya se espero lo suficiente.
-        //    NUNCA si hubo un intento ambiguo con CAE: ese CAE pudo haberse otorgado y saldrian
-        //    dos comprobantes para la misma venta.
-        const ambiguo = !!(e.numeroIntentado || item.numero_intentado);
+        // 3. ARCA sigue sin responder: CAEA, si el CUIT lo prendio y ya se espero lo suficiente.
+        //    NUNCA si hubo un intento ambiguo con CAE (o una emision en vuelo sin resolver): ese
+        //    CAE pudo haberse otorgado y saldrian dos comprobantes para la misma venta.
+        const enVuelo = wsfev1.hayVuelo ? await wsfev1.hayVuelo(item.idempotency_key).catch(() => true) : false;
+        const ambiguo = !!(e.numeroIntentado || item.numero_intentado || enVuelo);
         if (caea && !ambiguo && (await caea.corresponde(item, ahora()))) {
           const out = await caea.emitirConCaea(cuit, item);
           return terminar(item, { estado: 'emitido', modo: 'CAEA', resultado: out, ultimo_error: null }, null);
@@ -238,4 +222,4 @@ function servicio() {
   return porDefecto;
 }
 
-module.exports = { crear, servicio, ESPERAS_MIN, proximoIntento, fueraDeVentana, coincide, ymdAr };
+module.exports = { crear, servicio, ESPERAS_MIN, proximoIntento, fueraDeVentana, ymdAr };

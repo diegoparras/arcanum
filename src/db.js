@@ -282,6 +282,20 @@ CREATE TABLE IF NOT EXISTS mc_comprobantes (
 );
 CREATE INDEX IF NOT EXISTS mc_comprobantes_fecha_idx ON mc_comprobantes (cuit, tipo, fecha DESC);
 
+-- Emisiones en vuelo (0.10): pedido mandado a ARCA cuya respuesta todavia no se conoce.
+CREATE TABLE IF NOT EXISTS emisiones_en_vuelo (
+  idempotency_key TEXT PRIMARY KEY,
+  cuit            TEXT NOT NULL,
+  entorno         TEXT NOT NULL,
+  punto_venta     INTEGER NOT NULL,
+  tipo_cbte       INTEGER NOT NULL,
+  numero          INTEGER NOT NULL,
+  importe_total   NUMERIC,
+  doc_nro         TEXT,
+  fecha           TEXT,
+  creado_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Cola de emision (0.10): comprobantes que esperan a que ARCA vuelva.
 CREATE TABLE IF NOT EXISTS emision_cola (
   id                 SERIAL PRIMARY KEY,
