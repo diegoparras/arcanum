@@ -27,6 +27,7 @@ function repoFalso() {
     it.estado = 'procesando'; return it;
   };
   r.actualizar = async (id, campos) => Object.assign(r.items[id], campos);
+  r.reabrir = async (id, campos) => (['pendiente', 'requiere_humano'].includes(r.items[id].estado) ? Object.assign(r.items[id], campos) : null);
   r.pendientesListos = async () => Object.values(r.items).filter((x) => x.estado === 'pendiente').map((x) => x.id);
   r.reencolarProcesando = async () => {
     let n = 0;
@@ -240,4 +241,15 @@ test('nunca CAEA con una emision en vuelo pendiente aunque el item no tenga nume
   const it = await s.encolar('20263630743', { ...INV }, {});
   assert.strictEqual((await s.procesar(it.id)).estado, 'pendiente');
   assert.deepStrictEqual(caea.usados, []);
+});
+
+test('reintentar o cancelar no pisan un item que el daemon ya tomo', async () => {
+  const { s, repo } = armar();
+  const it = await s.encolar('20263630743', { ...INV }, {});
+  // el daemon lo toma entre la lectura y la escritura de la accion manual
+  const obtenerOriginal = repo.obtener;
+  repo.obtener = async (id) => { const x = await obtenerOriginal(id); const copia = { ...x }; repo.items[id].estado = 'procesando'; return copia; };
+  await assert.rejects(s.reintentar(it.id, {}), (e) => e.httpStatus === 409);
+  await assert.rejects(s.cancelar(it.id), (e) => e.httpStatus === 409);
+  assert.strictEqual(repo.items[it.id].estado, 'procesando');
 });

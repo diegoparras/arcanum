@@ -140,7 +140,8 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
       campos.cuerpo = { ...item.cuerpo, fecha: hoy };
       campos.fecha = hoy;
     }
-    await repo.actualizar(id, campos);
+    // Condicional: si el daemon lo tomo entre la lectura y aca, no se pisa (seria procesarlo dos veces).
+    if (!(await repo.reabrir(id, campos))) throw err('El item cambio de estado mientras tanto (lo esta procesando la cola): volve a mirarlo', 409);
     return procesar(id);
   }
 
@@ -148,12 +149,15 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
     const item = await repo.obtener(id);
     if (!item) throw err('No existe ese item de la cola', 404);
     if (!['pendiente', 'requiere_humano'].includes(item.estado)) throw err(`El item esta ${item.estado}: no se puede cancelar`, 409);
-    return repo.actualizar(id, { estado: 'cancelado', actualizado_at: ahora() });
+    const fin = await repo.reabrir(id, { estado: 'cancelado', actualizado_at: ahora() });
+    if (!fin) throw err('El item cambio de estado mientras tanto (lo esta procesando la cola): volve a mirarlo', 409);
+    return fin;
   }
 
   return {
     encolar, procesar, procesarPendientes, reintentar, cancelar,
     obtener: (id) => repo.obtener(id),
+    porClave: (k) => (repo.porClave ? repo.porClave(k) : null),
     listar: (f) => repo.listar(f || {}),
     reencolarProcesando: () => repo.reencolarProcesando(),
   };
@@ -169,11 +173,25 @@ function repoSql() {
       const { rows } = await db.query(
         `INSERT INTO emision_cola (cuit, entorno, idempotency_key, cuerpo, fecha, concepto, estado, numero_intentado, proximo_intento_at, creado_por, origen)
          VALUES ($1,$2,$3,$4,to_date($5,'YYYYMMDD'),$6,'pendiente',$7,$8,$9,$10)
-         ON CONFLICT (idempotency_key) DO NOTHING RETURNING *`,
+         ON CONFLICT (idempotency_key) DO UPDATE SET
+           numero_intentado = COALESCE(EXCLUDED.numero_intentado, emision_cola.numero_intentado)
+         RETURNING *, (xmax = 0) AS insertado`,
         [it.cuit, config.env, it.idempotency_key, json(it.cuerpo), it.fecha, it.concepto, it.numero_intentado, it.proximo_intento_at, it.creado_por, it.origen]);
-      if (rows[0]) return rows[0];
-      const ya = await db.query('SELECT * FROM emision_cola WHERE idempotency_key = $1', [it.idempotency_key]);
-      return { ...ya.rows[0], avisado: true };
+      const { insertado, ...fila } = rows[0];
+      return insertado ? fila : { ...fila, avisado: true };
+    },
+    // Cambio condicional: solo si sigue abierto (pendiente o requiere_humano). null si no.
+    async reabrir(id, campos) {
+      const cols = Object.keys(campos);
+      const set = cols.map((c, i) => `${c} = ${c === 'fecha' ? `to_date($${i + 2},'YYYYMMDD')` : `$${i + 2}`}`).join(', ');
+      const vals = cols.map((c) => (['cuerpo', 'resultado'].includes(c) ? json(campos[c]) : campos[c]));
+      const { rows } = await db.query(
+        `UPDATE emision_cola SET ${set} WHERE id = $1 AND estado IN ('pendiente', 'requiere_humano') RETURNING *`, [id, ...vals]);
+      return rows[0] || null;
+    },
+    async porClave(k) {
+      const { rows } = await db.query('SELECT * FROM emision_cola WHERE idempotency_key = $1', [k]);
+      return rows[0] || null;
     },
     async obtener(id) {
       const { rows } = await db.query('SELECT * FROM emision_cola WHERE id = $1', [id]);

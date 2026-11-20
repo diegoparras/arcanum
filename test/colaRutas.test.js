@@ -79,3 +79,18 @@ test('operador solo ve y opera sus CUIT', async () => {
     assert.deepStrictEqual(cola.acciones[0], ['reintentar', 1, { fechaHoy: true }]);
   });
 });
+
+test('reintento del cliente con la misma clave: devuelve el estado real de la cola, no emite', async () => {
+  const cola = colaFalsa();
+  cola.porClave = async (k) => (k === 'K1' ? { id: 5, estado: 'pendiente', idempotency_key: 'K1' } : k === 'K2' ? { id: 6, estado: 'emitido', resultado: { aprobado: true, cae: '9' } } : k === 'K3' ? { id: 7, estado: 'cancelado' } : null);
+  let emitidos = 0;
+  const wsfev1 = { authorizeInvoice: async () => { emitidos += 1; return { aprobado: true }; } };
+  const r1 = await emitirOEncolar('20263630743', { idempotencyKey: 'K1' }, { contingencia: true }, { wsfev1, cola });
+  assert.strictEqual(r1.status, 202);
+  assert.strictEqual(r1.body.cola.estado, 'pendiente');
+  const r2 = await emitirOEncolar('20263630743', { idempotencyKey: 'K2' }, { contingencia: true }, { wsfev1, cola });
+  assert.strictEqual(r2.status, 200);
+  assert.strictEqual(r2.body.comprobante.cae, '9');
+  await assert.rejects(emitirOEncolar('20263630743', { idempotencyKey: 'K3' }, { contingencia: true }, { wsfev1, cola }), (e) => e.httpStatus === 409);
+  assert.strictEqual(emitidos, 0);
+});

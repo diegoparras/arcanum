@@ -24,6 +24,17 @@ function json(res, status, payload) {
 async function emitirOEncolar(cuit, inv, { contingencia = false, usuario = null, origen = 'api' } = {}, deps = {}) {
   const wsfev1 = deps.wsfev1 || require('../services/wsfev1');
   const cola = deps.cola || require('../services/colaEmision').servicio();
+  // Reintento del cliente con una clave que ya esta en la cola: se devuelve el estado real, nunca
+  // se emite por fuera de la cola (podria salir un segundo CAE).
+  if (inv.idempotencyKey && cola.porClave) {
+    const ya = await cola.porClave(inv.idempotencyKey);
+    if (ya) {
+      if (ya.estado === 'emitido') return { status: 200, body: { ok: true, comprobante: ya.resultado, desdeCola: ya.id } };
+      if (ya.estado === 'rechazado') return { status: 422, body: { ok: false, comprobante: ya.resultado || { aprobado: false }, error: ya.ultimo_error || 'Rechazado', desdeCola: ya.id } };
+      if (ya.estado === 'cancelado') throw Object.assign(new Error(`Ese comprobante se cancelo en la cola (item ${ya.id}): usa otra idempotencyKey para emitirlo de nuevo`), { httpStatus: 409 });
+      return { status: 202, body: { ok: true, encolado: true, mensaje: 'Ya esta en la cola.', cola: { id: ya.id, estado: ya.estado, idempotencyKey: ya.idempotency_key } } };
+    }
+  }
   try {
     const result = await wsfev1.authorizeInvoice(cuit, inv);
     return { status: result.aprobado ? 200 : 422, body: { ok: !!result.aprobado, comprobante: result } };
