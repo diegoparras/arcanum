@@ -341,6 +341,7 @@ CREATE TABLE IF NOT EXISTS caea (
   obtenido_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (cuit, entorno, periodo, orden)
 );
+ALTER TABLE caea ADD COLUMN IF NOT EXISTS punto_venta INTEGER;
 CREATE TABLE IF NOT EXISTS caea_sin_mov (
   caea_id      INTEGER NOT NULL,
   punto_venta  INTEGER NOT NULL,

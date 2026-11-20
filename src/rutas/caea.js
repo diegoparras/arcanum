@@ -52,7 +52,14 @@ function crearRutas({ caea, wsfev1 } = {}) {
         if (String(pv.Bloqueado || 'N').toUpperCase() === 'S') throw err(`El punto de venta ${puntoVenta} esta bloqueado en ARCA`, 400);
       }
       const config = await servicio().guardarConfig(cuit, { activo, puntoVenta, minutosEspera }, principal.username);
-      return json(res, 200, { ok: true, config });
+      let advertencia = null;
+      if (!activo) {
+        const st = await servicio().estado(cuit);
+        if (st.pendientes || (st.caeas && st.caeas.length)) {
+          advertencia = `CAEA queda apagado para emitir, pero ${st.pendientes} comprobante(s) CAEA sin informar y los CAEA ya pedidos se van a seguir informando (y "sin movimiento") hasta cerrar la obligacion.`;
+        }
+      }
+      return json(res, 200, { ok: true, config, advertencia });
     }
 
     if (req.method === 'POST' && (seg[3] === 'solicitar' || seg[3] === 'informar') && !seg[4]) {

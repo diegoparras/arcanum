@@ -136,3 +136,36 @@ test('corresponde usar CAEA solo prendido y pasados los minutos de espera', asyn
   assert.strictEqual(await armar({ caeas, config: { activo: false, punto_venta: 9, minutos_espera: 30 } }).s.corresponde(viejo, HOY), false);
   assert.strictEqual(await armar({ caeas, config: null }).s.corresponde(viejo, HOY), false);
 });
+
+test('CAEA apagado igual informa "sin movimiento" y avisa lo pendiente', async () => {
+  const caeas = [{ id: 1, caea: 'VIEJO', punto_venta: 9, vig_desde: '20261101', vig_hasta: '20261115', tope_inf: '20261122' }];
+  const { s, wsfev1, webhooks } = armar({ caeas, config: { cuit: '20263630743', activo: false, punto_venta: 4, minutos_espera: 30 } });
+  await s.informarSinMovimiento('20263630743');
+  assert.deepStrictEqual(wsfev1.llamadas.filter((l) => l[0] === 'sinmov'), [['sinmov', 9, 'VIEJO']], 'usa el punto de venta con el que se pidio');
+  const { s: s2, repo: r2, webhooks: w2 } = armar({ caeas, config: { activo: false, punto_venta: 9, minutos_espera: 30 } });
+  r2.pend = [{ id: 7, numero: 3, punto_venta: 9, tipo_cbte: 11, raw: { caea: 'VIEJO' } }];
+  await s2.avisos('20263630743');
+  assert.ok(w2.ev.some(([e]) => e === 'caea_informe_pendiente'));
+  assert.ok(webhooks);
+});
+
+test('un "sin movimiento" rechazado no queda como hecho y avisa el error', async () => {
+  const caeas = [{ id: 1, caea: 'X', punto_venta: 9, vig_desde: '20261101', vig_hasta: '20261115', tope_inf: '20261122' }];
+  const { s, repo, wsfev1, webhooks } = armar({ caeas });
+  wsfev1.caeaSinMovimiento = async () => ({ resultado: 'R', errores: [{ code: 1, message: 'no' }] });
+  await s.informarSinMovimiento('20263630743');
+  assert.strictEqual(repo.sinMov.length, 0);
+  assert.ok(webhooks.ev.some(([e]) => e === 'caea_informe_error'));
+});
+
+test('el daemon informa a todo CUIT con CAEA pedidos, aunque este apagado', async () => {
+  const { s, repo } = armar();
+  repo.cuitsConCaea = async () => ['20263630743', '30711111118'];
+  assert.deepStrictEqual(await s.paraInformar(), ['20263630743', '30711111118']);
+});
+
+test('al pedir un CAEA se guarda el punto de venta con el que se pidio', async () => {
+  const { s, repo } = armar({ ws: { consultar: () => null, solicitar: (p, o) => GET(p, o, `C${o}`) } });
+  await s.asegurar('20263630743');
+  assert.ok(repo.guardados.every((g) => g.punto_venta === 9));
+});

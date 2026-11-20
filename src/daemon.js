@@ -171,6 +171,9 @@ async function caeaPedirYAvisar() {
   const caea = require('./services/caea').servicio();
   for (const cuit of await caea.activos()) {
     try { await caea.asegurar(cuit); } catch (e) { console.error(`[arcanum][caea] ${maskCuit(cuit)}: ${e.message}`); }
+  }
+  // Avisos para todo CUIT con algo pendiente, aunque haya apagado CAEA.
+  for (const cuit of await caea.paraInformar()) {
     try { await caea.avisos(cuit); } catch (e) { console.error(`[arcanum][caea] avisos ${maskCuit(cuit)}: ${e.message}`); }
   }
 }
@@ -178,7 +181,7 @@ async function caeaPedirYAvisar() {
 async function caeaInformar() {
   if (!lastArcaOk) return; // con ARCA caido no tiene sentido: se informa cuando vuelve
   const caea = require('./services/caea').servicio();
-  for (const cuit of await caea.activos()) {
+  for (const cuit of await caea.paraInformar()) { // prendido o no: lo pedido se informa igual
     try {
       const r = await caea.informarPendientes(cuit);
       await caea.informarSinMovimiento(cuit);

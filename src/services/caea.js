@@ -79,7 +79,7 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date() } = {}) {
         }
       }
       const guardado = await repo.guardarCaea(cuit, {
-        periodo: q.periodo, orden: q.orden, caea: g.caea || g.CAEA,
+        periodo: q.periodo, orden: q.orden, caea: g.caea || g.CAEA, punto_venta: Number(cfg.punto_venta),
         vig_desde: g.vigDesde || g.FchVigDesde, vig_hasta: g.vigHasta || g.FchVigHasta, tope_inf: g.topeInf || g.FchTopeInf,
       });
       await webhooks.emitir('caea_obtenido', { cuit, periodo: q.periodo, orden: q.orden, caea: guardado.caea, topeInforme: guardado.tope_inf }).catch(() => {});
@@ -151,25 +151,32 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date() } = {}) {
     return { informados, errores };
   }
 
+  // Obligacion de informar: corre aunque CAEA se haya apagado despues (un CAEA pedido se informa
+  // igual). Usa el punto de venta con el que se pidio el CAEA.
   async function informarSinMovimiento(cuit) {
-    const cfg = await configActiva(cuit);
-    if (!cfg) return [];
+    const cfg = await repo.config(cuit);
     const hoy = ymd(ahora());
     const hechos = [];
     for (const c of await repo.caeas(cuit)) {
       if (!(c.vig_hasta < hoy)) continue;
+      const pv = Number(c.punto_venta || (cfg && cfg.punto_venta));
+      if (!pv) continue;
       if ((await repo.cantidadConCaea(c.caea)) > 0) continue;
-      if (await repo.sinMovHecho(c.id, cfg.punto_venta)) continue;
-      const r = await wsfev1.caeaSinMovimiento(cuit, cfg.punto_venta, c.caea);
-      await repo.guardarSinMov(c.id, cfg.punto_venta, r);
-      hechos.push({ caea: c.caea, puntoVenta: cfg.punto_venta, resultado: r.resultado });
+      if (await repo.sinMovHecho(c.id, pv)) continue;
+      const r = await wsfev1.caeaSinMovimiento(cuit, pv, c.caea);
+      if (r.resultado === 'A') {
+        await repo.guardarSinMov(c.id, pv, r);
+      } else {
+        const motivo = (r.errores || []).map((o) => `${o.code}: ${o.message}`).join('; ') || `Resultado ${r.resultado}`;
+        await webhooks.emitir('caea_informe_error', { cuit, caea: c.caea, puntoVenta: pv, sinMovimiento: true, motivo }).catch(() => {});
+      }
+      hechos.push({ caea: c.caea, puntoVenta: pv, resultado: r.resultado });
     }
     return hechos;
   }
 
   async function avisos(cuit) {
-    const cfg = await configActiva(cuit);
-    if (!cfg) return 0;
+    const cfg = await repo.config(cuit);
     const hoy = ymd(ahora());
     const pendientes = await repo.pendientesInformar(cuit);
     let n = 0;
@@ -177,7 +184,8 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date() } = {}) {
       const dias = diasEntre(hoy, c.tope_inf);
       if (dias > 2 || dias < 0) continue;
       const sinInformar = pendientes.filter((p) => (p.raw || {}).caea === c.caea).length;
-      const faltaSinMov = c.vig_hasta < hoy && (await repo.cantidadConCaea(c.caea)) === 0 && !(await repo.sinMovHecho(c.id, cfg.punto_venta));
+      const pv = Number(c.punto_venta || (cfg && cfg.punto_venta));
+      const faltaSinMov = c.vig_hasta < hoy && (await repo.cantidadConCaea(c.caea)) === 0 && !(await repo.sinMovHecho(c.id, pv));
       if (!sinInformar && !faltaSinMov) continue;
       const k = `caea_aviso:${cuit}:${c.caea}`;
       if (await repo.avisoHecho(k)) continue;
@@ -194,6 +202,8 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date() } = {}) {
     guardarConfig: (cuit, c, usuario) => repo.guardarConfig(cuit, c, usuario),
     estado: async (cuit) => ({ config: await repo.config(cuit), caeas: await repo.caeas(cuit), pendientes: (await repo.pendientesInformar(cuit)).length }),
     activos: () => repo.activos(),
+    /** CUIT con algo que informar: tienen CAEA pedidos o comprobantes CAEA, prendido o no. */
+    paraInformar: () => repo.cuitsConCaea(),
   };
 }
 
@@ -214,6 +224,13 @@ function repoSql() {
          RETURNING *`, [cuit, !!activo, puntoVenta, minutosEspera, usuario || null]);
       return rows[0];
     },
+    async cuitsConCaea() {
+      const { rows } = await db.query(
+        `SELECT cuit FROM caea WHERE entorno = $1
+         UNION SELECT cuit FROM comprobantes WHERE entorno = $1 AND raw->>'modo' = 'CAEA' AND COALESCE(raw->>'informado','false') = 'false'
+         ORDER BY 1`, [config.env]);
+      return rows.map((r) => r.cuit);
+    },
     async activos() {
       const { rows } = await db.query('SELECT cuit FROM caea_config WHERE activo = true ORDER BY cuit');
       return rows.map((r) => r.cuit);
@@ -228,10 +245,10 @@ function repoSql() {
     },
     async guardarCaea(cuit, g) {
       const { rows } = await db.query(
-        `INSERT INTO caea (cuit, entorno, periodo, orden, caea, vig_desde, vig_hasta, tope_inf)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        `INSERT INTO caea (cuit, entorno, periodo, orden, caea, vig_desde, vig_hasta, tope_inf, punto_venta)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          ON CONFLICT (cuit, entorno, periodo, orden) DO UPDATE SET caea = EXCLUDED.caea RETURNING *`,
-        [cuit, config.env, g.periodo, g.orden, g.caea, g.vig_desde, g.vig_hasta, g.tope_inf]);
+        [cuit, config.env, g.periodo, g.orden, g.caea, g.vig_desde, g.vig_hasta, g.tope_inf, g.punto_venta || null]);
       return rows[0];
     },
     async vigente(cuit, fechaYmd) {

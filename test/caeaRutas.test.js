@@ -65,3 +65,12 @@ test('operador no cambia la config pero puede pedir el CAEA de su CUIT', async (
     assert.strictEqual((await fetch(`${base}/api/caea/20263630743`)).status, 200);
   });
 });
+
+test('apagar con pendientes avisa que se van a seguir informando', async () => {
+  const d = deps();
+  d.caea.estado = async () => ({ config: { activo: true }, caeas: [{ caea: 'X' }], pendientes: 2 });
+  await conServidor({ username: 'a', role: 'admin' }, d, async (base) => {
+    const r = await (await put(base, '/api/caea/20263630743/config', { activo: false })).json();
+    assert.match(r.advertencia, /2 comprobante/);
+  });
+});
