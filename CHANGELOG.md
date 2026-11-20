@@ -7,7 +7,7 @@ Versionado semantico.
 
 ### Nuevo
 - **Mis Comprobantes** (emitidos y recibidos) bajados de la pagina de ARCA con la sesion de
-  agente de **Fisherboy 1.8.0**: receta editable, IA de respaldo opcional que nunca ve la clave,
+  agente de **Fisherboy 1.9.0**: receta editable, IA de respaldo opcional que nunca ve la clave,
   pausa ante captcha y **navegador en vivo** en la UI con tomar el control y devolverlo.
   Guardado sin duplicados, export CSV y sincronizacion diaria (`ARCANUM_MC_HORA`).
 - **Clave fiscal** por CUIT cifrada con la master key, que no vuelve por la API ni queda en logs.

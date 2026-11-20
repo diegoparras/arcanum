@@ -88,7 +88,7 @@ el volumen de Postgres; respaldalo (`pg_dump`) junto con tu `ARCANUM_MASTER_KEY`
 ## Mis Comprobantes: conectar Fisherboy
 
 Mis Comprobantes se baja operando la pagina de ARCA con la *sesion de agente* de Fisherboy
-(1.8.0 o mas nuevo). Arcanum le habla por la red interna.
+(1.9.0 o mas nuevo). Arcanum le habla por la red interna.
 
 **Compose**: sumá el archivo de Fisherboy:
 
@@ -113,7 +113,7 @@ LLM_MODEL=...
 
 En Arcanum: `FISHERBOY_URL=http://<servicio-fisherboy>:8000` y `FISHERBOY_TOKEN=<el mismo>`, o
 cargalos desde el menu **Fisherboy y Mis Comprobantes** (superadmin). En la pestana
-**Mis Comprobantes** tiene que decir "Fisherboy 1.8.x conectado".
+**Mis Comprobantes** tiene que decir "Fisherboy 1.9.x conectado".
 
 **Primera corrida real**: cargá la clave fiscal del CUIT, tocá **Sincronizar ahora** y mirala en
 vivo. Si un paso de la receta no coincide con la pagina real, tomá el control, terminá ese paso
