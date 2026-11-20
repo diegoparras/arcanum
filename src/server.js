@@ -42,6 +42,9 @@ const { crearLimitador, crearDetector } = require('./auth/limites');
 const { requireRole, assertCuitAllowed, scopedRequiresCuit, assertPuedeEscribir } = require('./auth/permisos');
 const { crearServidor: crearServidorMcp } = require('./mcp/servidor');
 const { HERRAMIENTAS: HERRAMIENTAS_MCP } = require('./mcp/herramientas');
+const { crearRutas: crearRutasMc } = require('./rutas/misComprobantes');
+
+const rutasMc = crearRutasMc();
 
 // Si no se definio API key, generamos una y la mostramos una sola vez.
 let API_KEY = config.apiKey;
@@ -112,8 +115,8 @@ const mcp = crearServidorMcp({
   timeoutMs: parseInt(process.env.ARCANUM_MCP_TIMEOUT_MS || '80000', 10),
   instrucciones:
     'Consulta de ARCA a traves de Arcanum: padron y riesgo fiscal de un CUIT, comprobantes, numeracion, puntos de venta, '
-    + 'e-Ventanilla, certificados y estado de ARCA. Todas las herramientas son de solo lectura; vista_previa_comprobante '
-    + 'valida un comprobante sin emitirlo.',
+    + 'e-Ventanilla, certificados, estado de ARCA y Mis Comprobantes (emitidos y recibidos ya bajados). Todas las '
+    + 'herramientas son de solo lectura; vista_previa_comprobante valida un comprobante sin emitirlo.',
 });
 
 /** POST /mcp — Streamable HTTP sin estado. Solo con clave (Bearer o X-API-Key), nunca con cookie. */
@@ -277,6 +280,9 @@ async function route(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/api/auth/me') {
     return sendJson(res, 200, { ok: true, usuario: principal });
   }
+
+  // Mis Comprobantes (via Fisherboy) y la conexion con Fisherboy: ver src/rutas/misComprobantes.js
+  if (await rutasMc(req, res, url, seg, principal)) return;
 
   // --- Config del sistema ---
   // GET /api/config  -> entorno activo + version (para el "Acerca de")

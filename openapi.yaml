@@ -15,6 +15,7 @@ security:
   - BearerAuth: []
 tags:
   - name: MCP
+  - name: Mis Comprobantes
   - name: Claves
   - name: Auth
   - name: Config
@@ -469,6 +470,52 @@ paths:
     delete: { tags: [Webhooks], summary: Borra un webhook (admin+), parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
   /api/webhooks/{id}/probar:
     post: { tags: [Webhooks], summary: Manda un evento "prueba" y devuelve lo que contesto el destino (admin+), parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: "prueba: { entregado, status, ms }" }, '404': { description: no existe } } }
+
+  /api/fisherboy/config:
+    get: { tags: [Mis Comprobantes], summary: URL de Fisherboy y si hay token cargado (superadmin; el token nunca vuelve), responses: { '200': { description: "fisherboy: { url, tokenCargado }" } } }
+    put: { tags: [Mis Comprobantes], summary: Guarda URL y token de Fisherboy (token cifrado; superadmin), requestBody: { content: { application/json: { schema: { type: object, properties: { url: { type: string }, token: { type: string } } } } } }, responses: { '200': { description: ok } } }
+  /api/fisherboy/salud:
+    get: { tags: [Mis Comprobantes], summary: Si Fisherboy responde (admin+), responses: { '200': { description: "fisherboy: { ok, version }" } } }
+  /api/mis-comprobantes/receta:
+    get: { tags: [Mis Comprobantes], summary: Receta que corre Fisherboy para bajar Mis Comprobantes (admin+), responses: { '200': { description: "receta: { url, pasos }" } } }
+    put: { tags: [Mis Comprobantes], summary: Reemplaza la receta (superadmin), requestBody: { content: { application/json: { schema: { type: object, required: [url, pasos], properties: { url: { type: string }, pasos: { type: array, items: { type: object } } } } } } }, responses: { '200': { description: ok }, '400': { description: receta invalida } } }
+    delete: { tags: [Mis Comprobantes], summary: Vuelve a la receta por defecto (superadmin), responses: { '200': { description: ok } } }
+  /api/mis-comprobantes/{cuit}:
+    get:
+      tags: [Mis Comprobantes]
+      summary: Comprobantes emitidos y recibidos ya bajados
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string } }
+        - { name: tipo, in: query, schema: { type: string, enum: [emitido, recibido] } }
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+        - { name: limite, in: query, schema: { type: integer, maximum: 5000 } }
+      responses: { '200': { description: comprobantes } }
+  /api/mis-comprobantes/{cuit}/export.csv:
+    get: { tags: [Mis Comprobantes], summary: Lo mismo en CSV (separador punto y coma), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: CSV } } }
+  /api/mis-comprobantes/{cuit}/corridas:
+    get: { tags: [Mis Comprobantes], summary: Historial de sincronizaciones, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: corridas } } }
+  /api/mis-comprobantes/{cuit}/credencial:
+    get: { tags: [Mis Comprobantes], summary: Si hay clave fiscal cargada (nunca la devuelve), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "credencial: { cargada, cuitLogin, sincronizar, actualizada }" } } }
+    put: { tags: [Mis Comprobantes], summary: Carga o cambia la clave fiscal (cifrada) y la sincronizacion diaria (admin+), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], requestBody: { content: { application/json: { schema: { type: object, properties: { cuitLogin: { type: string }, clave: { type: string, format: password }, sincronizar: { type: boolean } } } } } }, responses: { '200': { description: ok } } }
+    delete: { tags: [Mis Comprobantes], summary: Borra la clave fiscal (admin+), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: ok } } }
+  /api/mis-comprobantes/{cuit}/sincronizar:
+    post:
+      tags: [Mis Comprobantes]
+      summary: Baja Mis Comprobantes con la sesion de agente de Fisherboy (admin+, u operador con ese CUIT)
+      parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
+      requestBody: { content: { application/json: { schema: { type: object, required: [desde, hasta], properties: { tipo: { type: string, enum: [emitidos, recibidos, ambos] }, desde: { type: string, format: date }, hasta: { type: string, format: date } } } } } }
+      responses: { '202': { description: "corrida creada; seguila con /corridas/{id}" }, '400': { description: sin clave fiscal o fechas invalidas }, '409': { description: ya hay una corrida en curso para ese CUIT }, '503': { description: Fisherboy no configurado o caido } }
+  /api/mis-comprobantes/corridas/{id}:
+    get: { tags: [Mis Comprobantes], summary: Estado de una corrida, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: corrida } } }
+  /api/mis-comprobantes/corridas/{id}/frame:
+    get: { tags: [Mis Comprobantes], summary: Vista en vivo del navegador (JPEG 1280x800; 204 si no cambio desde `desde`), parameters: [ { name: id, in: path, required: true, schema: { type: integer } }, { name: desde, in: query, schema: { type: integer } } ], responses: { '200': { description: imagen }, '204': { description: sin cambios } } }
+  /api/mis-comprobantes/corridas/{id}/evento:
+    post: { tags: [Mis Comprobantes], summary: "Evento humano en el navegador: click, doble, texto, tecla, scroll, atras, recargar (solo en modo humano)", parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok }, '409': { description: la sesion no esta en modo humano } } }
+  /api/mis-comprobantes/corridas/{id}/tomar-control:
+    post: { tags: [Mis Comprobantes], summary: Pausa la receta o la IA y pasa el navegador a una persona, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
+  /api/mis-comprobantes/corridas/{id}/devolver:
+    post: { tags: [Mis Comprobantes], summary: Devuelve el control a la receta o la IA, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
 
   /api/wsaa/{cuit}/{service}:
     get:

@@ -13,6 +13,7 @@
 //   comunicaciones_ventanilla -> listado de e-Ventanilla (sin abrirlas: no las marca leidas)
 //   vencimiento_certificado -> vigencia de los certificados cargados
 //   vista_previa_comprobante -> valida un comprobante y muestra su numero, SIN emitir
+//   mis_comprobantes    -> emitidos y recibidos de Mis Comprobantes ya bajados (no entra a ARCA)
 //
 // Las respuestas son datos (JSON), no instrucciones para un asistente.
 
@@ -677,13 +678,90 @@ const vistaPreviaTool = {
   },
 };
 
+// ---------- mis_comprobantes ----------
+/** Filas de mc_comprobantes -> resumen por tipo (las notas de credito restan) + ultimos 50. */
+function resumirMc(filas) {
+  const { conSigno } = require('../services/tiposCbte');
+  const grupo = () => ({ cantidad: 0, neto: 0, porTipo: {} });
+  const out = { emitidos: grupo(), recibidos: grupo() };
+  for (const f of filas) {
+    const g = f.tipo === 'recibido' ? out.recibidos : out.emitidos;
+    g.cantidad += 1;
+    g.neto += conSigno(f.cbte_tipo, f.total);
+    const nombre = TIPOS[f.cbte_tipo] || `Tipo ${f.cbte_tipo}`;
+    g.porTipo[nombre] = (g.porTipo[nombre] || 0) + 1;
+  }
+  for (const g of [out.emitidos, out.recibidos]) g.neto = +g.neto.toFixed(2);
+  const orden = [...filas].sort((a, b) => String(fechaIso(b.fecha)).localeCompare(String(fechaIso(a.fecha))));
+  out.comprobantes = orden.slice(0, 50).map((f) => ({
+    tipo: f.tipo,
+    comprobante: formatearNumero(f.punto_venta, f.numero_desde),
+    tipoComprobante: Number(f.cbte_tipo),
+    tipoNombre: TIPOS[f.cbte_tipo] || null,
+    fecha: fechaIso(f.fecha),
+    importeTotal: Number(f.total),
+    contraparte: { nombre: f.contraparte || null, documento: f.doc_nro || null },
+    cae: f.cae || null,
+  }));
+  return out;
+}
+
+const misComprobantesTool = {
+  nombre: 'mis_comprobantes',
+  titulo: 'Mis Comprobantes (emitidos y recibidos)',
+  descripcion:
+    'Resumen de los comprobantes emitidos y recibidos de un CUIT segun Mis Comprobantes de ARCA, tal como Arcanum los '
+    + 'bajo en su ultima sincronizacion (incluye los hechos por fuera de Arcanum). JSON con cantidad y neto por emitidos y '
+    + 'recibidos (las notas de credito restan), cantidad por tipo, los ultimos 50 y la fecha de la ultima sincronizacion. No '
+    + 'entra a ARCA ni dispara una sincronizacion: lee lo ya guardado. Solo lectura.',
+  esquema: {
+    type: 'object',
+    properties: {
+      cuit: { type: 'string', description: 'CUIT del contribuyente. Opcional si Arcanum tiene uno solo con Mis Comprobantes.' },
+      tipo: { type: 'string', enum: ['emitido', 'recibido'], description: 'Opcional. Solo emitidos o solo recibidos.' },
+      desde: { type: 'string', description: 'Opcional. Fecha minima, AAAA-MM-DD.' },
+      hasta: { type: 'string', description: 'Opcional. Fecha maxima, AAAA-MM-DD.' },
+    },
+    additionalProperties: false,
+  },
+  async ejecutar(args, ctx) {
+    let cuit;
+    if (args.cuit) {
+      cuit = cuit11(args.cuit);
+    } else {
+      const { rows } = await db.query('SELECT DISTINCT cuit FROM mc_comprobantes ORDER BY cuit');
+      let lista = rows.map((r) => r.cuit);
+      if (ctx.principal.cuitAllow && ctx.principal.cuitAllow.length) lista = lista.filter((c) => ctx.principal.cuitAllow.includes(c));
+      if (lista.length !== 1) throw error(lista.length ? `Hay ${lista.length} CUITs con Mis Comprobantes; indica "cuit": ${lista.join(', ')}.` : 'Todavia no se sincronizo Mis Comprobantes para ningun CUIT.');
+      cuit = lista[0];
+    }
+    assertCuitAllowed(ctx.principal, cuit);
+    ctx.cuit = cuit;
+    for (const campo of ['desde', 'hasta']) {
+      if (args[campo] && !/^\d{4}-\d{2}-\d{2}$/.test(String(args[campo]))) throw error(`"${campo}" debe tener la forma AAAA-MM-DD`);
+    }
+    const mc = require('../services/misComprobantes').servicio();
+    const filas = await mc.listar(cuit, { tipo: args.tipo, desde: args.desde, hasta: args.hasta, limite: 5000 });
+    const corridas = await mc.corridas(cuit, 10);
+    const ultima = corridas.find((c) => c.estado === 'terminado');
+    return {
+      cuit,
+      filtros: { tipo: args.tipo || null, desde: args.desde || null, hasta: args.hasta || null },
+      ...resumirMc(filas),
+      ultimaSincronizacion: ultima ? { fecha: ultima.terminada_at, desde: fechaIso(ultima.desde), hasta: fechaIso(ultima.hasta), tipo: ultima.tipo } : null,
+      fuente: 'Mis Comprobantes de ARCA, bajado por Arcanum',
+    };
+  },
+};
+
 const HERRAMIENTAS = [
   padronTool, comprobanteTool, ultimoTool, puntosTool, estadoTool,
   riesgoTool, recientesTool, ventanillaTool, certTool, vistaPreviaTool,
+  misComprobantesTool,
 ];
 
 module.exports = {
   HERRAMIENTAS,
   // Funciones puras expuestas para tests.
-  _internos: { parseTipo, parseComprobante, formatearNumero, fechaIso, cuit11, resumirPadron, estadoLeida, TIPOS },
+  _internos: { parseTipo, parseComprobante, formatearNumero, fechaIso, cuit11, resumirPadron, estadoLeida, resumirMc, TIPOS },
 };

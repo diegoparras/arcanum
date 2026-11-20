@@ -1,0 +1,163 @@
+'use strict';
+
+// Rutas REST de Mis Comprobantes y de la conexion con Fisherboy.
+//
+//   GET/PUT  /api/fisherboy/config                      superadmin (el token nunca vuelve)
+//   GET      /api/fisherboy/salud                       admin+
+//   GET      /api/mis-comprobantes/receta               admin+
+//   PUT/DEL  /api/mis-comprobantes/receta               superadmin (DELETE = restaurar)
+//   GET      /api/mis-comprobantes/corridas/:id         quien pueda operar ese CUIT
+//   GET      /api/mis-comprobantes/corridas/:id/frame   vista en vivo (JPEG, 204 si no cambio)
+//   POST     /api/mis-comprobantes/corridas/:id/{evento,tomar-control,devolver}
+//   GET      /api/mis-comprobantes/:cuit                comprobantes bajados (cualquier rol, con scope)
+//   GET      /api/mis-comprobantes/:cuit/export.csv
+//   GET      /api/mis-comprobantes/:cuit/corridas
+//   GET/PUT/DELETE /api/mis-comprobantes/:cuit/credencial   (PUT/DELETE admin+)
+//   POST     /api/mis-comprobantes/:cuit/sincronizar    admin+ u operador con ese CUIT -> 202
+//
+// Los bodies no se registran en la auditoria (logRequest guarda solo la ruta y el estado), asi
+// que ni la clave fiscal del PUT credencial ni lo que se tipea en la vista en vivo quedan en logs.
+
+const { sendJson, readJsonBody } = require('../lib/http');
+const { requireRole, assertCuitAllowed } = require('../auth/permisos');
+
+const EVENTOS_HUMANOS = new Set(['click', 'doble', 'texto', 'tecla', 'scroll', 'atras', 'recargar']);
+
+function err(message, httpStatus) {
+  return Object.assign(new Error(message), { httpStatus });
+}
+
+function json(res, status, payload) {
+  sendJson(res, status, payload);
+  return true;
+}
+
+function puedeOperar(principal, cuit) {
+  requireRole(principal, 'superadmin', 'admin', 'operador');
+  assertCuitAllowed(principal, cuit);
+}
+
+function crearRutas({ mc, fisherboy } = {}) {
+  const servicio = () => mc || require('../services/misComprobantes').servicio();
+  const fb = () => fisherboy || require('../services/fisherboy');
+
+  async function corridaOperable(principal, id) {
+    if (!/^\d+$/.test(String(id))) throw err('Corrida invalida', 400);
+    const c = await servicio().corrida(Number(id));
+    if (!c) throw err('No existe esa corrida', 404);
+    puedeOperar(principal, c.cuit);
+    return c;
+  }
+
+  return async function manejar(req, res, url, seg, principal) {
+    if (seg[0] !== 'api') return false;
+
+    // --- conexion con Fisherboy ---
+    if (seg[1] === 'fisherboy' && seg[2] === 'config' && !seg[3]) {
+      requireRole(principal, 'superadmin');
+      const fbMod = require('../services/fisherboy');
+      if (req.method === 'GET') return json(res, 200, { ok: true, fisherboy: await fbMod.config() });
+      if (req.method === 'PUT') {
+        const b = await readJsonBody(req);
+        return json(res, 200, { ok: true, fisherboy: await fbMod.guardarConfig(b, principal.username) });
+      }
+    }
+    if (req.method === 'GET' && seg[1] === 'fisherboy' && seg[2] === 'salud' && !seg[3]) {
+      requireRole(principal, 'superadmin', 'admin');
+      try {
+        return json(res, 200, { ok: true, fisherboy: await fb().salud() });
+      } catch (e) {
+        return json(res, 200, { ok: true, fisherboy: { ok: false, error: e.message } });
+      }
+    }
+
+    if (seg[1] !== 'mis-comprobantes') return false;
+    req._op = 'mis-comprobantes';
+
+    // --- receta ---
+    if (seg[2] === 'receta' && !seg[3]) {
+      if (req.method === 'GET') {
+        requireRole(principal, 'superadmin', 'admin');
+        return json(res, 200, { ok: true, receta: await servicio().receta() });
+      }
+      requireRole(principal, 'superadmin');
+      if (req.method === 'PUT') {
+        const b = await readJsonBody(req);
+        return json(res, 200, { ok: true, receta: await servicio().guardarReceta(b, principal.username) });
+      }
+      if (req.method === 'DELETE') return json(res, 200, { ok: true, receta: await servicio().restaurarReceta() });
+      return false;
+    }
+
+    // --- una corrida y su vista en vivo ---
+    if (seg[2] === 'corridas' && seg[3]) {
+      const c = await corridaOperable(principal, seg[3]);
+      if (req.method === 'GET' && !seg[4]) return json(res, 200, { ok: true, corrida: c });
+      if (!c.token_fb) throw err('La corrida todavia no tiene navegador', 409);
+      if (req.method === 'GET' && seg[4] === 'frame') {
+        const fr = await fb().frame(c.token_fb, url.searchParams.get('desde') || 0);
+        const cab = { 'Cache-Control': 'no-store' };
+        for (const h of ['x-agent-estado', 'x-agent-seq', 'x-agent-url']) {
+          if (fr.headers && fr.headers[h]) cab[h] = String(fr.headers[h]);
+        }
+        if (fr.status === 200) cab['Content-Type'] = 'image/jpeg';
+        res.writeHead(fr.status === 200 || fr.status === 204 || fr.status === 202 ? fr.status : 502, cab);
+        res.end(fr.status === 200 ? fr.body : undefined);
+        return true;
+      }
+      if (req.method === 'POST' && seg[4] === 'evento') {
+        const cmd = await readJsonBody(req);
+        if (!cmd || !EVENTOS_HUMANOS.has(cmd.tipo)) throw err('Evento no permitido', 400);
+        return json(res, 200, { ok: true, ...(await fb().evento(c.token_fb, cmd)) });
+      }
+      if (req.method === 'POST' && seg[4] === 'tomar-control') return json(res, 200, { ok: true, ...(await fb().tomarControl(c.token_fb)) });
+      if (req.method === 'POST' && seg[4] === 'devolver') return json(res, 200, { ok: true, ...(await fb().devolver(c.token_fb)) });
+      return false;
+    }
+
+    // --- por CUIT ---
+    const cuit = String(seg[2] || '').replace(/\D/g, '');
+    if (cuit.length !== 11) return false;
+    req._cuit = cuit;
+    assertCuitAllowed(principal, cuit);
+    const q = url.searchParams;
+    const filtros = { tipo: q.get('tipo') || undefined, desde: q.get('desde') || undefined, hasta: q.get('hasta') || undefined, limite: q.get('limite') || undefined };
+
+    if (req.method === 'GET' && !seg[3]) {
+      return json(res, 200, { ok: true, cuit, comprobantes: await servicio().listar(cuit, filtros) });
+    }
+    if (req.method === 'GET' && seg[3] === 'export.csv') {
+      const csv = await servicio().exportarCsv(cuit, filtros);
+      res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="mis-comprobantes-${cuit}.csv"` });
+      res.end(csv);
+      return true;
+    }
+    if (req.method === 'GET' && seg[3] === 'corridas') {
+      return json(res, 200, { ok: true, corridas: await servicio().corridas(cuit, q.get('limite')) });
+    }
+    if (seg[3] === 'credencial') {
+      if (req.method === 'GET') return json(res, 200, { ok: true, credencial: await servicio().estadoCredencial(cuit) });
+      requireRole(principal, 'superadmin', 'admin');
+      if (req.method === 'PUT') {
+        const b = await readJsonBody(req);
+        const credencial = await servicio().guardarCredencial(cuit, { cuitLogin: b.cuitLogin, clave: b.clave, sincronizar: b.sincronizar }, principal.username);
+        return json(res, 200, { ok: true, credencial });
+      }
+      if (req.method === 'DELETE') {
+        await servicio().borrarCredencial(cuit);
+        return json(res, 200, { ok: true });
+      }
+      return false;
+    }
+    if (req.method === 'POST' && seg[3] === 'sincronizar') {
+      puedeOperar(principal, cuit);
+      const b = await readJsonBody(req);
+      const corrida = await servicio().sincronizar(cuit, { tipo: b.tipo || 'ambos', desde: b.desde, hasta: b.hasta, origen: 'manual', usuario: principal.username });
+      servicio().lanzar(corrida.id);
+      return json(res, 202, { ok: true, corrida });
+    }
+    return false;
+  };
+}
+
+module.exports = { crearRutas, EVENTOS_HUMANOS };

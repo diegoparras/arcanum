@@ -85,11 +85,24 @@ test('mcp: respuestas largas se recortan bajo 20.000 caracteres', async () => {
 });
 
 // ---------- catalogo real de herramientas ----------
-test('mcp: exactamente las 10 herramientas de consulta', () => {
+test('mcp: exactamente las 11 herramientas de consulta', () => {
   assert.deepStrictEqual(HERRAMIENTAS.map((x) => x.nombre).sort(), [
-    'comprobante', 'comprobantes_recientes', 'comunicaciones_ventanilla', 'estado_arca', 'padron',
+    'comprobante', 'comprobantes_recientes', 'comunicaciones_ventanilla', 'estado_arca', 'mis_comprobantes', 'padron',
     'puntos_de_venta', 'riesgo_fiscal', 'ultimo_comprobante', 'vencimiento_certificado', 'vista_previa_comprobante',
   ]);
+});
+test('mcp: resumen de Mis Comprobantes separa emitidos y recibidos y resta notas de credito', () => {
+  const filas = [
+    { tipo: 'emitido', cbte_tipo: 11, total: '150000', fecha: '2026-11-02', punto_venta: 1, numero_desde: 125, contraparte: 'A', doc_nro: '1', cae: '7' },
+    { tipo: 'emitido', cbte_tipo: 13, total: '20000.5', fecha: '2026-11-05', punto_venta: 1, numero_desde: 12, contraparte: 'A', doc_nro: '1', cae: '8' },
+    { tipo: 'recibido', cbte_tipo: 6, total: '1210', fecha: '2026-11-10', punto_venta: 2, numero_desde: 48, contraparte: 'B', doc_nro: '2', cae: '9' },
+  ];
+  const r = h.resumirMc(filas);
+  assert.strictEqual(r.emitidos.cantidad, 2);
+  assert.strictEqual(r.emitidos.neto, 129999.5);
+  assert.strictEqual(r.recibidos.cantidad, 1);
+  assert.strictEqual(r.recibidos.neto, 1210);
+  assert.strictEqual(r.comprobantes[0].comprobante, '0002-00000048');
 });
 test('mcp: ninguna herramienta emite ni expone el motor generico', async () => {
   const lista = (await servidorCon(HERRAMIENTAS).atender(rpc('tools/list'), ctx)).result.tools;
