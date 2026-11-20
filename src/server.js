@@ -442,6 +442,16 @@ async function route(req, res, url) {
       return sendJson(res, 200, { ok: true, vistaPrevia: await vistaPrevia.vistaPrevia(inv.cuit, inv) });
     }
     // POST /api/wsfev1/comprobantes   { cuit, ...comprobante }
+    // POST /api/wsfev1/sincronizar { cuit, dias? }: trae lo emitido por fuera de Arcanum.
+    if (req.method === 'POST' && seg[2] === 'sincronizar' && !seg[3]) {
+      requireRole(principal, 'superadmin', 'admin', 'operador');
+      const b = await readJsonBody(req);
+      if (!b.cuit) throw badRequest('Falta "cuit"');
+      assertCuitAllowed(principal, b.cuit);
+      req._cuit = tenants.normalizeCuit(b.cuit);
+      const r = await require('./services/syncEmitidos').servicio().sincronizar(req._cuit, { dias: b.dias ? Number(b.dias) : undefined });
+      return sendJson(res, 200, { ok: true, sincronizacion: r });
+    }
     if (req.method === 'POST' && seg[2] === 'comprobantes' && !seg[3]) {
       requireRole(principal, 'superadmin', 'admin', 'operador');
       const inv = conIdempotencia(req, await readJsonBody(req));

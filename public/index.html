@@ -694,13 +694,31 @@ async function caeaAccion(a){
 }
 
 /* ---------- COMPROBANTES ---------- */
+async function sincronizarEmitidos(){
+  let tenants=[];try{({tenants}=await api('/api/tenants'));}catch{}
+  const conCert=tenants.filter(t=>t.tieneCertificado);
+  if(!conCert.length){toast('No hay clientes con certificado',true);return;}
+  modal(`<button class="modal-x" onclick="closeModal()" aria-label="Cerrar">&times;</button><h3 style="text-transform:none">Traer lo emitido por fuera de Arcanum</h3>
+    <p class="hint">Consulta en ARCA los comprobantes de los últimos días que no están en Arcanum (por ejemplo, los hechos en el facturador web) y los suma. También avisa si alguno no coincide.</p>
+    <label>CUIT</label><select id="se_cuit">${conCert.map(t=>`<option value="${t.cuit}">${t.cuit} ${esc(t.nombre||'')}</option>`).join('')}</select>
+    <label>Días hacia atrás</label><input id="se_dias" class="mono" value="90">
+    <div class="row" style="margin-top:12px"><button class="primary" onclick="sincronizarEmitidosIr()">Traer</button></div><div id="se_res"></div>`);
+}
+async function sincronizarEmitidosIr(){
+  $('#se_res').innerHTML='<p class="hint">Consultando ARCA…</p>';
+  try{const {sincronizacion:r}=await api('/api/wsfev1/sincronizar',{method:'POST',body:JSON.stringify({cuit:$('#se_cuit').value,dias:+$('#se_dias').value||90})});
+    $('#se_res').innerHTML=`<p><span class="tag ok">${r.traidos} traídos</span> ${r.diferencias.length?`<span class="tag no">${r.diferencias.length} diferencias</span>`:''} ${r.pendiente?'<span class="tag warn">quedan más: volvé a tocar Traer</span>':''}</p>
+      ${r.diferencias.map(d=>`<p class="hint">PV ${d.puntoVenta} tipo ${d.tipo} nro ${d.numero}: ${esc(d.motivo)}</p>`).join('')}`;
+  }catch(e){$('#se_res').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
 async function vComprobantes(){
   const v=$('#view');const {comprobantes}=await api('/api/comprobantes');
   const rows=comprobantes.map(c=>`<tr><td class="mono">${c.cuit}</td><td class="mono">${c.punto_venta}-${c.numero}</td><td>${c.tipo_cbte}</td>
     <td class="mono">${(c.fecha||'').slice?.(0,10)||c.fecha||''}</td><td class="mono">${c.cae||''}</td><td class="mono">$${Number(c.importe_total).toFixed(2)}</td>
     <td><a href="/api/comprobantes/${c.cuit}/${c.punto_venta}/${c.tipo_cbte}/${c.numero}/pdf"><button class="ghost">PDF</button></a></td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
   v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes</h2>
-     <button class="primary" style="margin-left:auto" onclick="importarQr()">Importar por QR</button>
+     <button style="margin-left:auto" onclick="sincronizarEmitidos()">Traer lo emitido por fuera</button>
+     <button class="primary" onclick="importarQr()">Importar por QR</button>
      <a href="/api/comprobantes/export.csv"><button>Exportar CSV</button></a></div>
    <div class="card" style="margin-top:12px"><table><thead><tr><th>CUIT</th><th>Cbte</th><th>Tipo</th><th>Fecha</th><th>CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }

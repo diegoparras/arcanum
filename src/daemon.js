@@ -187,6 +187,22 @@ async function caeaInformar() {
   }
 }
 
+// --- Emitidos por fuera de Arcanum (diario) ---
+async function sincronizarEmitidos(ahoraFecha = new Date()) {
+  const { rows } = await db.query("SELECT value FROM settings WHERE key = 'sync_ultima_diaria'");
+  if (!tocaDiaria(ahoraFecha, parseInt(process.env.ARCANUM_SYNC_HORA || '5', 10), rows[0] && rows[0].value)) return;
+  const { hoy } = rangoDiario(ahoraFecha);
+  await db.query(
+    "INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('sync_ultima_diaria',$1,'daemon',now()) ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=now()", [hoy]);
+  const sync = require('./services/syncEmitidos').servicio();
+  for (const t of (await tenants.list(config.env)).filter((x) => x.tieneCertificado)) {
+    try {
+      const r = await sync.sincronizar(t.cuit);
+      if (r.traidos) console.log(`[arcanum][sync] ${maskCuit(t.cuit)}: ${r.traidos} comprobante(s) emitidos por fuera de Arcanum`);
+    } catch (e) { console.error(`[arcanum][sync] ${maskCuit(t.cuit)}: ${e.message}`); }
+  }
+}
+
 // --- Mis Comprobantes diario ---
 const AR_OFFSET_MS = 3 * 60 * 60 * 1000; // Argentina: UTC-3 todo el ano
 function fechaAr(ahora) { return new Date(ahora.getTime() - AR_OFFSET_MS); }
@@ -256,6 +272,8 @@ function start() {
   setTimeout(() => caeaPedirYAvisar().catch((e) => console.error('[arcanum][caea]', e.message)), 4 * 60 * 1000);
   every(6 * 60 * 60 * 1000, caeaPedirYAvisar);
   every(15 * 60 * 1000, caeaInformar);
+  // Emitidos por fuera de Arcanum: una vez por dia (ARCANUM_SYNC_HORA, 5 hora argentina).
+  every(10 * 60 * 1000, sincronizarEmitidos);
   // Mis Comprobantes: se fija cada 10 minutos si ya toca la corrida diaria.
   setTimeout(() => sincronizarMisComprobantes().catch((e) => console.error('[arcanum][mis-comprobantes]', e.message)), 3 * 60 * 1000);
   every(10 * 60 * 1000, sincronizarMisComprobantes);
@@ -266,4 +284,4 @@ function stop() {
   timers.forEach(clearInterval);
 }
 
-module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, tocaDiaria, rangoDiario };
+module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, tocaDiaria, rangoDiario };

@@ -570,6 +570,13 @@ paths:
   /api/caea/{cuit}/informar:
     post: { tags: [Contingencia], summary: "Informa a ARCA lo emitido con CAEA y los CAEA vencidos sin movimiento", parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "informe: { informados, errores }, sinMovimiento" } } }
 
+  /api/wsfev1/sincronizar:
+    post:
+      tags: [Contingencia]
+      summary: Trae de ARCA los comprobantes emitidos por fuera de Arcanum (huecos incluidos) y avisa diferencias
+      requestBody: { content: { application/json: { schema: { type: object, required: [cuit], properties: { cuit: { type: string }, dias: { type: integer, default: 90 } } } } } }
+      responses: { '200': { description: "sincronizacion: { traidos, porPuntoVenta, diferencias, pendiente }" } }
+
   /api/wsaa/{cuit}/{service}:
     get:
       tags: [Servicios]

@@ -22,6 +22,7 @@ const EVENTOS = [
   'caea_obtenido', // se obtuvo el CAEA de una quincena
   'caea_informe_pendiente', // falta informar comprobantes CAEA (o sin movimiento) y la fecha tope esta a 2 dias
   'caea_informe_error', // ARCA rechazo el informe de un comprobante CAEA
+  'emitidos_por_fuera', // aparecieron en ARCA comprobantes hechos por fuera de Arcanum (o diferencias)
 ];
 
 async function listar() {

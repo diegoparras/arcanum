@@ -47,6 +47,7 @@ const ASUNTOS = {
   caea_obtenido: 'CAEA obtenido',
   caea_informe_pendiente: 'CAEA: falta informar y vence el plazo',
   caea_informe_error: 'CAEA: ARCA rechazo un informe',
+  emitidos_por_fuera: 'Comprobantes emitidos por fuera de Arcanum',
 };
 
 async function notify(evento, data) {
