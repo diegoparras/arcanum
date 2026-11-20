@@ -71,3 +71,19 @@ test('importes con formato argentino y fecha ISO', () => {
   assert.strictEqual(f.fecha, '2026-03-04');
   assert.strictEqual(f.cbteTipo, 1);
 });
+
+test('CSV en Latin-1 se lee igual', () => {
+  const filas = mc.desdeArchivo(Buffer.from(CSV, 'latin1'), 'c.csv', 'emitido');
+  assert.strictEqual(filas.length, 3);
+  assert.strictEqual(filas.find((f) => f.cbteTipo === 6).numeroDesde, 48);
+});
+
+test('filas que no se entienden dan 422, no cero comprobantes', () => {
+  assert.throws(() => mc.desdeArchivo(Buffer.from('Foo;Bar\n1;2\n'), 'c.csv', 'emitido'),
+    (e) => e.httpStatus === 422 && /columnas/.test(e.message));
+});
+
+test('una pagina HTML en vez del CSV da 422', () => {
+  assert.throws(() => mc.desdeArchivo(Buffer.from('<!doctype html><html><body>Sesion vencida</body></html>'), 'c.csv', 'emitido'),
+    (e) => e.httpStatus === 422 && /pagina/.test(e.message));
+});

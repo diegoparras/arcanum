@@ -83,22 +83,33 @@ function repoSql() {
       const { rows } = await db.query('SELECT cuit FROM mc_credenciales WHERE sincronizar = true AND rechazada_at IS NULL ORDER BY cuit');
       return rows.map((r) => r.cuit);
     },
-    async corridaViva(cuit) {
-      const { rows } = await db.query(
-        `SELECT * FROM mc_corridas WHERE cuit = $1 AND estado = ANY($2)
-           AND iniciada_at > now() - interval '40 minutes' ORDER BY id DESC LIMIT 1`, [cuit, ESTADOS_VIVOS]);
-      return rows[0] || null;
+    // Chequeo de "hay una viva" + alta en UNA transaccion con lock por CUIT: dos pedidos
+    // simultaneos (o el daemon y un manual) no pueden arrancar dos logins del mismo CUIT.
+    // Viva = estado vivo y latido de los ultimos 10 minutos (seguir() lo renueva en cada sondeo).
+    async crearCorridaExclusiva(d) {
+      return db.tx(async (c) => {
+        await c.query("SELECT pg_advisory_xact_lock(hashtext('mc:' || $1))", [d.cuit]);
+        const { rows: vivas } = await c.query(
+          `SELECT * FROM mc_corridas WHERE cuit = $1 AND estado = ANY($2)
+             AND COALESCE(latido_at, iniciada_at) > now() - interval '10 minutes' ORDER BY id DESC LIMIT 1`,
+          [d.cuit, ESTADOS_VIVOS]);
+        if (vivas[0]) return { viva: vivas[0] };
+        const { rows } = await c.query(
+          `INSERT INTO mc_corridas (cuit, tipo, desde, hasta, estado, origen, usuario, latido_at)
+           VALUES ($1,$2,$3,$4,'iniciando',$5,$6, now()) RETURNING *`,
+          [d.cuit, d.tipo, d.desde, d.hasta, d.origen, d.usuario || null]);
+        return { corrida: rows[0] };
+      });
+    },
+    async marcarHuerfanas(motivo) {
+      const { rowCount } = await db.query(
+        "UPDATE mc_corridas SET estado = 'error', error = $2, terminada_at = now() WHERE estado = ANY($1)",
+        [ESTADOS_VIVOS, motivo]);
+      return rowCount;
     },
     async corrida(id) {
       const { rows } = await db.query('SELECT * FROM mc_corridas WHERE id = $1', [id]);
       return rows[0] || null;
-    },
-    async crearCorrida(d) {
-      const { rows } = await db.query(
-        `INSERT INTO mc_corridas (cuit, tipo, desde, hasta, estado, origen, usuario)
-         VALUES ($1,$2,$3,$4,'iniciando',$5,$6) RETURNING *`,
-        [d.cuit, d.tipo, d.desde, d.hasta, d.origen, d.usuario || null]);
-      return rows[0];
     },
     async actualizarCorrida(id, campos) {
       const cols = Object.keys(campos);
@@ -108,10 +119,12 @@ function repoSql() {
       const { rows } = await db.query(`UPDATE mc_corridas SET ${set} WHERE id = $1 RETURNING *`, [id, ...vals]);
       return rows[0];
     },
+    // Un archivo entra entero o no entra (transaccion): nada de medio CSV guardado.
     async guardarComprobantes(cuit, tipo, corridaId, filas) {
+      return db.tx(async (c) => {
       let n = 0;
       for (const f of filas) {
-        await db.query(
+        await c.query(
           `INSERT INTO mc_comprobantes (cuit, tipo, fecha, cbte_tipo, punto_venta, numero_desde, numero_hasta, cae,
              doc_tipo, doc_nro, contraparte, moneda, tipo_cambio, neto_gravado, no_gravado, exento, iva, total,
              corrida_id, actualizado_at)
@@ -128,6 +141,7 @@ function repoSql() {
         n += 1;
       }
       return n;
+      });
     },
     async receta() {
       const { rows } = await db.query("SELECT value FROM settings WHERE key = 'mc_receta'");
@@ -224,9 +238,9 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     if (cred.rechazada_at) {
       throw err(`ARCA rechazo esta clave fiscal${cred.rechazo_motivo ? ` (${cred.rechazo_motivo})` : ''}. Para no bloquear la cuenta no se reintenta: volve a cargar la clave antes de sincronizar`, 409);
     }
-    const viva = await repo.corridaViva(c);
-    if (viva) throw Object.assign(err(`Ya hay una sincronizacion en curso para este CUIT (corrida ${viva.id})`, 409), { corrida: viva.id });
-    return repo.crearCorrida({ cuit: c, tipo, desde, hasta, origen, usuario });
+    const r = await repo.crearCorridaExclusiva({ cuit: c, tipo, desde, hasta, origen, usuario });
+    if (r.viva) throw Object.assign(err(`Ya hay una sincronizacion en curso para este CUIT (corrida ${r.viva.id})`, 409), { corrida: r.viva.id });
+    return r.corrida;
   }
 
   /** Lanza seguir() sin esperar (lo usa la API). */
@@ -246,7 +260,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       dominios: DOMINIOS,
       ia: true,
     });
-    await repo.actualizarCorrida(id, { token_fb: token, estado: 'corriendo' });
+    await repo.actualizarCorrida(id, { token_fb: token, estado: 'corriendo', latido_at: ahora() });
     try {
       const fin = Date.now() + TIMEOUT_SESION_MS;
       let st;
@@ -254,7 +268,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
         st = await fisherboy.estado(token);
         if (['terminado', 'error', 'cerrado'].includes(st.estado)) break;
         if (['corriendo', 'esperando_humano', 'humano'].includes(st.estado)) {
-          await repo.actualizarCorrida(id, { estado: st.estado });
+          await repo.actualizarCorrida(id, { estado: st.estado, latido_at: ahora() });
         }
         if (st.estado === 'esperando_humano' && !avisado.hecho) {
           avisado.hecho = true;
@@ -311,7 +325,9 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       await webhooks.emitir('mis_comprobantes_sincronizado', { cuit: fila.cuit, corrida: id, tipo: fila.tipo, desde, hasta, cantidad: total }).catch(() => {});
     } catch (e) {
       if (e.logFb) log = log.concat(e.logFb);
-      await repo.actualizarCorrida(id, { estado: 'error', cantidad: total, terminada_at: ahora(), log, error: String(e.message || e).slice(0, 500) });
+      let msg = String(e.message || e);
+      if (total > 0) msg += ` Se guardaron ${total} comprobantes de los tramos que terminaron antes del error; el resto no se bajo.`;
+      await repo.actualizarCorrida(id, { estado: 'error', cantidad: total, terminada_at: ahora(), log, error: msg.slice(0, 600) });
       await webhooks.emitir('mis_comprobantes_fallo', { cuit: fila.cuit, corrida: id, error: String(e.message || e).slice(0, 300) }).catch(() => {});
     }
   }
@@ -331,6 +347,8 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     estadoCredencial, guardarCredencial,
     borrarCredencial: async (cuit) => repo.borrarCredencial(cuitDe(cuit)),
     sincronizar, seguir, lanzar,
+    /** Al arrancar: las corridas que seguian vivas perdieron su seguimiento (estaba en memoria). */
+    marcarHuerfanas: async () => repo.marcarHuerfanas('Arcanum se reinicio durante la corrida: volve a sincronizar'),
     corrida: async (id) => repo.corrida(Number(id)),
     listar: async (cuit, filtros) => repo.listar(cuitDe(cuit), filtros),
     corridas: async (cuit, limite) => repo.corridas(cuitDe(cuit), limite),

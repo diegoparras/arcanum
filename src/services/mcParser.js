@@ -149,19 +149,36 @@ function normalizarFila(fila, tipo) {
   };
 }
 
-/** Archivo descargado (CSV o ZIP) -> comprobantes. Ignora filas sin tipo o sin numero. */
+/** UTF-8, y si no es UTF-8 valido (ARCA a veces exporta en Latin-1), Latin-1. */
+function decodificar(buf) {
+  const t = buf.toString('utf8');
+  return t.includes('�') ? buf.toString('latin1') : t;
+}
+
+function e422(message) {
+  return Object.assign(new Error(message), { httpStatus: 422 });
+}
+
+/** Archivo descargado (CSV o ZIP) -> comprobantes. Solo encabezado = [] (rango vacio); filas que
+ *  no se entienden, o una pagina en vez de un CSV, son un error: nunca un "0" silencioso. */
 function desdeArchivo(buf, nombre, tipo) {
   const b = Buffer.from(buf);
   const esZip = b.length >= 4 && b.readUInt32LE(0) === 0x04034b50;
-  const textos = esZip
-    ? leerZip(b).filter((a) => /\.(csv|txt)$/i.test(a.nombre)).map((a) => a.datos.toString('utf8'))
-    : [b.toString('utf8')];
   if (!esZip && /\.xlsx?$/i.test(String(nombre || ''))) {
-    throw Object.assign(new Error('Mis Comprobantes entrego un Excel: la receta tiene que exportar CSV'), { httpStatus: 422 });
+    throw e422('Mis Comprobantes entrego un Excel: la receta tiene que exportar CSV');
   }
-  return textos.flatMap((t) => parsearCsv(t))
-    .map((f) => normalizarFila(f, tipo))
-    .filter((c) => c.cbteTipo && c.numeroDesde != null);
+  const textos = esZip
+    ? leerZip(b).filter((a) => /\.(csv|txt)$/i.test(a.nombre)).map((a) => decodificar(a.datos))
+    : [decodificar(b)];
+  if (textos.some((t) => /^\s*</.test(t) && /<(html|body|!doctype)/i.test(t))) {
+    throw e422('ARCA devolvio una pagina en vez del CSV (sesion vencida o error de ARCA)');
+  }
+  const crudas = textos.flatMap((t) => parsearCsv(t));
+  const filas = crudas.map((f) => normalizarFila(f, tipo)).filter((c) => c.cbteTipo && c.numeroDesde != null);
+  if (crudas.length && !filas.length) {
+    throw e422('El CSV de Mis Comprobantes no tiene las columnas esperadas (tipo, numero, fecha): ARCA puede haber cambiado el formato');
+  }
+  return filas;
 }
 
 module.exports = { parsearCsv, leerZip, normalizarFila, desdeArchivo, _numero: numero };

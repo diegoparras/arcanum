@@ -252,6 +252,7 @@ CREATE TABLE IF NOT EXISTS mc_corridas (
   log          JSONB
 );
 ALTER TABLE mc_credenciales ADD COLUMN IF NOT EXISTS rechazada_at TIMESTAMPTZ;
+ALTER TABLE mc_corridas ADD COLUMN IF NOT EXISTS latido_at TIMESTAMPTZ;
 ALTER TABLE mc_credenciales ADD COLUMN IF NOT EXISTS rechazo_motivo TEXT;
 CREATE INDEX IF NOT EXISTS mc_corridas_cuit_idx ON mc_corridas (cuit, iniciada_at DESC);
 CREATE TABLE IF NOT EXISTS mc_comprobantes (

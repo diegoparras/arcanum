@@ -17,10 +17,14 @@ function repoFalso({ credencial = { cuit: '20263630743', cuit_login: '2026363074
   const r = {
     corridas: {}, guardados: [], siguiente: 1,
     credencial: async () => credencial,
-    corridaViva: async () => viva,
     corrida: async (id) => r.corridas[id] || null,
-    crearCorrida: async (d) => { const id = r.siguiente++; r.corridas[id] = { id, ...d }; return r.corridas[id]; },
-    actualizarCorrida: async (id, campos) => { Object.assign(r.corridas[id], campos); return r.corridas[id]; },
+    // Alta atomica: chequea la viva y crea en la misma transaccion (con lock por CUIT).
+    crearCorridaExclusiva: async (d) => {
+      if (viva) return { viva };
+      const id = r.siguiente++; r.corridas[id] = { id, ...d }; return { corrida: r.corridas[id] };
+    },
+    latidos: 0,
+    actualizarCorrida: async (id, campos) => { if (campos.latido_at) r.latidos += 1; Object.assign(r.corridas[id], campos); return r.corridas[id]; },
     guardarComprobantes: async (cuit, tipo, corridaId, filas) => { r.guardados.push(...filas); return filas.length; },
     receta: async () => null,
     marcarRechazada: async (cuit, motivo) => { r.rechazo = { cuit, motivo }; },
@@ -213,4 +217,30 @@ test('un error que no es de login no bloquea la credencial', async () => {
 
 test('la receta por defecto marca el paso que verifica el login', () => {
   assert.ok(RECETA_DEFAULT.pasos.some((p) => p.do === 'wait_url' && p.verifica_login === true));
+});
+
+test('cada sondeo renueva el latido de la corrida', async () => {
+  const repo = repoFalso();
+  const { s } = servicio(repo, fisherboyFalso([{ estado: 'corriendo' }, { estado: 'corriendo' }, TERMINADO]));
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.ok(repo.latidos >= 3, `latidos: ${repo.latidos}`);
+});
+
+test('error despues de un tramo bueno avisa que quedaron datos parciales', async () => {
+  const repo = repoFalso();
+  const { s } = servicio(repo, fisherboyFalso([TERMINADO, { estado: 'error', error: 'paso #16 (download): timeout', log: [] }]));
+  const c = await s.sincronizar('20263630743', { tipo: 'ambos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.corridas[c.id].estado, 'error');
+  assert.match(repo.corridas[c.id].error, /Se guardaron 3 comprobantes/);
+  assert.strictEqual(repo.corridas[c.id].cantidad, 3);
+});
+
+test('al arrancar, las corridas vivas huerfanas quedan en error', async () => {
+  const repo = repoFalso();
+  repo.marcarHuerfanas = async (motivo) => { repo.huerfanas = motivo; return 2; };
+  const { s } = servicio(repo, fisherboyFalso([TERMINADO]));
+  assert.strictEqual(await s.marcarHuerfanas(), 2);
+  assert.match(repo.huerfanas, /reinicio/);
 });

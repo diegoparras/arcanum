@@ -891,6 +891,10 @@ async function start() {
     console.log(`[arcanum]   contrasena: ${seeded.pass}`);
     console.log('[arcanum] Cambiala despues de entrar. (definí ARCANUM_ADMIN_PASS para fijarla)\n');
   }
+  try {
+    const n = await require('./services/misComprobantes').servicio().marcarHuerfanas();
+    if (n) console.log(`[arcanum] ${n} corrida(s) de Mis Comprobantes interrumpidas por el reinicio`);
+  } catch (e) { console.error('[arcanum] mis comprobantes:', e.message); }
   daemon.start();
   server.listen(config.port, () => {
     console.log(`[arcanum] v${config.version} escuchando en :${config.port} (entorno ARCA: ${config.env})`);
