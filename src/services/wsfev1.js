@@ -396,8 +396,7 @@ async function registrarAdoptado(cuit, consultado, cuerpo, idem) {
      ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
     [c, config.env, consultado.puntoVenta, consultado.tipoComprobante, consultado.numero, consultado.cae,
       consultado.caeVencimiento, consultado.fecha, raw.importeTotal, consultado.docTipo, consultado.docNro, idem, JSON.stringify(raw)]);
-  webhooks.emitir('comprobante_emitido', raw).catch(() => {});
-  return raw;
+  return raw; // el aviso comprobante_emitido lo manda la cola (uno solo)
 }
 
 /** Consulta un comprobante ya emitido (para reimprimir o verificar en ARCA). */
