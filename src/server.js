@@ -53,18 +53,20 @@ const rutasCaea = require('./rutas/caea').crearRutas();
 const rutasBackups = require('./rutas/backups').crearRutas();
 const rutasMono = crearRutasMono();
 
-// Si no se definio API key, generamos una y la mostramos una sola vez.
-let API_KEY = config.apiKey;
-if (!API_KEY) {
-  API_KEY = crypto.randomBytes(24).toString('hex');
-  console.log('\n[arcanum] No se definio ARCANUM_API_KEY. Clave generada para esta instancia:');
-  console.log(`[arcanum]   ${API_KEY}`);
-  console.log('[arcanum] Guardala: la necesitas en el header X-API-Key.\n');
+// Clave de API maestra: la del entorno o una generada que queda en el volumen (nunca en el log).
+// Se resuelve al primer uso (start() la pide justo despues del cartel de version, para que la
+// version siga siendo lo primero que se ve en los registros).
+let API_KEY = null;
+function apiKeyMaestra() {
+  if (API_KEY === null) {
+    API_KEY = require('./auth/secretosIniciales').resolverApiKey({ apiKey: config.apiKey, dataDir: config.dataDir }).clave;
+  }
+  return API_KEY;
 }
 
 function esClaveMaestra(clave) {
   const a = Buffer.from(String(clave || ''));
-  const b = Buffer.from(API_KEY);
+  const b = Buffer.from(apiKeyMaestra());
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
@@ -925,6 +927,7 @@ async function start() {
   // Lo primero que se ve en los registros al levantar: version y que cambia (CHANGELOG).
   const nov = require('./services/novedades');
   for (const l of nov.cartelArranque(config.version, nov.todas())) console.log(`[arcanum] ${l}`);
+  apiKeyMaestra();
   fs.mkdirSync(config.dataDir, { recursive: true });
   console.log('[arcanum] conectando a Postgres...');
   await db.waitForDb();
@@ -936,11 +939,18 @@ async function start() {
     const { rows } = await db.query("SELECT value FROM settings WHERE key = 'entorno'");
     if (rows[0] && rows[0].value) config.setEnv(rows[0].value);
   } catch { /* primera vez: aun no existe */ }
-  const seeded = await users.seedAdmin();
-  if (seeded && seeded.generated) {
-    console.log(`\n[arcanum] Usuario superadmin creado: ${seeded.username}`);
-    console.log(`[arcanum]   contrasena: ${seeded.pass}`);
-    console.log('[arcanum] Cambiala despues de entrar. (definí ARCANUM_ADMIN_PASS para fijarla)\n');
+  const secretos = require('./auth/secretosIniciales');
+  const seeded = await users.seedAdmin({
+    guardarClave: (pass) => secretos.guardarSecreto(config.dataDir, secretos.ARCHIVO_CLAVE_ADMIN, pass),
+  });
+  if (seeded && seeded.generated && seeded.creado) {
+    // La contrasena NUNCA va al log: queda en un archivo 0600 del volumen.
+    console.log(`\n[arcanum] Usuario superadmin creado: ${seeded.username} (contrasena generada, no se muestra en el log)`);
+    console.log(`[arcanum]   Leela desde la consola del servicio: cat ${seeded.ruta}`);
+    console.log('[arcanum]   Cambiala despues de entrar y borra ese archivo. (defini ARCANUM_ADMIN_PASS para fijarla)\n');
+  } else if (seeded && seeded.generated) {
+    console.error(`[arcanum] No se creo el superadmin: no se pudo guardar la contrasena generada (${seeded.error}).`);
+    console.error('[arcanum]   Defini ARCANUM_ADMIN_PASS y reinicia: el superadmin se crea con esa contrasena.');
   }
   try {
     const n = await require('./services/colaEmision').servicio().reencolarProcesando();

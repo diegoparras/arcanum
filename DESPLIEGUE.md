@@ -56,8 +56,12 @@ igual de simple y mas estable.
 4. **Volumes**: montá un volumen en `/data` (guarda la master key autogenerada si
    no la definís por env; igual conviene definirla).
 5. **Ports / Domains**: exponé el `8094` y asignale un dominio con HTTPS.
-6. Deploy. Mirá los logs: si no definiste `ARCANUM_API_KEY`, ahí aparece la
-   generada (una sola vez).
+6. Deploy. Si no definiste `ARCANUM_API_KEY` o `ARCANUM_ADMIN_PASS`, Arcanum las
+   genera y las deja en el volumen, legibles solo por la app: **nunca** en los logs.
+   Los logs dicen dónde leerlas desde la consola del servicio:
+   `cat /data/api-key-generada` y `cat /data/admin-clave-inicial`. La clave de API
+   generada se reutiliza en cada reinicio; el archivo de la contraseña del superadmin
+   conviene borrarlo después de cambiarla.
 
 > Importante: en produccion poné siempre `ARCANUM_ENV=prod`, `ARCANUM_API_KEY`
 > y `ARCANUM_MASTER_KEY` propias, y la app detras de HTTPS.

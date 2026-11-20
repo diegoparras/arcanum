@@ -22,19 +22,34 @@ function verifyPassword(pw, stored) {
   }
 }
 
-/** Crea el usuario admin la primera vez. Devuelve la clave si la genero. */
-async function seedAdmin() {
+/**
+ * Crea el superadmin la primera vez (solo si no hay ningun usuario).
+ * Sin ARCANUM_ADMIN_PASS genera una contrasena y la entrega a `guardarClave(pass) -> ruta`
+ * (un archivo 0600 en el volumen): nunca se devuelve ni se loguea. Si no se puede guardar,
+ * el usuario NO se crea: con ARCANUM_ADMIN_PASS y un reinicio se crea con esa.
+ * @returns {null | { username, generated, creado, ruta?, error? }}
+ */
+async function seedAdmin({ guardarClave } = {}) {
   const { rows } = await db.query('SELECT count(*)::int AS n FROM usuarios');
   if (rows[0].n > 0) return null;
   const username = (process.env.ARCANUM_ADMIN_USER || 'admin').trim();
   const provided = process.env.ARCANUM_ADMIN_PASS;
-  const pass = provided || crypto.randomBytes(9).toString('base64url');
+  const pass = provided || crypto.randomBytes(12).toString('base64url');
+  let ruta;
+  if (!provided) {
+    try {
+      if (typeof guardarClave !== 'function') throw new Error('no hay donde guardar la contrasena generada');
+      ruta = guardarClave(pass);
+    } catch (e) {
+      return { username, generated: true, creado: false, error: String(e.message || e) };
+    }
+  }
   await db.query('INSERT INTO usuarios (username, pass_hash, role) VALUES ($1, $2, $3)', [
     username,
     hashPassword(pass),
     'superadmin',
   ]);
-  return { username, generated: !provided, pass: provided ? undefined : pass };
+  return { username, generated: !provided, creado: true, ...(ruta ? { ruta } : {}) };
 }
 
 async function login(username, password) {

@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.6] - 2026-11-20
+
+### Seguridad
+- **Ninguna credencial generada va al log.** Sin `ARCANUM_ADMIN_PASS`, la contrasena del
+  primer superadmin queda en `/data/admin-clave-inicial`; sin `ARCANUM_API_KEY`, la clave de
+  API generada queda en `/data/api-key-generada`. Los dos archivos son legibles solo por la
+  app y el log dice como leerlos desde la consola del servicio. Antes se imprimian en los
+  registros, que ve cualquiera con acceso al panel.
+- La clave de API generada ahora **sobrevive a los reinicios** (antes cambiaba en cada uno).
+- Si la contrasena generada no se puede guardar, el superadmin no se crea (nadie podria
+  entrar): el log pide definir `ARCANUM_ADMIN_PASS` y reiniciar.
+
 ## [0.10.5] - 2026-11-20
 
 ### Cambiado
