@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.9.4] - 2026-11-20
+
+### Nuevo
+- **PDF igual al de ARCA** ("Comprobantes en linea"), ahora el modelo por defecto: ORIGINAL,
+  DUPLICADO y TRIPLICADO, mismos recuadros, rotulos, tabla (con alicuota y subtotal con IVA en
+  la A), totales e importes sin separador de miles. El diseno anterior sigue como modelo
+  "arcanum".
+- **Nombre del archivo**: por defecto el de ARCA (`CUIT_TIPO_PV_NUMERO.pdf`), o una plantilla
+  con `{receptor}`, `{numero}`, `{pv}`, `{letra}`, `{tipo}`, `{fecha}`, `{cuit}` y `{total}`.
+- Se eligen al facturar (`pdf: { modelo, nombreArchivo }` en el cuerpo, o en Emitir) y quedan
+  guardados con el comprobante. La descarga acepta `?modelo=`, `?nombre=` y `?copias=1..3`.
+
 ## [0.9.3] - 2026-11-20
 
 ### Corregido

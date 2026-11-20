@@ -177,6 +177,7 @@ async function authorize(cuit, inv) {
     const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
     if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
   }
+  if (inv.pdf) require('./pdf').preferencias(inv.pdf); // validar ANTES de pedir el CAE
   if (!inv.cliente) throw new SoapError('Falta `cliente` (razon social del cliente del exterior)', 422);
   if (!inv.paisDestino) throw new SoapError('Falta `paisDestino` (codigo de pais destino, ver FEXGetPARAM_DST_pais)', 422);
   const ptoVta = parseInt(inv.puntoVenta, 10);
@@ -197,6 +198,8 @@ async function authorize(cuit, inv) {
     const res = r.FEXResultAuth || r;
     const aprobado = res.Resultado === 'A';
     const out = {
+      // Modelo visual y nombre de archivo del PDF elegidos al facturar (ver services/pdf.js).
+      pdf: inv.pdf ? require('./pdf').preferencias(inv.pdf) : undefined,
       aprobado,
       resultado: res.Resultado || null,
       cae: res.Cae || null,

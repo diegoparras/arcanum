@@ -209,6 +209,7 @@ async function authorizeInvoice(cuit, inv) {
   if (previo) return previo;
 
   validarImportes(inv);
+  if (inv.pdf) require('./pdf').preferencias(inv.pdf); // validar ANTES de pedir el CAE
 
   const ptoVta = parseInt(inv.puntoVenta, 10);
   const tipoCbte = parseInt(inv.tipoComprobante, 10);
@@ -317,6 +318,8 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
   const aprobado = resultado === 'A';
 
   const out = {
+      // Modelo visual y nombre de archivo del PDF elegidos al facturar (ver services/pdf.js).
+      pdf: inv.pdf ? require('./pdf').preferencias(inv.pdf) : undefined,
     aprobado,
     resultado, // 'A' aprobado, 'R' rechazado, 'P' parcial
     cae: detalleResp?.CAE || null,

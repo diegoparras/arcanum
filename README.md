@@ -215,6 +215,16 @@ La receta se edita en vivo (superadmin, menú **Fisherboy y Mis Comprobantes**) 
 - **Topes de Monotributo** (`GET /api/monotributo/:cuit`): suma 12 meses de emitidos (Mis Comprobantes + lo emitido por Arcanum que no esté ahí, sin contar dos veces), con las notas de crédito restando, contra el tope de la categoría del padrón. Semáforo 80% / 100%, categoría sugerida, aviso `tope_monotributo` y recordatorio de recategorización en enero y julio. Los topes se cargan en Arcanum con su vigencia: **verificá los vigentes** en arca.gob.ar.
 - **Constatación masiva** (`POST /api/constatacion` o el botón **Constatar recibidos**): cada recibido contra WSCDC y su emisor contra la base de apócrifos, hasta 500 por pedido.
 
+## PDF del comprobante
+
+Por defecto el PDF es **igual al de ARCA** ("Comprobantes en línea": original, duplicado y triplicado) y el archivo se llama como lo nombra ARCA, `CUIT_TIPO_PV_NUMERO.pdf`. Al facturar se puede elegir otro modelo (`arcanum`) y otro nombre con una plantilla (`{receptor}`, `{numero}`, `{pv}`, `{letra}`, `{tipo}`, `{fecha}`, `{cuit}`, `{total}`):
+
+```json
+{ "pdf": { "modelo": "arca", "nombreArchivo": "FACTURA {receptor} {letra}-{pv}-{numero}" } }
+```
+
+`GET /api/comprobantes/:cuit/:pv/:tipo/:nro/pdf` respeta lo elegido; `?modelo=`, `?nombre=` y `?copias=1..3` lo pisan para esa descarga.
+
 ## Vista previa de emisión
 
 `POST /api/wsfev1/comprobantes/vista-previa` recibe el mismo cuerpo que la emisión y **no emite nada**: valida importes, IVA, tipo, receptor (con su padrón si es CUIT), condición de IVA, fecha y RG 5866, sugiere la letra según emisor y receptor, y devuelve el número que le tocaría. Es la única excepción de `POST` permitida a las claves de rol `lectura`. En la UI es el botón **Vista previa** de Emitir.

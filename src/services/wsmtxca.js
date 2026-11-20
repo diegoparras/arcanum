@@ -204,6 +204,7 @@ async function authorize(cuit, inv) {
   const tipoCbte = parseInt(inv.tipoComprobante, 10);
   const concepto = parseInt(inv.concepto ?? 1, 10);
   if (!ptoVta || !tipoCbte) throw new SoapError('Faltan `puntoVenta` o `tipoComprobante`', 422);
+  if (inv.pdf) require('./pdf').preferencias(inv.pdf); // validar ANTES de pedir el CAE
 
   // Lock por (cuit, entorno, ptoVta, tipoCbte): serializa la emision (numeracion sin carrera).
   return withTokenRetry(c, SERVICE, config.env, () => db.withLock(`emit:wsmtxca:${c}:${config.env}:${ptoVta}:${tipoCbte}`, async () => {
@@ -224,6 +225,8 @@ async function authorize(cuit, inv) {
     const aprobado = !!cae && resultado !== 'R';
 
     const out = {
+      // Modelo visual y nombre de archivo del PDF elegidos al facturar (ver services/pdf.js).
+      pdf: inv.pdf ? require('./pdf').preferencias(inv.pdf) : undefined,
       aprobado,
       resultado,
       cae: cae || null,

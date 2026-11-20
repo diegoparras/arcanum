@@ -375,6 +375,9 @@ async function vEmitir(){
     <div><label>IVA</label><input id="e_iva" class="mono" readonly></div>
     <div><label>Total</label><input id="e_total" class="mono" readonly></div></div>
     <div class="f2"><div><label>Condición IVA del receptor</label><select id="e_condiva"><option value="5">Consumidor Final</option><option value="1">Responsable Inscripto</option><option value="6">Monotributo</option><option value="4">Exento</option></select></div><div></div></div>
+    <div class="f2"><div><label>Modelo del PDF</label><select id="e_pdfmodelo"><option value="arca">Igual al de ARCA</option><option value="arcanum">Arcanum</option></select></div>
+    <div><label>Nombre del archivo</label><input id="e_pdfnombre" placeholder="El de ARCA: CUIT_TIPO_PV_NUMERO.pdf" oninput="nombrePdfAyuda()"></div></div>
+    <p class="hint" id="e_pdfayuda">Vacío = el nombre de ARCA. Podés usar {receptor}, {numero}, {pv}, {letra}, {tipo}, {fecha}, {cuit} y {total}.</p>
     <div class="row" style="margin-top:16px"><button onclick="previsualizar()">Vista previa</button>
     <button class="primary" onclick="emitir()">Emitir y obtener CAE</button></div>
    </div><div id="e_result" style="margin-top:16px"></div>`;
@@ -389,13 +392,16 @@ function cuerpoEmision(){
   const body={cuit:$('#e_cuit').value,puntoVenta:+$('#e_pv').value,tipoComprobante:tipo,concepto:+$('#e_concepto').value,
     tipoDocReceptor:+$('#e_doctipo').value,nroDocReceptor:$('#e_docnro').value,condicionIvaReceptor:+$('#e_condiva').value,
     importeNeto:tipoC?0:neto,importeIva:tipoC?0:iva,importeTotal:tipoC?neto+iva:neto+iva,
-    alicuotasIva:tipoC?[]:[{id:alic,baseImponible:neto,importe:iva}]};
+    alicuotasIva:tipoC?[]:[{id:alic,baseImponible:neto,importe:iva}],
+    pdf:{modelo:$('#e_pdfmodelo').value,nombreArchivo:$('#e_pdfnombre').value.trim()||undefined}};
   if(tipoC){body.importeNeto=+(neto+iva).toFixed(2);body.importeIva=0;body.importeTotal=+(neto+iva).toFixed(2);}
   // Clave de idempotencia por formulario: un doble clic o un reintento no saca dos CAE.
   if(!window._idemEmitir)window._idemEmitir='ui-'+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));
   body.idempotencyKey=window._idemEmitir;
   return body;
 }
+function nombrePdfAyuda(){const v=$('#e_pdfnombre').value.trim();
+  $('#e_pdfayuda').textContent=v?'Ejemplo: '+v.replace(/\{receptor\}/g,'CLIENTE SA').replace(/\{numero\}/g,'00000195').replace(/\{pv\}/g,'00001').replace(/\{letra\}/g,'C').replace(/\{tipo\}/g,'011').replace(/\{fecha\}/g,'2026-11-20').replace(/\{cuit\}/g,$('#e_cuit').value||'20111111112').replace(/\{total\}/g,'1000.00')+(/\.pdf$/i.test(v)?'':'.pdf'):'Vacío = el nombre de ARCA. Podés usar {receptor}, {numero}, {pv}, {letra}, {tipo}, {fecha}, {cuit} y {total}.';}
 async function previsualizar(){
   $('#e_result').innerHTML='<p class="hint">Revisando con ARCA…</p>';
   try{const {vistaPrevia:p}=await api('/api/wsfev1/comprobantes/vista-previa',{method:'POST',body:JSON.stringify(cuerpoEmision())});

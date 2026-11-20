@@ -578,8 +578,11 @@ async function route(req, res, url) {
       const cmp = await comprobantes.get(seg[2], seg[3], seg[4], seg[5]);
       if (!cmp) throw notFound();
       // Multi-emisor: el encabezado legal sale de los datos fiscales de ESE CUIT.
-      const buf = await pdf.generar(cmp, await emisores.get(cmp.cuit));
-      res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="cbte-${seg[3]}-${seg[5]}.pdf"` });
+      // Modelo y nombre: los del pedido (?modelo, ?nombre, ?copias), si no los elegidos al facturar,
+      // si no el modelo de ARCA y su nombre (CUIT_TIPO_PV_NUMERO.pdf).
+      const elegido = pdf.preferencias({ ...(cmp.raw && cmp.raw.pdf), ...(q.get('modelo') ? { modelo: q.get('modelo') } : {}), ...(q.get('nombre') ? { nombreArchivo: q.get('nombre') } : {}) });
+      const buf = await pdf.generar(cmp, await emisores.get(cmp.cuit), { modelo: elegido.modelo, copias: q.get('copias') || 3 });
+      res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': pdf.contentDisposition(pdf.nombreArchivo(cmp, elegido.nombreArchivo)) });
       return res.end(buf);
     }
   }
