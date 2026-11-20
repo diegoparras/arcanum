@@ -31,6 +31,17 @@ test('con contingencia y ARCA caido, encola y responde 202', async () => {
   assert.strictEqual(cola.encolados[0].o.numeroIntentado, 9);
 });
 
+test('con contingencia y sin clave del cliente: el primer intento y la cola usan la MISMA clave', async () => {
+  // Sin esto el primer intento no anota el vuelo, la cola inventa otra clave y el reintento
+  // saca un segundo CAE para la misma venta (lo encontro el E2E con ARCA lento).
+  const cola = colaFalsa();
+  let claveIntento = null;
+  const wsfev1 = { authorizeInvoice: async (cuit, inv) => { claveIntento = inv.idempotencyKey; throw timeout(); } };
+  await emitirOEncolar('20263630743', { importeTotal: 1 }, { contingencia: true }, { wsfev1, cola });
+  assert.ok(claveIntento, 'el primer intento tiene que salir con clave');
+  assert.strictEqual(cola.encolados[0].inv.idempotencyKey, claveIntento);
+});
+
 test('sin contingencia el error sale como antes', async () => {
   const wsfev1 = { authorizeInvoice: async () => { throw timeout(); } };
   await assert.rejects(emitirOEncolar('20263630743', {}, { contingencia: false }, { wsfev1, cola: colaFalsa() }), (e) => e.httpStatus === 504);

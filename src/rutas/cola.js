@@ -24,6 +24,9 @@ function json(res, status, payload) {
 async function emitirOEncolar(cuit, inv, { contingencia = false, usuario = null, origen = 'api' } = {}, deps = {}) {
   const wsfev1 = deps.wsfev1 || require('../services/wsfev1');
   const cola = deps.cola || require('../services/colaEmision').servicio();
+  // Con contingencia la clave se fija ANTES del primer intento: asi ese intento anota el vuelo
+  // con la misma clave que despues usa la cola, y el reintento adopta el CAE si ARCA ya lo dio.
+  if (contingencia && !inv.idempotencyKey) inv = { ...inv, idempotencyKey: require('../services/colaEmision').nuevaClave() };
   // Reintento del cliente con una clave que ya esta en la cola: se devuelve el estado real, nunca
   // se emite por fuera de la cola (podria salir un segundo CAE).
   if (inv.idempotencyKey && cola.porClave) {

@@ -47,11 +47,16 @@ function fueraDeVentana(fechaYmd, concepto, hoy) {
   return dias > (Number(concepto) === 1 ? 5 : 10);
 }
 
+/** Clave de idempotencia para un comprobante que puede terminar en la cola. */
+function nuevaClave() {
+  return `cola-${crypto.randomBytes(10).toString('hex')}`;
+}
+
 function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null } = {}) {
   async function encolar(cuit, inv, { numeroIntentado = null, usuario = null, origen = 'api' } = {}) {
     const cuerpo = { ...inv, cuit };
     cuerpo.fecha = ymdDe(inv.fecha) || ymdAr(ahora());
-    cuerpo.idempotencyKey = inv.idempotencyKey || `cola-${crypto.randomBytes(10).toString('hex')}`;
+    cuerpo.idempotencyKey = inv.idempotencyKey || nuevaClave();
     const item = await repo.insertar({
       cuit,
       idempotency_key: cuerpo.idempotencyKey,
@@ -240,4 +245,4 @@ function servicio() {
   return porDefecto;
 }
 
-module.exports = { crear, servicio, ESPERAS_MIN, proximoIntento, fueraDeVentana, ymdAr };
+module.exports = { crear, servicio, nuevaClave, ESPERAS_MIN, proximoIntento, fueraDeVentana, ymdAr };
