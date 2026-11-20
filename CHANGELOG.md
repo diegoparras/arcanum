@@ -3,6 +3,17 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.9.2] - 2026-11-20
+
+### Corregido
+- **WSMTXCA (Factura con detalle)**: la condicion de IVA del receptor iba como
+  `condicionIVAReceptorId` y al final del comprobante; en el WSDL es `condicionIVAReceptor` y va
+  despues del documento del receptor. Faltaba `cancelaEnMismaMonedaExtranjera` en moneda
+  extranjera (RG 5616).
+- **WSFEX (Exportacion)**: faltaba `CanMisMonExt` (RG 5616), obligatorio porque la moneda de una
+  factura E siempre es extranjera. Por defecto `S`; `pagaEnMonedaExtranjera: false` lo pasa a `N`.
+- Los dos pedidos se validan ahora contra sus WSDL reales (`test/fixtures/`), como WSFEv1.
+
 ## [0.9.1] - 2026-11-20
 
 ### Corregido

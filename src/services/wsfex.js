@@ -126,6 +126,50 @@ function buildItems(items) {
  *        idioma(1|2|3), formaPago, permisoExistente('S'|'N'), permisos[], importeTotal,
  *        items[], obsComerciales, obs, fecha, idempotencyKey, numero? }
  */
+/**
+ * <Cmp> de FEXAuthorize en el orden de ClsFEXRequest del WSDL real (test/wsfexXml.test.js).
+ */
+function armarCmp(inv, { id, ptoVta, numero }) {
+  const permisos =
+    inv.permisoExistente === 'S' && Array.isArray(inv.permisos) && inv.permisos.length
+      ? '<ar:Permisos>' +
+        inv.permisos
+          .map((p) => `<ar:Permiso><ar:Id_permiso>${escapeXml(p.id)}</ar:Id_permiso><ar:Dst_merc>${parseInt(p.destino, 10)}</ar:Dst_merc></ar:Permiso>`)
+          .join('') +
+        '</ar:Permisos>'
+      : '';
+
+  return (
+    '<ar:Cmp>' +
+    `<ar:Id>${id}</ar:Id>` +
+    `<ar:Fecha_cbte>${inv.fecha ? ymd(inv.fecha) : todayYmd()}</ar:Fecha_cbte>` +
+    `<ar:Cbte_Tipo>${CBTE_TIPO}</ar:Cbte_Tipo>` +
+    `<ar:Punto_vta>${ptoVta}</ar:Punto_vta>` +
+    `<ar:Cbte_nro>${numero}</ar:Cbte_nro>` +
+    `<ar:Tipo_expo>${parseInt(inv.tipoExportacion ?? 1, 10)}</ar:Tipo_expo>` +
+    `<ar:Permiso_existente>${inv.permisoExistente === 'S' ? 'S' : 'N'}</ar:Permiso_existente>` +
+    permisos +
+    `<ar:Dst_cmp>${parseInt(inv.paisDestino, 10)}</ar:Dst_cmp>` +
+    `<ar:Cliente>${escapeXml(inv.cliente)}</ar:Cliente>` +
+    `<ar:Cuit_pais_cliente>${escapeXml(inv.cuitPaisCliente || '0')}</ar:Cuit_pais_cliente>` +
+    `<ar:Domicilio_cliente>${escapeXml(inv.domicilioCliente || '')}</ar:Domicilio_cliente>` +
+    `<ar:Id_impositivo>${escapeXml(inv.idImpositivo || '')}</ar:Id_impositivo>` +
+    `<ar:Moneda_Id>${escapeXml(inv.moneda || 'DOL')}</ar:Moneda_Id>` +
+    `<ar:Moneda_ctz>${money(inv.cotizacion ?? 1)}</ar:Moneda_ctz>` +
+    // RG 5616: en exportacion la moneda es extranjera; 'S' = el cliente cancela en esa moneda.
+    `<ar:CanMisMonExt>${(inv.canMisMonExt || (inv.pagaEnMonedaExtranjera === false ? 'N' : 'S')) === 'N' ? 'N' : 'S'}</ar:CanMisMonExt>` +
+    `<ar:Obs_comerciales>${escapeXml(inv.obsComerciales || '')}</ar:Obs_comerciales>` +
+    `<ar:Imp_total>${money(inv.importeTotal)}</ar:Imp_total>` +
+    `<ar:Obs>${escapeXml(inv.obs || '')}</ar:Obs>` +
+    `<ar:Forma_pago>${escapeXml(inv.formaPago || '')}</ar:Forma_pago>` +
+    `<ar:Incoterms>${escapeXml(inv.incoterms || '')}</ar:Incoterms>` +
+    `<ar:Incoterms_Ds>${escapeXml(inv.incotermsDesc || '')}</ar:Incoterms_Ds>` +
+    `<ar:Idioma_cbte>${parseInt(inv.idioma ?? 1, 10)}</ar:Idioma_cbte>` +
+    buildItems(inv.items) +
+    '</ar:Cmp>'
+  );
+}
+
 async function authorize(cuit, inv) {
   const c = normalizeCuit(cuit);
   const idem = inv.idempotencyKey || null;
@@ -147,41 +191,7 @@ async function authorize(cuit, inv) {
     }
     const numero = inv.numero ? parseInt(inv.numero, 10) : (await lastAuthorized(c, ptoVta)).ultimoNumero + 1;
     const id = inv.id ? parseInt(inv.id, 10) : (await lastId(c)) + 1;
-    const permisos =
-      inv.permisoExistente === 'S' && Array.isArray(inv.permisos) && inv.permisos.length
-        ? '<ar:Permisos>' +
-          inv.permisos
-            .map((p) => `<ar:Permiso><ar:Id_permiso>${escapeXml(p.id)}</ar:Id_permiso><ar:Dst_merc>${parseInt(p.destino, 10)}</ar:Dst_merc></ar:Permiso>`)
-            .join('') +
-          '</ar:Permisos>'
-        : '';
-
-    const cmp =
-      '<ar:Cmp>' +
-      `<ar:Id>${id}</ar:Id>` +
-      `<ar:Fecha_cbte>${inv.fecha ? ymd(inv.fecha) : todayYmd()}</ar:Fecha_cbte>` +
-      `<ar:Cbte_Tipo>${CBTE_TIPO}</ar:Cbte_Tipo>` +
-      `<ar:Punto_vta>${ptoVta}</ar:Punto_vta>` +
-      `<ar:Cbte_nro>${numero}</ar:Cbte_nro>` +
-      `<ar:Tipo_expo>${parseInt(inv.tipoExportacion ?? 1, 10)}</ar:Tipo_expo>` +
-      `<ar:Permiso_existente>${inv.permisoExistente === 'S' ? 'S' : 'N'}</ar:Permiso_existente>` +
-      permisos +
-      `<ar:Dst_cmp>${parseInt(inv.paisDestino, 10)}</ar:Dst_cmp>` +
-      `<ar:Cliente>${escapeXml(inv.cliente)}</ar:Cliente>` +
-      `<ar:Cuit_pais_cliente>${escapeXml(inv.cuitPaisCliente || '0')}</ar:Cuit_pais_cliente>` +
-      `<ar:Domicilio_cliente>${escapeXml(inv.domicilioCliente || '')}</ar:Domicilio_cliente>` +
-      `<ar:Id_impositivo>${escapeXml(inv.idImpositivo || '')}</ar:Id_impositivo>` +
-      `<ar:Moneda_Id>${escapeXml(inv.moneda || 'DOL')}</ar:Moneda_Id>` +
-      `<ar:Moneda_ctz>${money(inv.cotizacion ?? 1)}</ar:Moneda_ctz>` +
-      `<ar:Obs_comerciales>${escapeXml(inv.obsComerciales || '')}</ar:Obs_comerciales>` +
-      `<ar:Imp_total>${money(inv.importeTotal)}</ar:Imp_total>` +
-      `<ar:Obs>${escapeXml(inv.obs || '')}</ar:Obs>` +
-      `<ar:Forma_pago>${escapeXml(inv.formaPago || '')}</ar:Forma_pago>` +
-      `<ar:Incoterms>${escapeXml(inv.incoterms || '')}</ar:Incoterms>` +
-      `<ar:Incoterms_Ds>${escapeXml(inv.incotermsDesc || '')}</ar:Incoterms_Ds>` +
-      `<ar:Idioma_cbte>${parseInt(inv.idioma ?? 1, 10)}</ar:Idioma_cbte>` +
-      buildItems(inv.items) +
-      '</ar:Cmp>';
+    const cmp = armarCmp(inv, { id, ptoVta, numero });
 
     const r = await post_('FEXAuthorize', (await authEl(c)) + cmp);
     const res = r.FEXResultAuth || r;
@@ -230,4 +240,4 @@ async function authorize(cuit, inv) {
   }));
 }
 
-module.exports = { dummy, lastAuthorized, lastId, consultar, authorize };
+module.exports = { dummy, lastAuthorized, lastId, consultar, authorize, armarCmp };

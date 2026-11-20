@@ -141,6 +141,50 @@ function buildSubtotalesIVA(subs) {
 }
 
 /**
+ * <comprobanteCAERequest> en el orden de ComprobanteType del WSDL real de WSMTXCA (los servicios
+ * Java de ARCA validan nombres y orden; test/wsmtxcaXml.test.js lo verifica).
+ */
+function armarComprobante(inv, { tipoCbte, ptoVta, numero, fechaEmision, concepto }) {
+  let serviceDates = '';
+  if (concepto === 2 || concepto === 3) {
+    serviceDates =
+      `<fechaServicioDesde>${isoDate(inv.fechaServicioDesde) || fechaEmision}</fechaServicioDesde>` +
+      `<fechaServicioHasta>${isoDate(inv.fechaServicioHasta) || fechaEmision}</fechaServicioHasta>` +
+      `<fechaVencimientoPago>${isoDate(inv.fechaVtoPago) || fechaEmision}</fechaVencimientoPago>`;
+  }
+  const moneda = String(inv.moneda || 'PES');
+  return (
+    '<comprobanteCAERequest>' +
+    `<codigoTipoComprobante>${tipoCbte}</codigoTipoComprobante>` +
+    `<numeroPuntoVenta>${ptoVta}</numeroPuntoVenta>` +
+    `<numeroComprobante>${numero}</numeroComprobante>` +
+    `<fechaEmision>${fechaEmision}</fechaEmision>` +
+    `<codigoTipoDocumento>${parseInt(inv.tipoDocReceptor ?? 99, 10)}</codigoTipoDocumento>` +
+    `<numeroDocumento>${normalizeCuit(inv.nroDocReceptor ?? 0) || 0}</numeroDocumento>` +
+    // Condicion IVA del receptor (RG 5616): en WSMTXCA se llama condicionIVAReceptor y va aca.
+    (inv.condicionIvaReceptor != null ? `<condicionIVAReceptor>${parseInt(inv.condicionIvaReceptor, 10)}</condicionIVAReceptor>` : '') +
+    `<importeGravado>${money(inv.importeGravado ?? inv.importeNeto)}</importeGravado>` +
+    `<importeNoGravado>${money(inv.importeNoGravado)}</importeNoGravado>` +
+    `<importeExento>${money(inv.importeExento)}</importeExento>` +
+    `<importeSubtotal>${money(inv.importeSubtotal ?? inv.importeGravado ?? inv.importeNeto)}</importeSubtotal>` +
+    `<importeOtrosTributos>${money(inv.importeOtrosTributos ?? inv.importeTributos)}</importeOtrosTributos>` +
+    `<importeTotal>${money(inv.importeTotal)}</importeTotal>` +
+    `<codigoMoneda>${escapeXml(moneda)}</codigoMoneda>` +
+    `<cotizacionMoneda>${money(inv.cotizacion ?? 1)}</cotizacionMoneda>` +
+    // RG 5616: obligatorio si la moneda no es pesos ('S' cancela en la misma moneda extranjera).
+    (moneda !== 'PES'
+      ? `<cancelaEnMismaMonedaExtranjera>${(inv.canMisMonExt || (inv.pagaEnMonedaExtranjera ? 'S' : 'N')) === 'S' ? 'S' : 'N'}</cancelaEnMismaMonedaExtranjera>`
+      : '') +
+    (inv.observaciones ? `<observaciones>${escapeXml(inv.observaciones)}</observaciones>` : '') +
+    `<codigoConcepto>${concepto}</codigoConcepto>` +
+    serviceDates +
+    buildItems(inv.items) +
+    buildSubtotalesIVA(inv.subtotalesIVA) +
+    '</comprobanteCAERequest>'
+  );
+}
+
+/**
  * Emite un comprobante con detalle (items con IVA por linea) y obtiene el CAE.
  * inv: { puntoVenta, tipoComprobante, concepto, tipoDocReceptor, nroDocReceptor,
  *        importeGravado, importeNoGravado, importeExento, importeSubtotal,
@@ -171,37 +215,7 @@ async function authorize(cuit, inv) {
     const numero = inv.numero ? parseInt(inv.numero, 10) : (await lastAuthorized(c, ptoVta, tipoCbte)).ultimoNumero + 1;
     const fechaEmision = inv.fecha ? isoDate(inv.fecha) : todayIso();
 
-    let serviceDates = '';
-    if (concepto === 2 || concepto === 3) {
-      serviceDates =
-        `<fechaServicioDesde>${isoDate(inv.fechaServicioDesde) || fechaEmision}</fechaServicioDesde>` +
-        `<fechaServicioHasta>${isoDate(inv.fechaServicioHasta) || fechaEmision}</fechaServicioHasta>` +
-        `<fechaVencimientoPago>${isoDate(inv.fechaVtoPago) || fechaEmision}</fechaVencimientoPago>`;
-    }
-
-    const reqXml =
-      '<comprobanteCAERequest>' +
-      `<codigoTipoComprobante>${tipoCbte}</codigoTipoComprobante>` +
-      `<numeroPuntoVenta>${ptoVta}</numeroPuntoVenta>` +
-      `<numeroComprobante>${numero}</numeroComprobante>` +
-      `<fechaEmision>${fechaEmision}</fechaEmision>` +
-      `<codigoTipoDocumento>${parseInt(inv.tipoDocReceptor ?? 99, 10)}</codigoTipoDocumento>` +
-      `<numeroDocumento>${normalizeCuit(inv.nroDocReceptor ?? 0) || 0}</numeroDocumento>` +
-      `<importeGravado>${money(inv.importeGravado ?? inv.importeNeto)}</importeGravado>` +
-      `<importeNoGravado>${money(inv.importeNoGravado)}</importeNoGravado>` +
-      `<importeExento>${money(inv.importeExento)}</importeExento>` +
-      `<importeSubtotal>${money(inv.importeSubtotal ?? inv.importeGravado ?? inv.importeNeto)}</importeSubtotal>` +
-      `<importeOtrosTributos>${money(inv.importeOtrosTributos ?? inv.importeTributos)}</importeOtrosTributos>` +
-      `<importeTotal>${money(inv.importeTotal)}</importeTotal>` +
-      `<codigoMoneda>${escapeXml(inv.moneda || 'PES')}</codigoMoneda>` +
-      `<cotizacionMoneda>${money(inv.cotizacion ?? 1)}</cotizacionMoneda>` +
-      (inv.observaciones ? `<observaciones>${escapeXml(inv.observaciones)}</observaciones>` : '') +
-      `<codigoConcepto>${concepto}</codigoConcepto>` +
-      serviceDates +
-      buildItems(inv.items) +
-      buildSubtotalesIVA(inv.subtotalesIVA) +
-      (inv.condicionIvaReceptor != null ? `<condicionIVAReceptorId>${parseInt(inv.condicionIvaReceptor, 10)}</condicionIVAReceptorId>` : '') +
-      '</comprobanteCAERequest>';
+    const reqXml = armarComprobante(inv, { tipoCbte, ptoVta, numero, fechaEmision, concepto });
 
     const r = await callAuth(c, 'autorizarComprobante', reqXml);
     const cae = deepFind(r, 'CAE') || deepFind(r, 'cae');
@@ -265,4 +279,4 @@ async function authorize(cuit, inv) {
   }));
 }
 
-module.exports = { dummy, lastAuthorized, consultar, alicuotasIVA, authorize };
+module.exports = { dummy, lastAuthorized, consultar, alicuotasIVA, authorize, armarComprobante };
