@@ -185,12 +185,12 @@ async function doLogin(){
 }
 async function logout(){ await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); showLogin(); }
 
-const VIEWS=[['panel','Panel'],['clientes','Clientes'],['servicios','Servicios'],['emitir','Emitir'],['facturador','Facturador'],['comprobantes','Comprobantes'],['generador','Generador'],['webhooks','Webhooks'],['usuarios','Usuarios']];
+const VIEWS=[['panel','Panel'],['clientes','Clientes'],['servicios','Servicios'],['emitir','Emitir'],['facturador','Facturador'],['comprobantes','Comprobantes'],['mis','Mis Comprobantes'],['generador','Generador'],['webhooks','Webhooks'],['usuarios','Usuarios']];
 function renderNav(cur){
   $('#nav').innerHTML=VIEWS.filter(v=>v[0]!=='usuarios'||['superadmin','admin'].includes(ME.role))
     .map(v=>`<button class="${v[0]===cur?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('');
 }
-function go(v){renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
+function go(v){if(typeof mcPararTimers==='function')mcPararTimers();renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
 
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; }catch(e){ showLogin(); return; }
@@ -423,6 +423,197 @@ async function emitir(){
     toast('CAE obtenido'); }
   catch(e){ $('#e_result').innerHTML=`<div class="card"><span class="tag no">RECHAZADO</span><p>${e.message}</p></div>`; }
 }
+
+/* ---------- MIS COMPROBANTES (via Fisherboy) ---------- */
+const MC={cuit:'',corrida:null,seq:0,url:null,timer:null,frameTimer:null};
+const MC_VIVOS=['iniciando','corriendo','esperando_humano','humano'];
+const MC_ESTADO={iniciando:'Iniciando',corriendo:'Operando ARCA',esperando_humano:'Necesita una persona',humano:'En tus manos',terminado:'Terminada',error:'Con error'};
+function isoHoy(d=new Date()){return d.toISOString().slice(0,10);}
+function mcPararTimers(){clearInterval(MC.timer);clearInterval(MC.frameTimer);MC.timer=MC.frameTimer=null;}
+async function vMis(){
+  mcPararTimers();
+  const v=$('#view');let tenants=[];try{({tenants}=await api('/api/tenants'));}catch{}
+  const admin=['superadmin','admin'].includes(ME.role), opera=admin||ME.role==='operador';
+  MC.cuit=MC.cuit||(tenants[0]&&tenants[0].cuit)||'';
+  const hoy=new Date(), d1=new Date(Date.UTC(hoy.getUTCFullYear(),hoy.getUTCMonth()-1,1));
+  v.innerHTML=`<h2>Mis Comprobantes</h2>
+   <p class="hint">Emitidos y recibidos bajados de la página de ARCA con el navegador de Fisherboy. La descarga sigue una receta fija; si ARCA pide un captcha, se pausa y lo resolvés acá mismo.</p>
+   <div class="card"><div class="row"><div style="flex:1;min-width:220px"><label>CUIT</label>
+     <input id="mc_cuit" class="mono" list="mc_cuits" value="${esc(MC.cuit)}" placeholder="11 dígitos"></div>
+     <datalist id="mc_cuits">${tenants.map(t=>`<option value="${t.cuit}">${esc(t.nombre||'')}</option>`).join('')}</datalist>
+     <button style="margin-top:26px" onclick="MC.cuit=$('#mc_cuit').value.replace(/\\D/g,'');vMis()">Ver</button></div></div>
+   <div class="f2" style="margin-top:14px">
+    <div class="card"><h3 style="text-transform:none">Credencial de ARCA</h3><div id="mc_cred" class="hint">Cargando…</div></div>
+    <div class="card"><h3 style="text-transform:none">Sincronizar</h3>
+      <div class="f3"><div><label>Qué</label><select id="mc_tipo"><option value="ambos">Emitidos y recibidos</option><option value="emitidos">Emitidos</option><option value="recibidos">Recibidos</option></select></div>
+      <div><label>Desde</label><input id="mc_desde" type="date" value="${isoHoy(d1)}"></div>
+      <div><label>Hasta</label><input id="mc_hasta" type="date" value="${isoHoy()}"></div></div>
+      <div class="row" style="margin-top:14px"><button class="primary" ${opera?'':'disabled'} onclick="mcSincronizar()">Sincronizar ahora</button>
+      <span class="hint" id="mc_fbsalud"></span></div></div>
+   </div>
+   <div class="card hidden" id="mc_vivo" style="margin-top:14px">
+     <div class="row"><h3 style="margin:0;text-transform:none">Navegador en vivo</h3><span class="tag" id="mc_vivo_estado"></span>
+       <span style="margin-left:auto" class="row"><button id="mc_tomar" onclick="mcControl('tomar-control')">Tomar el control</button>
+       <button id="mc_devolver" class="primary" onclick="mcControl('devolver')">Devolver a la receta</button></span></div>
+     <p class="hint" id="mc_vivo_motivo" style="margin:8px 0"></p>
+     <div id="mc_pantalla" tabindex="0" style="position:relative;margin-top:8px;border:1px solid var(--line);border-radius:10px;overflow:hidden;outline:none;background:var(--bg)">
+       <img id="mc_img" alt="Pantalla del navegador de Fisherboy" style="display:block;width:100%;height:auto;aspect-ratio:1280/800">
+     </div>
+     <p class="hint" style="margin-top:6px">Mientras tengas el control, los clics y lo que tipees van al navegador. Lo que escribas acá no se guarda en ningún registro.</p>
+   </div>
+   <div class="card" style="margin-top:14px"><h3 style="text-transform:none">Monotributo</h3><div id="mc_mono" class="hint">Cargando…</div></div>
+   <h2>Sincronizaciones</h2><div class="card" id="mc_corridas"><p class="hint">Cargando…</p></div>
+   <h2>Comprobantes</h2>
+   <div class="card"><div class="row">
+     <select id="mc_ftipo" style="width:auto"><option value="">Todos</option><option value="emitido">Emitidos</option><option value="recibido">Recibidos</option></select>
+     <input id="mc_fdesde" type="date" style="width:auto"><input id="mc_fhasta" type="date" style="width:auto">
+     <button onclick="mcCargarTabla()">Filtrar</button>
+     <span style="margin-left:auto" class="row"><button onclick="mcExportar()">Exportar CSV</button>
+     <button ${opera?'':'disabled'} onclick="mcConstatar()">Constatar recibidos</button></span></div>
+     <div id="mc_const"></div>
+     <div id="mc_tabla" style="margin-top:10px;overflow-x:auto"><p class="hint">Cargando…</p></div></div>`;
+  if(!/^\d{11}$/.test(MC.cuit)){['mc_cred','mc_mono','mc_corridas','mc_tabla'].forEach(id=>$('#'+id).innerHTML='<p class="hint">Elegí un CUIT.</p>');return;}
+  mcCredencial(admin);mcMonotributo();mcCorridas(true);mcCargarTabla();
+  if(admin)api('/api/fisherboy/salud').then(r=>{$('#mc_fbsalud').textContent=r.fisherboy.ok?`Fisherboy ${r.fisherboy.version||''} conectado`:`Fisherboy: ${r.fisherboy.error||'no responde'}`;}).catch(()=>{});
+}
+async function mcCredencial(admin){
+  try{const {credencial:c}=await api(`/api/mis-comprobantes/${MC.cuit}/credencial`);
+    const estado=c.rechazada?`<span class="tag no">ARCA RECHAZÓ LA CLAVE</span> <span class="hint">${esc(c.rechazoMotivo||'')}. No se reintenta para no bloquear la cuenta: cargá la clave de nuevo.</span>`:c.cargada?`<span class="tag ok">CLAVE CARGADA</span> <span class="hint">${c.actualizada?'el '+new Date(c.actualizada).toLocaleString('es-AR'):''}${c.actualizadaPor?' por '+esc(c.actualizadaPor):''}</span>`:'<span class="tag warn">SIN CLAVE</span>';
+    $('#mc_cred').innerHTML=`${estado}
+      ${admin?`<div class="f2"><div><label>CUIT con el que se entra a ARCA</label><input id="mc_login" class="mono" value="${esc(c.cuitLogin||MC.cuit)}"></div>
+      <div><label>Clave fiscal ${c.cargada?'(dejala vacía para no cambiarla)':''}</label>
+      <div class="pwwrap"><input id="mc_clave" type="password" autocomplete="new-password" placeholder="${c.cargada?'Sin cambios':'Clave fiscal'}"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar la clave" onclick="togglePw('mc_clave',this)">${I_EYE}</button></div></div></div>
+      <label class="chk" style="margin-top:10px"><input type="checkbox" id="mc_sync" ${c.sincronizar?'checked':''}> Sincronizar todos los días (mes anterior y mes en curso)</label>
+      <div class="row" style="margin-top:10px"><button class="primary" onclick="mcGuardarClave()">Guardar</button>
+      ${c.cargada?'<button onclick="mcBorrarClave()">Borrar clave</button>':''}</div>
+      <p class="hint">Se guarda cifrada. Nunca se vuelve a mostrar ni queda en los registros.</p>`:'<p class="hint">Solo un administrador puede cargar o cambiar la clave fiscal.</p>'}`;
+  }catch(e){$('#mc_cred').innerHTML=`<span class="tag no">ERROR</span> ${esc(e.message)}`;}
+}
+async function mcGuardarClave(){
+  const body={cuitLogin:$('#mc_login').value.replace(/\D/g,''),sincronizar:$('#mc_sync').checked};
+  const clave=$('#mc_clave').value; if(clave)body.clave=clave;
+  try{await api(`/api/mis-comprobantes/${MC.cuit}/credencial`,{method:'PUT',body:JSON.stringify(body)});$('#mc_clave').value='';toast('Credencial guardada');mcCredencial(true);}
+  catch(e){toast(e.message,true);}
+}
+async function mcBorrarClave(){
+  if(!confirm('¿Borrar la clave fiscal de este CUIT? La sincronización diaria deja de andar.'))return;
+  try{await api(`/api/mis-comprobantes/${MC.cuit}/credencial`,{method:'DELETE'});toast('Clave borrada');mcCredencial(true);}catch(e){toast(e.message,true);}
+}
+async function mcSincronizar(){
+  try{const {corrida}=await api(`/api/mis-comprobantes/${MC.cuit}/sincronizar`,{method:'POST',body:JSON.stringify({tipo:$('#mc_tipo').value,desde:$('#mc_desde').value,hasta:$('#mc_hasta').value})});
+    toast('Sincronización iniciada');mcSeguir(corrida.id);mcCorridas(false);}
+  catch(e){toast(e.message,true);}
+}
+async function mcCorridas(retomar){
+  try{const {corridas}=await api(`/api/mis-comprobantes/${MC.cuit}/corridas`);
+    $('#mc_corridas').innerHTML=corridas.length?`<table><tr><th>#</th><th>Qué</th><th>Rango</th><th>Estado</th><th>Cantidad</th><th>Inicio</th><th>Detalle</th></tr>${corridas.map(c=>`<tr>
+      <td class="mono">${c.id}</td><td>${esc(c.tipo)}</td><td class="mono">${String(c.desde).slice(0,10)} a ${String(c.hasta).slice(0,10)}</td>
+      <td><span class="tag ${c.estado==='terminado'?'ok':c.estado==='error'?'no':'warn'}">${esc(MC_ESTADO[c.estado]||c.estado)}</span></td>
+      <td class="mono">${c.cantidad}</td><td class="hint">${new Date(c.iniciada_at).toLocaleString('es-AR')}</td>
+      <td class="hint">${esc(c.error||'')}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${c.id})">Ver en vivo</button>`:''}</td></tr>`).join('')}</table>`:'<p class="hint">Todavía no se sincronizó este CUIT.</p>';
+    const viva=corridas.find(c=>MC_VIVOS.includes(c.estado));
+    if(retomar&&viva)mcSeguir(viva.id);
+  }catch(e){$('#mc_corridas').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+function mcSeguir(id){
+  mcPararTimers();MC.corrida=id;MC.seq=0;$('#mc_vivo').classList.remove('hidden');
+  const paso=async()=>{
+    if(!$('#mc_vivo')){mcPararTimers();return;}
+    try{const {corrida:c}=await api(`/api/mis-comprobantes/corridas/${id}`);
+      const t=$('#mc_vivo_estado');t.textContent=MC_ESTADO[c.estado]||c.estado;t.className='tag '+(c.estado==='terminado'?'ok':c.estado==='error'?'no':'warn');
+      const humano=c.estado==='humano'||c.estado==='esperando_humano';
+      $('#mc_tomar').classList.toggle('hidden',humano||!MC_VIVOS.includes(c.estado));
+      $('#mc_devolver').classList.toggle('hidden',!humano);
+      $('#mc_vivo_motivo').textContent=c.estado==='esperando_humano'?'ARCA pide a una persona (captcha o segundo factor). Resolvelo en la pantalla y después tocá "Devolver a la receta".':c.estado==='error'?(c.error||''):c.estado==='terminado'?`Listo: ${c.cantidad} comprobantes.`:'';
+      if(!MC_VIVOS.includes(c.estado)){mcPararTimers();mcCorridas(false);mcCargarTabla();mcMonotributo();}
+    }catch{}
+  };
+  const foto=async()=>{
+    if(!$('#mc_img'))return;
+    try{const r=await fetch(`/api/mis-comprobantes/corridas/${id}/frame?desde=${MC.seq}`,{credentials:'include'});
+      if(r.status===200){const b=await r.blob();MC.seq=+(r.headers.get('x-agent-seq')||MC.seq);if(MC.url)URL.revokeObjectURL(MC.url);MC.url=URL.createObjectURL(b);$('#mc_img').src=MC.url;}
+    }catch{}
+  };
+  paso();foto();MC.timer=setInterval(paso,2000);MC.frameTimer=setInterval(foto,500);
+  const pan=$('#mc_pantalla');
+  pan.onclick=e=>{const r=$('#mc_img').getBoundingClientRect();mcEvento({tipo:'click',x:Math.round((e.clientX-r.left)*1280/r.width),y:Math.round((e.clientY-r.top)*800/r.height)});pan.focus();};
+  pan.onwheel=e=>{e.preventDefault();mcEvento({tipo:'scroll',dy:Math.round(e.deltaY)});};
+  pan.onkeydown=e=>{if(e.ctrlKey||e.metaKey||e.altKey)return;e.preventDefault();
+    if(e.key.length===1)mcEvento({tipo:'texto',texto:e.key});else if(['Enter','Tab','Backspace','Delete','Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End'].includes(e.key))mcEvento({tipo:'tecla',tecla:e.key});};
+}
+async function mcEvento(cmd){
+  if(!MC.corrida||$('#mc_devolver').classList.contains('hidden'))return;
+  try{await api(`/api/mis-comprobantes/corridas/${MC.corrida}/evento`,{method:'POST',body:JSON.stringify(cmd)});}catch{}
+}
+async function mcControl(accion){
+  try{await api(`/api/mis-comprobantes/corridas/${MC.corrida}/${accion}`,{method:'POST'});toast(accion==='devolver'?'Control devuelto':'Tenés el control');}catch(e){toast(e.message,true);}
+}
+function mcFiltros(){const q=new URLSearchParams();const t=$('#mc_ftipo').value,d=$('#mc_fdesde').value,h=$('#mc_fhasta').value;if(t)q.set('tipo',t);if(d)q.set('desde',d);if(h)q.set('hasta',h);return q.toString();}
+const NOMBRE_TIPO={1:'Factura A',2:'ND A',3:'NC A',6:'Factura B',7:'ND B',8:'NC B',11:'Factura C',12:'ND C',13:'NC C',51:'Factura M',201:'FCE A',206:'FCE B',211:'FCE C'};
+async function mcCargarTabla(){
+  try{const {comprobantes:l}=await api(`/api/mis-comprobantes/${MC.cuit}?${mcFiltros()}`);
+    const pesos=n=>Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const cons=c=>!c?'<span class="hint">sin constatar</span>':c.apoc&&c.apoc.esApocrifo?'<span class="tag no">APÓCRIFO</span>':c.valido?'<span class="tag ok">OK</span>':'<span class="tag no">NO CONSTA</span>';
+    $('#mc_tabla').innerHTML=l.length?`<table><tr><th>Fecha</th><th>Tipo</th><th>Comprobante</th><th>Contraparte</th><th>Total</th><th>CAE</th><th>Constatación</th></tr>${l.map(f=>`<tr>
+      <td class="mono">${String(f.fecha).slice(0,10)}</td><td>${f.tipo==='recibido'?'Recibido':'Emitido'} · ${esc(NOMBRE_TIPO[f.cbte_tipo]||f.cbte_tipo)}</td>
+      <td class="mono">${String(f.punto_venta).padStart(4,'0')}-${String(f.numero_desde).padStart(8,'0')}</td>
+      <td>${esc(f.contraparte||'')} <span class="hint mono">${esc(f.doc_nro||'')}</span></td><td class="mono">$${pesos(f.total)}</td>
+      <td class="mono hint">${esc(f.cae||'')}</td><td>${f.tipo==='recibido'?cons(f.constatacion):''}</td></tr>`).join('')}</table>`:'<p class="hint">No hay comprobantes bajados con estos filtros.</p>';
+  }catch(e){$('#mc_tabla').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+async function mcExportar(){
+  try{const r=await fetch(`/api/mis-comprobantes/${MC.cuit}/export.csv?${mcFiltros()}`,{credentials:'include'});
+    if(!r.ok)throw new Error('HTTP '+r.status);const b=await r.blob();const a=document.createElement('a');
+    a.href=URL.createObjectURL(b);a.download=`mis-comprobantes-${MC.cuit}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
+  catch(e){toast(e.message,true);}
+}
+async function mcConstatar(){
+  $('#mc_const').innerHTML='<p class="hint">Constatando con ARCA (WSCDC y apócrifos)…</p>';
+  try{const {constatacion:c}=await api(`/api/mis-comprobantes/${MC.cuit}/constatar`,{method:'POST',body:'{}'});
+    $('#mc_const').innerHTML=`<p><span class="tag ok">${c.validos} OK</span> <span class="tag no">${c.invalidos} no constan</span> <span class="tag warn">${c.conError||0} con error</span>
+      ${c.emisoresApocrifos?`<span class="tag no">${c.emisoresApocrifos} emisores apócrifos</span>`:''} <span class="hint">${c.pendientes||0} pendientes</span></p>`;
+    mcCargarTabla();}
+  catch(e){$('#mc_const').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+async function mcMonotributo(){
+  try{const {monotributo:m}=await api(`/api/monotributo/${MC.cuit}`);
+    if(!m.aplica){$('#mc_mono').innerHTML=`<p class="hint">${esc(m.motivo||'No aplica')}</p>`;return;}
+    const pesos=n=>'$'+Number(n||0).toLocaleString('es-AR',{maximumFractionDigits:0});
+    const pct=m.usado!=null?Math.min(m.usado*100,100):0;
+    const color=m.alerta==='100'?'var(--bad)':m.alerta==='80'?'var(--warn)':'var(--ok)';
+    $('#mc_mono').innerHTML=`<div class="row"><span class="stat"><span class="label">Facturado 12 meses</span><div class="val">${pesos(m.ingresos.total)}</div></span>
+      <span class="stat"><span class="label">Categoría</span><div class="val">${esc(m.categoria||'—')}</div></span>
+      <span class="stat"><span class="label">Tope</span><div class="val">${m.tope?pesos(m.tope):'—'}</div></span>
+      <span class="stat"><span class="label">Sugerida</span><div class="val">${esc(m.categoriaSugerida||'RG')}</div></span></div>
+      ${m.tope?`<div style="height:10px;border-radius:6px;background:var(--chip);margin-top:12px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${color}"></div></div>
+      <p class="hint">${(m.usado*100).toFixed(1)}% del tope · ventana ${esc(m.ingresos.desde)} a ${esc(m.ingresos.hasta)}</p>`:`<p class="hint">${esc(m.advertenciaPadron||'No se pudo leer la categoría del padrón.')}</p>`}
+      <p class="hint">Topes cargados: vigencia ${esc(m.vigenciaTopes||'?')}. Verificá los topes vigentes en arca.gob.ar.${m.excedeMaxima?' Supera la categoría máxima: corresponde evaluar el Régimen General.':''}</p>`;
+  }catch(e){$('#mc_mono').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+/* Ajustes de superadmin: Fisherboy, receta y topes de Monotributo */
+async function ajustesMc(){
+  $('#appmenu').classList.remove('open');
+  let fb={url:'',tokenCargado:false},rec={},cats={};
+  try{fb=(await api('/api/fisherboy/config')).fisherboy;}catch{}
+  try{rec=(await api('/api/mis-comprobantes/receta')).receta;}catch{}
+  try{cats=(await api('/api/monotributo/categorias')).categorias;}catch{}
+  modal(`<button class="modal-x" onclick="closeModal()" aria-label="Cerrar">&times;</button><h3 style="text-transform:none">Fisherboy y Mis Comprobantes</h3>
+   <label>URL de Fisherboy</label><input id="aj_fburl" class="mono" value="${esc(fb.url||'')}" placeholder="http://fisherboy:8000">
+   <label>Token de Fisherboy (API_TOKEN) ${fb.tokenCargado?'— cargado, vacío para no cambiarlo':''}</label>
+   <div class="pwwrap"><input id="aj_fbtok" type="password" autocomplete="new-password"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar el token" onclick="togglePw('aj_fbtok',this)">${I_EYE}</button></div>
+   <div class="row" style="margin-top:10px"><button class="primary" onclick="ajGuardarFb()">Guardar conexión</button></div>
+   <h3 style="text-transform:none;margin-top:22px">Receta</h3><p class="hint">Lo que corre el navegador. Cambiala cuando ARCA cambie la página.</p>
+   <textarea id="aj_receta" style="min-height:220px">${esc(JSON.stringify(rec,null,2))}</textarea>
+   <div class="row" style="margin-top:8px"><button class="primary" onclick="ajGuardarReceta()">Guardar receta</button><button onclick="ajRestaurarReceta()">Restaurar la de fábrica</button></div>
+   <h3 style="text-transform:none;margin-top:22px">Topes de Monotributo</h3><p class="hint">Se actualizan dos veces por año. Vigencia cargada: ${esc(cats.vigencia||'?')}.</p>
+   <textarea id="aj_cats" style="min-height:160px">${esc(JSON.stringify(cats,null,2))}</textarea>
+   <div class="row" style="margin-top:8px"><button class="primary" onclick="ajGuardarCats()">Guardar topes</button></div>`);
+}
+async function ajGuardarFb(){const b={url:$('#aj_fburl').value.trim()};const t=$('#aj_fbtok').value;if(t)b.token=t;
+  try{await api('/api/fisherboy/config',{method:'PUT',body:JSON.stringify(b)});$('#aj_fbtok').value='';toast('Conexión guardada');}catch(e){toast(e.message,true);}}
+async function ajGuardarReceta(){try{const r=JSON.parse($('#aj_receta').value);await api('/api/mis-comprobantes/receta',{method:'PUT',body:JSON.stringify(r)});toast('Receta guardada');}catch(e){toast(e.message||'JSON inválido',true);}}
+async function ajRestaurarReceta(){if(!confirm('¿Volver a la receta de fábrica?'))return;try{const {receta}=await api('/api/mis-comprobantes/receta',{method:'DELETE'});$('#aj_receta').value=JSON.stringify(receta,null,2);toast('Receta restaurada');}catch(e){toast(e.message,true);}}
+async function ajGuardarCats(){try{const c=JSON.parse($('#aj_cats').value);await api('/api/monotributo/categorias',{method:'PUT',body:JSON.stringify(c)});toast('Topes guardados');}catch(e){toast(e.message||'JSON inválido',true);}}
 
 /* ---------- COMPROBANTES ---------- */
 async function vComprobantes(){
@@ -745,6 +936,7 @@ function togglePw(id,btn){const el=$('#'+id);const show=el.type==='password';el.
 /* ---------- MENÚ (kebab): tema + entorno + Acerca de (modal) + salir ---------- */
 const I_LOGOUT='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
 const I_INFO='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>';
+const I_GEAR='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>';
 function toggleMenu(){const m=$('#appmenu');const open=m.classList.toggle('open');if(open)renderMenu();}
 async function renderMenu(){
   let cfg={entorno:ENV||'?',version:'?'};
@@ -762,6 +954,7 @@ async function renderMenu(){
          <option value="prod"${cfg.entorno==='prod'?' selected':''}>Producción</option>
        </select></div>
      <div class="hint" style="padding:2px 12px 6px">Cambia los endpoints de ARCA para toda la instancia.</div></div>`:''}
+   ${ME.role==='superadmin'?`<button class="menu-item" onclick="ajustesMc()">${I_GEAR}<span>Fisherboy y Mis Comprobantes</span></button>`:''}
    <button class="menu-item" onclick="acercaDe()">${I_INFO}<span>Acerca de Arcanum</span></button>
    <div class="menu-sep"></div>
    <button class="menu-item" onclick="logout()">${I_LOGOUT}<span>Cerrar sesión</span></button>`;

@@ -1,0 +1,36 @@
+# Fisherboy junto a Arcanum (Mis Comprobantes). Se suma al compose principal:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.fisherboy.yml up -d
+#
+# Fisherboy aporta la "sesion de agente" (navegador con receta, IA opcional y toma de control
+# en vivo). Arcanum le habla por la red interna con FISHERBOY_TOKEN (= API_TOKEN de Fisherboy).
+# Para la IA de respaldo, cargar LLM_API_BASE_URL / LLM_API_KEY / LLM_MODEL en Fisherboy
+# (cualquier proveedor compatible con OpenAI, incluido Ollama local). Sin IA anda igual.
+services:
+  fisherboy-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+
+  fisherboy:
+    image: ghcr.io/diegoparras/fisherboy:latest
+    restart: unless-stopped
+    depends_on: [fisherboy-redis]
+    environment:
+      APP_MODE: sidekick
+      REDIS_URL: redis://fisherboy-redis:6379/0
+      SECRET_KEY: ${FISHERBOY_SECRET_KEY:?definí FISHERBOY_SECRET_KEY (openssl rand -hex 32)}
+      API_TOKEN: ${FISHERBOY_TOKEN:?definí FISHERBOY_TOKEN (openssl rand -hex 24)}
+      API_TOKEN_ROLE: angel
+      AGENT_ALLOWED_DOMAINS: afip.gob.ar,arca.gob.ar
+      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+
+  arcanum:
+    depends_on:
+      fisherboy:
+        condition: service_started
+    environment:
+      FISHERBOY_URL: http://fisherboy:8000
+      FISHERBOY_TOKEN: ${FISHERBOY_TOKEN}

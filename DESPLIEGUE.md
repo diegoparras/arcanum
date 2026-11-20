@@ -85,6 +85,41 @@ el volumen de Postgres; respaldalo (`pg_dump`) junto con tu `ARCANUM_MASTER_KEY`
 
 ---
 
+## Mis Comprobantes: conectar Fisherboy
+
+Mis Comprobantes se baja operando la pagina de ARCA con la *sesion de agente* de Fisherboy
+(1.8.0 o mas nuevo). Arcanum le habla por la red interna.
+
+**Compose**: sumá el archivo de Fisherboy:
+
+```bash
+openssl rand -hex 24   # FISHERBOY_TOKEN
+openssl rand -hex 32   # FISHERBOY_SECRET_KEY
+docker compose -f docker-compose.yml -f docker-compose.fisherboy.yml up -d
+```
+
+**EasyPanel**: en el mismo proyecto, servicio Fisherboy (imagen `ghcr.io/diegoparras/fisherboy:latest`)
+con Redis, y estas variables:
+
+```
+API_TOKEN=<FISHERBOY_TOKEN>
+API_TOKEN_ROLE=angel
+AGENT_ALLOWED_DOMAINS=afip.gob.ar,arca.gob.ar
+# opcional, IA de respaldo (compatible con OpenAI, incluido Ollama):
+LLM_API_BASE_URL=...
+LLM_API_KEY=...
+LLM_MODEL=...
+```
+
+En Arcanum: `FISHERBOY_URL=http://<servicio-fisherboy>:8000` y `FISHERBOY_TOKEN=<el mismo>`, o
+cargalos desde el menu **Fisherboy y Mis Comprobantes** (superadmin). En la pestana
+**Mis Comprobantes** tiene que decir "Fisherboy 1.8.x conectado".
+
+**Primera corrida real**: cargá la clave fiscal del CUIT, tocá **Sincronizar ahora** y mirala en
+vivo. Si un paso de la receta no coincide con la pagina real, tomá el control, terminá ese paso
+a mano y despues ajustá la receta desde el menu. Si ARCA rechaza la clave, Arcanum bloquea la
+credencial y no reintenta: revisala y volvé a cargarla.
+
 ## Prueba de emision en homologacion (antes de facturar en produccion)
 
 Saca un CAE real **de prueba** contra los servidores de homologacion de ARCA y verifica

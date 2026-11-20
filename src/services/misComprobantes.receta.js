@@ -11,6 +11,10 @@
 // Cada paso trae `objetivo`: si el selector deja de existir y Fisherboy tiene IA configurada,
 // la IA intenta cumplir ese objetivo y la receta sigue. Los selectores salen del recorrido
 // conocido de ARCA y se ajustan en la primera corrida real mirandola en vivo.
+//
+// `verifica_login: true` marca el paso que prueba que ARCA acepto la clave. Si ESE paso falla,
+// Arcanum bloquea la credencial y no reintenta: repetir una clave mala puede bloquear la clave
+// fiscal del contribuyente en ARCA.
 
 const CAPTCHA = "[id*='captcha' i], iframe[src*='recaptcha'], iframe[src*='hcaptcha']";
 
@@ -23,7 +27,7 @@ const RECETA_DEFAULT = {
     { do: 'type', sel: "[id='F1:password']", text: '{{secret:clave_fiscal}}', objetivo: 'Escribir la clave fiscal {{secret:clave_fiscal}} en el campo Clave' },
     { do: 'click', sel: "[id='F1:btnIngresar']", objetivo: 'Apretar Ingresar en el login de ARCA' },
     { do: 'human_if', sel: CAPTCHA, motivo: 'ARCA pide resolver un captcha para ingresar' },
-    { do: 'wait_url', contains: 'portal', timeout_s: 30 },
+    { do: 'wait_url', contains: 'portal', timeout_s: 30, verifica_login: true },
     { do: 'click', sel: 'text=Mis Comprobantes', timeout_s: 20, objetivo: "Abrir el servicio 'Mis Comprobantes' del portal de ARCA (esta en Mis servicios o se encuentra con el buscador)" },
     { do: 'switch_tab', timeout_s: 30 },
     { do: 'click', sel: 'text={{var:cuit}}', timeout_s: 8, optional: true },

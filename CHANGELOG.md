@@ -3,6 +3,25 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.9.0] - 2026-11-19
+
+### Nuevo
+- **Mis Comprobantes** (emitidos y recibidos) bajados de la pagina de ARCA con la sesion de
+  agente de **Fisherboy 1.8.0**: receta editable, IA de respaldo opcional que nunca ve la clave,
+  pausa ante captcha y **navegador en vivo** en la UI con tomar el control y devolverlo.
+  Guardado sin duplicados, export CSV y sincronizacion diaria (`ARCANUM_MC_HORA`).
+- **Clave fiscal** por CUIT cifrada con la master key, que no vuelve por la API ni queda en logs.
+  Si ARCA la rechaza, la credencial se **bloquea** y no se reintenta hasta recargarla (evita que
+  una clave mala bloquee la clave fiscal en ARCA).
+- **Topes de Monotributo** con todo lo facturado (Mis Comprobantes + Arcanum, sin duplicar, NC
+  restan), semaforo 80/100, categoria sugerida, topes editables con vigencia, aviso
+  `tope_monotributo` y recordatorio de recategorizacion.
+- **Constatacion masiva** de recibidos (WSCDC + apocrifos), por lista, CSV o boton.
+- **MCP**: `mis_comprobantes`, `topes_monotributo` y `constatacion_recibidos` (13 en total, todas
+  de solo lectura).
+- Eventos `mis_comprobantes_sincronizado`, `mis_comprobantes_fallo` y `tope_monotributo`.
+- `docker-compose.fisherboy.yml` para levantar Fisherboy junto a Arcanum.
+
 ## [0.8.0] - 2026-11-18
 
 ### Nuevo

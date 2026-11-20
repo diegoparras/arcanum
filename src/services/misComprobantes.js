@@ -67,15 +67,20 @@ function repoSql() {
          ON CONFLICT (cuit) DO UPDATE SET cuit_login = $2,
            clave_cifrada = COALESCE($3, mc_credenciales.clave_cifrada),
            sincronizar = COALESCE($4, mc_credenciales.sincronizar),
+           rechazada_at = CASE WHEN $3 IS NULL THEN mc_credenciales.rechazada_at ELSE NULL END,
+           rechazo_motivo = CASE WHEN $3 IS NULL THEN mc_credenciales.rechazo_motivo ELSE NULL END,
            actualizada_at = now(), actualizada_por = $5`,
         [cuit, cuitLogin, claveCifrada, sincronizar, usuario || null],
       );
+    },
+    async marcarRechazada(cuit, motivo) {
+      await db.query('UPDATE mc_credenciales SET rechazada_at = now(), rechazo_motivo = $2 WHERE cuit = $1', [cuit, String(motivo || '').slice(0, 300)]);
     },
     async borrarCredencial(cuit) {
       await db.query('DELETE FROM mc_credenciales WHERE cuit = $1', [cuit]);
     },
     async conSincronizacion() {
-      const { rows } = await db.query('SELECT cuit FROM mc_credenciales WHERE sincronizar = true ORDER BY cuit');
+      const { rows } = await db.query('SELECT cuit FROM mc_credenciales WHERE sincronizar = true AND rechazada_at IS NULL ORDER BY cuit');
       return rows.map((r) => r.cuit);
     },
     async corridaViva(cuit) {
@@ -156,6 +161,12 @@ function repoSql() {
   };
 }
 
+/** ARCA no acepto la clave: fallo el paso marcado verifica_login, o el aviso de la pagina lo dice. */
+function loginRechazado(st) {
+  if ((st.log || []).some((l) => l && l.verifica_login && l.ok === false)) return true;
+  return /clave|contrase|usuario/i.test(String(st.alerta || ''));
+}
+
 // --- el servicio --------------------------------------------------------------
 function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () => new Date() } = {}) {
   const lanzados = new Set();
@@ -165,7 +176,8 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
   }
 
   async function guardarReceta(r, usuario) {
-    if (!r || typeof r.url !== 'string' || !/^https:\/\//.test(r.url) || !Array.isArray(r.pasos) || !r.pasos.length) {
+    const http = process.env.ARCANUM_MC_RECETA_HTTP === '1'; // SOLO pruebas locales (maqueta)
+    if (!r || typeof r.url !== 'string' || !(http ? /^https?:\/\//.test(r.url) : /^https:\/\//.test(r.url)) || !Array.isArray(r.pasos) || !r.pasos.length) {
       throw err('La receta necesita `url` (https) y una lista `pasos`', 400);
     }
     if (r.pasos.length > 60 || r.pasos.some((p) => !p || typeof p.do !== 'string')) {
@@ -184,8 +196,8 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
   async function estadoCredencial(cuit) {
     const c = await repo.credencial(cuitDe(cuit));
     return c
-      ? { cargada: !!c.clave_cifrada, cuitLogin: c.cuit_login, sincronizar: !!c.sincronizar, actualizada: c.actualizada_at || null, actualizadaPor: c.actualizada_por || null }
-      : { cargada: false, cuitLogin: null, sincronizar: false, actualizada: null, actualizadaPor: null };
+      ? { cargada: !!c.clave_cifrada, cuitLogin: c.cuit_login, sincronizar: !!c.sincronizar, actualizada: c.actualizada_at || null, actualizadaPor: c.actualizada_por || null, rechazada: c.rechazada_at || null, rechazoMotivo: c.rechazo_motivo || null }
+      : { cargada: false, cuitLogin: null, sincronizar: false, actualizada: null, actualizadaPor: null, rechazada: null, rechazoMotivo: null };
   }
 
   async function guardarCredencial(cuit, { cuitLogin, clave, sincronizar } = {}, usuario) {
@@ -209,6 +221,9 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     tramos(desde, hasta); // valida fechas
     const cred = await repo.credencial(c);
     if (!cred || !cred.clave_cifrada) throw err('Este CUIT no tiene clave fiscal cargada en Mis Comprobantes', 400);
+    if (cred.rechazada_at) {
+      throw err(`ARCA rechazo esta clave fiscal${cred.rechazo_motivo ? ` (${cred.rechazo_motivo})` : ''}. Para no bloquear la cuenta no se reintenta: volve a cargar la clave antes de sincronizar`, 409);
+    }
     const viva = await repo.corridaViva(c);
     if (viva) throw Object.assign(err(`Ya hay una sincronizacion en curso para este CUIT (corrida ${viva.id})`, 409), { corrida: viva.id });
     return repo.crearCorrida({ cuit: c, tipo, desde, hasta, origen, usuario });
@@ -250,7 +265,13 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       }
       if (st.estado !== 'terminado') {
         const motivo = st.error || 'la sesion se cerro antes de terminar';
-        throw err(st.alerta ? `${motivo} (ARCA dice: ${st.alerta})` : motivo, 502);
+        const e = err(st.alerta ? `${motivo} (ARCA dice: ${st.alerta})` : motivo, 502);
+        e.logFb = (st.log || []).slice(-40);
+        if (loginRechazado(st)) {
+          e.message = `ARCA rechazo el ingreso: ${e.message}. La credencial queda bloqueada hasta que la vuelvas a cargar.`;
+          await repo.marcarRechazada(corrida.cuit, st.alerta || motivo);
+        }
+        throw e;
       }
       const archivos = st.archivos || [];
       if (!archivos.length) throw err('La receta termino sin descargar nada de Mis Comprobantes', 502);
@@ -289,6 +310,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       await repo.actualizarCorrida(id, { estado: 'terminado', cantidad: total, terminada_at: ahora(), log, error: null });
       await webhooks.emitir('mis_comprobantes_sincronizado', { cuit: fila.cuit, corrida: id, tipo: fila.tipo, desde, hasta, cantidad: total }).catch(() => {});
     } catch (e) {
+      if (e.logFb) log = log.concat(e.logFb);
       await repo.actualizarCorrida(id, { estado: 'error', cantidad: total, terminada_at: ahora(), log, error: String(e.message || e).slice(0, 500) });
       await webhooks.emitir('mis_comprobantes_fallo', { cuit: fila.cuit, corrida: id, error: String(e.message || e).slice(0, 300) }).catch(() => {});
     }

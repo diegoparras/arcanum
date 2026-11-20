@@ -23,6 +23,7 @@ function repoFalso({ credencial = { cuit: '20263630743', cuit_login: '2026363074
     actualizarCorrida: async (id, campos) => { Object.assign(r.corridas[id], campos); return r.corridas[id]; },
     guardarComprobantes: async (cuit, tipo, corridaId, filas) => { r.guardados.push(...filas); return filas.length; },
     receta: async () => null,
+    marcarRechazada: async (cuit, motivo) => { r.rechazo = { cuit, motivo }; },
   };
   return r;
 }
@@ -166,4 +167,50 @@ test('guardarCredencial exige clave la primera vez y valida el CUIT', async () =
   await s.guardarCredencial('20-26363074-3', { cuitLogin: '20263630743', clave: 'nueva' }, 'admin');
   assert.strictEqual(guardado.cuit, '20263630743');
   assert.strictEqual(guardado.claveCifrada, 'cif:nueva');
+});
+
+test('si ARCA rechaza el login, la credencial queda bloqueada y no se reintenta', async () => {
+  const repo = repoFalso();
+  repo.marcarRechazada = async (cuit, motivo) => { repo.rechazo = { cuit, motivo }; };
+  const fallo = { estado: 'error', error: "paso #7 (wait_url): la URL no llego a contener 'portal'", alerta: '',
+    log: [{ n: 7, do: 'wait_url', contains: 'portal', verifica_login: true, ok: false, error: 'la URL no llego' }] };
+  const { s, w } = servicio(repo, fisherboyFalso([fallo]));
+  const c = await s.sincronizar('20263630743', { tipo: 'ambos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.rechazo.cuit, '20263630743');
+  assert.match(repo.corridas[c.id].error, /ARCA rechazo el ingreso/);
+  assert.strictEqual(w.eventos.filter(([e]) => e === 'mis_comprobantes_fallo').length, 1);
+  // ambos tipos: no siguio con "recibidos" despues del rechazo
+  assert.strictEqual(Object.keys(repo.corridas).length, 1);
+});
+
+test('credencial rechazada frena sincronizar hasta que se vuelva a cargar la clave', async () => {
+  const repo = repoFalso({ credencial: { cuit: '20263630743', cuit_login: '20263630743', clave_cifrada: 'cif:x', rechazada_at: new Date(), rechazo_motivo: 'clave incorrecta' } });
+  const { s } = servicio(repo, fisherboyFalso([TERMINADO]));
+  await assert.rejects(s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' }),
+    (e) => e.httpStatus === 409 && /volve a cargar la clave/i.test(e.message));
+  const st = await s.estadoCredencial('20263630743');
+  assert.ok(st.rechazada);
+});
+
+test('el rechazo tambien se detecta por el aviso de ARCA', async () => {
+  const repo = repoFalso();
+  repo.marcarRechazada = async (cuit, motivo) => { repo.rechazo = { cuit, motivo }; };
+  const { s } = servicio(repo, fisherboyFalso([{ estado: 'error', error: 'paso #9 (click): timeout', alerta: 'Clave o usuario incorrecto', log: [] }]));
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.match(repo.rechazo.motivo, /Clave o usuario incorrecto/);
+});
+
+test('un error que no es de login no bloquea la credencial', async () => {
+  const repo = repoFalso();
+  repo.marcarRechazada = async () => { repo.rechazo = true; };
+  const { s } = servicio(repo, fisherboyFalso([{ estado: 'error', error: 'paso #16 (download): timeout', alerta: '', log: [{ n: 16, do: 'download', ok: false }] }]));
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.rechazo, undefined);
+});
+
+test('la receta por defecto marca el paso que verifica el login', () => {
+  assert.ok(RECETA_DEFAULT.pasos.some((p) => p.do === 'wait_url' && p.verifica_login === true));
 });

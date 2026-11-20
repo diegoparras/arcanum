@@ -184,6 +184,9 @@ Además de la clave maestra (`API_KEY` del entorno), en **Usuarios → Claves de
 | `comunicaciones_ventanilla` | Comunicaciones de e-Ventanilla de los últimos días (solo el listado: no las marca como leídas) |
 | `vencimiento_certificado` | Hasta cuándo sirve cada certificado cargado |
 | `vista_previa_comprobante` | Revisa un comprobante sin emitirlo: problemas, advertencias, número que le tocaría y el cuerpo listo para emitir |
+| `mis_comprobantes` | Emitidos y recibidos de Mis Comprobantes ya bajados: cantidades, neto (las NC restan), por tipo y los últimos 50 |
+| `topes_monotributo` | Facturado en 12 meses contra el tope de la categoría: porcentaje, alerta, margen y categoría sugerida |
+| `constatacion_recibidos` | Resultado guardado de constatar los recibidos (WSCDC + apócrifos) y los observados |
 
 Todas son de solo lectura: la emisión y el motor genérico `/api/ws/...` no se exponen por MCP. Para que un asistente facture, el flujo es: `vista_previa_comprobante`, la persona aprueba, y la emisión va por `POST /api/wsfev1/comprobantes` con una clave aparte de rol `operador` y el `idempotencyKey` que propone la vista previa. Cada llamada corta a los 80 s (`ARCANUM_MCP_TIMEOUT_MS`) con un error claro y las respuestas se recortan por debajo de 20.000 caracteres. Las respuestas son datos JSON, nunca texto dirigido al asistente.
 
@@ -193,6 +196,24 @@ curl -s -X POST https://tu-arcanum/mcp \
   -H "authorization: Bearer ark_..." \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"prueba","version":"1"}}}'
 ```
+
+## Mis Comprobantes (con el navegador de Fisherboy)
+
+ARCA no publica Mis Comprobantes por Web Service, así que Arcanum lo baja **operando la página**, con la *sesión de agente* de [Fisherboy](https://github.com/diegoparras/fisherboy/blob/main/docs/AGENT.md) (Arcanum no trae navegador propio):
+
+1. Fisherboy corre una **receta** fija: login, portal, Mis Comprobantes (que se abre en otra pestaña), representado, Emitidos o Recibidos, rango de fechas, exportar CSV.
+2. Si un paso falla y Fisherboy tiene IA configurada (cualquier proveedor compatible con OpenAI, incluido Ollama local), la IA intenta cumplir el **objetivo** de ese paso y la receta sigue. La IA ve la página como texto, con los CUIT y otros datos personales reemplazados por marcadores, y **nunca ve la clave**: la escribe por su marcador `{{secret:clave_fiscal}}`.
+3. Si ARCA pide un **captcha** o un segundo factor, la sesión se pausa y lo resolvés en la pestaña **Mis Comprobantes**, que muestra el navegador **en vivo**. Con **Tomar el control** manejás vos y con **Devolver a la receta** sigue sola.
+4. El CSV se parsea y se guarda sin duplicar (re-sincronizar actualiza importes).
+
+La **clave fiscal** se carga por CUIT (admin), se guarda cifrada con la master key y no vuelve nunca por la API ni queda en logs. Si **ARCA rechaza la clave**, la credencial queda bloqueada y no se reintenta (ni a mano ni en la sincronización diaria) hasta que la vuelvas a cargar: repetir una clave mala puede bloquear la clave fiscal. Con **Sincronizar todos los días**, el daemon baja mes anterior y mes en curso a las `ARCANUM_MC_HORA` (6 por defecto, hora argentina). Fisherboy solo navega a `afip.gob.ar` y `arca.gob.ar`.
+
+La receta se edita en vivo (superadmin, menú **Fisherboy y Mis Comprobantes**) para cuando ARCA cambie la página. Conexión: `FISHERBOY_URL` + `FISHERBOY_TOKEN` (ver [DESPLIEGUE.md](DESPLIEGUE.md)).
+
+**Lo que se hace con esos datos:**
+
+- **Topes de Monotributo** (`GET /api/monotributo/:cuit`): suma 12 meses de emitidos (Mis Comprobantes + lo emitido por Arcanum que no esté ahí, sin contar dos veces), con las notas de crédito restando, contra el tope de la categoría del padrón. Semáforo 80% / 100%, categoría sugerida, aviso `tope_monotributo` y recordatorio de recategorización en enero y julio. Los topes se cargan en Arcanum con su vigencia: **verificá los vigentes** en arca.gob.ar.
+- **Constatación masiva** (`POST /api/constatacion` o el botón **Constatar recibidos**): cada recibido contra WSCDC y su emisor contra la base de apócrifos, hasta 500 por pedido.
 
 ## Vista previa de emisión
 
@@ -210,6 +231,8 @@ Arcanum avisa por webhook (firmado con HMAC) y por email si hay SMTP configurado
 | `clave_por_vencer` | Una clave de API vence en menos de 7 días |
 | `clave_anomala` | Uso anómalo de una clave |
 | `comprobante_emitido` / `comprobante_rechazado` | Cada emisión |
+| `mis_comprobantes_sincronizado` / `mis_comprobantes_fallo` | Terminó una bajada de Mis Comprobantes, falló, o ARCA pide a una persona (captcha) |
+| `tope_monotributo` | Un monotributista pasó el 80% o el 100% de su categoría, o toca recategorizar (enero y julio) |
 
 En **Webhooks**, el botón **Probar** manda un evento `prueba` y muestra qué contestó el destino.
 

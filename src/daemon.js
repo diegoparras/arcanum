@@ -5,6 +5,9 @@
 //  - renovacion: mantiene los Tickets de Acceso calientes (renueva antes de vencer).
 //  - vencimientos: avisa por webhook cuando un certificado o una clave de API esta por vencer.
 //  - e-Ventanilla: avisa por webhook cuando llega una comunicacion nueva de ARCA.
+//  - Mis Comprobantes: una vez por dia (ARCANUM_MC_HORA, hora argentina) baja emitidos y
+//    recibidos del mes anterior y el actual de los CUIT con sincronizacion diaria, y revisa
+//    los topes de Monotributo.
 
 const db = require('./db');
 const { config } = require('./config');
@@ -151,6 +154,45 @@ async function revisarVentanilla() {
   }
 }
 
+// --- Mis Comprobantes diario ---
+const AR_OFFSET_MS = 3 * 60 * 60 * 1000; // Argentina: UTC-3 todo el ano
+function fechaAr(ahora) { return new Date(ahora.getTime() - AR_OFFSET_MS); }
+
+/** ¿Corresponde correr la diaria? Despues de `hora` (Argentina) y si hoy todavia no corrio. */
+function tocaDiaria(ahora, hora, ultima) {
+  const ar = fechaAr(ahora);
+  const hoy = ar.toISOString().slice(0, 10);
+  return ar.getUTCHours() >= hora && ultima !== hoy;
+}
+
+/** Mes anterior completo + mes en curso hasta hoy (Argentina). */
+function rangoDiario(ahora) {
+  const ar = fechaAr(ahora);
+  const hoy = ar.toISOString().slice(0, 10);
+  const desde = new Date(Date.UTC(ar.getUTCFullYear(), ar.getUTCMonth() - 1, 1)).toISOString().slice(0, 10);
+  return { desde, hasta: hoy, hoy };
+}
+
+async function sincronizarMisComprobantes(ahora = new Date()) {
+  const hora = parseInt(process.env.ARCANUM_MC_HORA || '6', 10);
+  const { rows } = await db.query("SELECT value FROM settings WHERE key = 'mc_ultima_diaria'");
+  if (!tocaDiaria(ahora, hora, rows[0] && rows[0].value)) return;
+  const { desde, hasta, hoy } = rangoDiario(ahora);
+  await db.query(
+    "INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('mc_ultima_diaria',$1,'daemon',now()) ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=now()", [hoy]);
+  const mc = require('./services/misComprobantes').servicio();
+  for (const cuit of await mc.conSincronizacion()) {
+    try {
+      const corrida = await mc.sincronizar(cuit, { tipo: 'ambos', desde, hasta, origen: 'diaria', usuario: 'daemon' });
+      await mc.seguir(corrida.id); // de a un CUIT por vez: Fisherboy admite 2 sesiones
+    } catch (e) {
+      console.error(`[arcanum][mis-comprobantes] ${maskCuit(cuit)}: ${e.message}`);
+    }
+  }
+  const { rows: conMc } = await db.query('SELECT DISTINCT cuit FROM mc_comprobantes');
+  await require('./services/monotributo').revisarAvisos(conMc.map((r) => r.cuit)).catch((e) => console.error('[arcanum][monotributo]', e.message));
+}
+
 function every(ms, fn) {
   const t = setInterval(() => fn().catch((e) => console.error('[arcanum][daemon]', e.message)), ms);
   t.unref?.();
@@ -175,11 +217,14 @@ function start() {
     setTimeout(() => revisarVentanilla().catch((e) => console.error('[arcanum][ventanilla]', e.message)), 2 * 60 * 1000);
     every(ventanillaMin * 60 * 1000, revisarVentanilla);
   }
-  console.log(`[arcanum] daemons activos (monitor 5m, vencimientos 12h, e-Ventanilla ${ventanillaMin > 0 ? `${ventanillaMin}m` : 'apagado'})`);
+  // Mis Comprobantes: se fija cada 10 minutos si ya toca la corrida diaria.
+  setTimeout(() => sincronizarMisComprobantes().catch((e) => console.error('[arcanum][mis-comprobantes]', e.message)), 3 * 60 * 1000);
+  every(10 * 60 * 1000, sincronizarMisComprobantes);
+  console.log(`[arcanum] daemons activos (monitor 5m, vencimientos 12h, e-Ventanilla ${ventanillaMin > 0 ? `${ventanillaMin}m` : 'apagado'}, Mis Comprobantes diario ${process.env.ARCANUM_MC_HORA || '6'} h)`);
 }
 
 function stop() {
   timers.forEach(clearInterval);
 }
 
-module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla };
+module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, tocaDiaria, rangoDiario };
