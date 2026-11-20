@@ -14,6 +14,8 @@
 //   GET      /api/mis-comprobantes/:cuit/corridas
 //   GET/PUT/DELETE /api/mis-comprobantes/:cuit/credencial   (PUT/DELETE admin+)
 //   POST     /api/mis-comprobantes/:cuit/sincronizar    admin+ u operador con ese CUIT -> 202
+//   POST     /api/mis-comprobantes/:cuit/constatar      constata los recibidos pendientes (WSCDC + APOC)
+//   POST     /api/constatacion                          { cuit, items | csv } constatacion masiva
 //
 // Los bodies no se registran en la auditoria (logRequest guarda solo la ruta y el estado), asi
 // que ni la clave fiscal del PUT credencial ni lo que se tipea en la vista en vivo quedan en logs.
@@ -37,9 +39,10 @@ function puedeOperar(principal, cuit) {
   assertCuitAllowed(principal, cuit);
 }
 
-function crearRutas({ mc, fisherboy } = {}) {
+function crearRutas({ mc, fisherboy, constatacion } = {}) {
   const servicio = () => mc || require('../services/misComprobantes').servicio();
   const fb = () => fisherboy || require('../services/fisherboy');
+  const cons = () => constatacion || require('../services/constatacion');
 
   async function corridaOperable(principal, id) {
     if (!/^\d+$/.test(String(id))) throw err('Corrida invalida', 400);
@@ -69,6 +72,18 @@ function crearRutas({ mc, fisherboy } = {}) {
       } catch (e) {
         return json(res, 200, { ok: true, fisherboy: { ok: false, error: e.message } });
       }
+    }
+
+    // --- constatacion masiva (WSCDC + APOC) de una lista o un CSV ---
+    if (req.method === 'POST' && seg[1] === 'constatacion' && !seg[2]) {
+      const b = await readJsonBody(req);
+      const cuit = String(b.cuit || '').replace(/\D/g, '');
+      if (cuit.length !== 11) throw err('Falta "cuit": quien recibio los comprobantes (con certificado y WSCDC)', 400);
+      puedeOperar(principal, cuit);
+      req._cuit = cuit;
+      req._op = 'constatacion';
+      const items = typeof b.csv === 'string' ? cons().parsearListaCsv(b.csv, cuit) : b.items;
+      return json(res, 200, { ok: true, constatacion: await cons().constatarLista(cuit, items) });
     }
 
     if (seg[1] !== 'mis-comprobantes') return false;
@@ -148,6 +163,11 @@ function crearRutas({ mc, fisherboy } = {}) {
         return json(res, 200, { ok: true });
       }
       return false;
+    }
+    if (req.method === 'POST' && seg[3] === 'constatar') {
+      puedeOperar(principal, cuit);
+      const b = await readJsonBody(req);
+      return json(res, 200, { ok: true, constatacion: await cons().constatarRecibidos(cuit, { limite: b.limite }) });
     }
     if (req.method === 'POST' && seg[3] === 'sincronizar') {
       puedeOperar(principal, cuit);

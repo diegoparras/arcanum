@@ -120,3 +120,22 @@ test('receta: admin la ve, solo superadmin la cambia', async () => {
     assert.strictEqual((await pedir(base, 'PUT', '/api/mis-comprobantes/receta', { url: 'https://x', pasos: [] })).status, 403);
   });
 });
+
+test('constatacion: lista por JSON o CSV con scope, y constatar recibidos', async () => {
+  const llamadas = [];
+  const constatacion = {
+    constatarLista: async (cuit, items) => { llamadas.push(['lista', cuit, items.length]); return { cantidad: items.length, resultados: [] }; },
+    parsearListaCsv: (csv, cuit) => { llamadas.push(['csv', cuit]); return [{ cuitEmisor: '1' }, { cuitEmisor: '2' }]; },
+    constatarRecibidos: async (cuit) => { llamadas.push(['recibidos', cuit]); return { cantidad: 0 }; },
+  };
+  await conServidor(OPERADOR, { mc: mcFalso(), fisherboy: fbFalso(), constatacion }, async (base) => {
+    assert.strictEqual((await pedir(base, 'POST', '/api/constatacion', { cuit: '20263630743', items: [{}] })).status, 403);
+    assert.strictEqual((await pedir(base, 'POST', '/api/constatacion', { cuit: '30711111118', items: [{}] })).status, 200);
+    assert.strictEqual((await pedir(base, 'POST', '/api/constatacion', { cuit: '30711111118', csv: 'a;b' })).status, 200);
+    assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/30711111118/constatar')).status, 200);
+  });
+  assert.deepStrictEqual(llamadas, [['lista', '30711111118', 1], ['csv', '30711111118'], ['lista', '30711111118', 2], ['recibidos', '30711111118']]);
+  await conServidor(LECTURA, { mc: mcFalso(), fisherboy: fbFalso(), constatacion }, async (base) => {
+    assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/20263630743/constatar')).status, 403);
+  });
+});

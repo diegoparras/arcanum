@@ -530,6 +530,15 @@ paths:
         - { name: categoria, in: query, description: "A a K; si falta, se toma del padron", schema: { type: string } }
       responses: { '200': { description: "monotributo: { ingresos, categoria, tope, usado, alerta, margen, categoriaSugerida, vigenciaTopes }" } }
 
+  /api/constatacion:
+    post:
+      tags: [Mis Comprobantes]
+      summary: Constatacion masiva de comprobantes recibidos (WSCDC + APOC del emisor), hasta 500
+      requestBody: { content: { application/json: { schema: { type: object, required: [cuit], properties: { cuit: { type: string, description: quien los recibio (con certificado y WSCDC) }, items: { type: array, items: { type: object } }, csv: { type: string, description: "formato propio (cuitEmisor;puntoVenta;tipo;numero;fecha;importe;cae) o el CSV de Mis Comprobantes recibidos" } } } } } }
+      responses: { '200': { description: "constatacion: { cantidad, validos, invalidos, conError, emisoresApocrifos, resultados }" }, '413': { description: mas de 500 } }
+  /api/mis-comprobantes/{cuit}/constatar:
+    post: { tags: [Mis Comprobantes], summary: Constata los recibidos de Mis Comprobantes que no se constataron y guarda el resultado, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "constatacion: { cantidad, validos, invalidos, pendientes, observados }" } } }
+
   /api/wsaa/{cuit}/{service}:
     get:
       tags: [Servicios]

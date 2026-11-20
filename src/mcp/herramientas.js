@@ -15,6 +15,7 @@
 //   vista_previa_comprobante -> valida un comprobante y muestra su numero, SIN emitir
 //   mis_comprobantes    -> emitidos y recibidos de Mis Comprobantes ya bajados (no entra a ARCA)
 //   topes_monotributo   -> facturado en 12 meses contra el tope de la categoria
+//   constatacion_recibidos -> resultado guardado de constatar los recibidos (WSCDC + APOC)
 //
 // Las respuestas son datos (JSON), no instrucciones para un asistente.
 
@@ -783,10 +784,52 @@ const topesMonotributoTool = {
   },
 };
 
+// ---------- constatacion_recibidos ----------
+const constatacionTool = {
+  nombre: 'constatacion_recibidos',
+  titulo: 'Constatacion de comprobantes recibidos',
+  descripcion:
+    'Resultado ya guardado de la constatacion de los comprobantes RECIBIDOS de un CUIT (bajados de Mis Comprobantes): cuantos '
+    + 'confirmo ARCA (WSCDC), cuantos no, cuantos falta constatar y cuantos emisores estan en la base de apocrifos (WSAPOC), '
+    + 'mas el detalle de hasta 50 observados. No vuelve a consultar a ARCA: muestra lo ya constatado. Solo lectura.',
+  esquema: {
+    type: 'object',
+    properties: { cuit: { type: 'string', description: 'CUIT que recibio los comprobantes.' } },
+    required: ['cuit'],
+    additionalProperties: false,
+  },
+  async ejecutar(args, ctx) {
+    const cuit = cuit11(args.cuit);
+    assertCuitAllowed(ctx.principal, cuit);
+    ctx.cuit = cuit;
+    const r = await require('../services/constatacion').resumenGuardado(cuit);
+    return {
+      cuit,
+      recibidos: r.total,
+      pendientes: r.pendientes,
+      validos: r.validos,
+      invalidos: r.invalidos,
+      emisoresApocrifos: r.emisores_apocrifos,
+      observados: r.observados.map((o) => ({
+        comprobante: formatearNumero(o.punto_venta, o.numero_desde),
+        tipoComprobante: Number(o.cbte_tipo),
+        tipoNombre: TIPOS[o.cbte_tipo] || null,
+        fecha: fechaIso(o.fecha),
+        importeTotal: Number(o.total),
+        emisor: { cuit: o.doc_nro, nombre: o.contraparte || null },
+        valido: o.constatacion ? o.constatacion.valido : null,
+        apocrifo: o.constatacion && o.constatacion.apoc ? o.constatacion.apoc.esApocrifo : null,
+        observaciones: o.constatacion ? o.constatacion.observaciones || [] : [],
+      })),
+      fuente: 'WSCDC y WSAPOC de ARCA (resultado guardado por Arcanum)',
+    };
+  },
+};
+
 const HERRAMIENTAS = [
   padronTool, comprobanteTool, ultimoTool, puntosTool, estadoTool,
   riesgoTool, recientesTool, ventanillaTool, certTool, vistaPreviaTool,
-  misComprobantesTool, topesMonotributoTool,
+  misComprobantesTool, topesMonotributoTool, constatacionTool,
 ];
 
 module.exports = {
