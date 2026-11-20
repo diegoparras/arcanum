@@ -296,7 +296,16 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
   const cbteFecha = inv.fecha ? fmtDate(inv.fecha) : todayYmd();
 
   const inner = (await auth(cuit)) + armarFeCAEReq(inv, { ptoVta, tipoCbte, concepto, numero, cbteFecha });
-  const result = await call('FECAESolicitar', inner);
+  let result;
+  try {
+    result = await call('FECAESolicitar', inner);
+  } catch (e) {
+    // El pedido pudo haber llegado a ARCA: la cola consulta este numero antes de reintentar,
+    // para no sacar dos CAE para la misma venta.
+    e.numeroIntentado = numero;
+    e.cbteFecha = cbteFecha;
+    throw e;
+  }
 
   const topErrors = collectErrors(result);
   const det = result?.FeDetResp?.FECAEDetResponse;

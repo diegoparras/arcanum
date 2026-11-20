@@ -48,9 +48,9 @@ async function post(url, soapAction, envelope, opts = {}) {
     });
   } catch (e) {
     if (e.name === 'AbortError') {
-      throw new SoapError(`Timeout (${config.soapTimeoutMs}ms) llamando a ARCA`, 504);
+      throw new SoapError(`Timeout (${config.soapTimeoutMs}ms) llamando a ARCA`, 504, { tipo: 'timeout' });
     }
-    throw new SoapError(`No se pudo conectar con ARCA: ${e.message}`, 502);
+    throw new SoapError(`No se pudo conectar con ARCA: ${e.message}`, 502, { tipo: 'conexion' });
   } finally {
     clearTimeout(timer);
   }
@@ -75,11 +75,11 @@ async function post(url, soapAction, envelope, opts = {}) {
   if (body && body.Fault) {
     const f = body.Fault;
     const msg = f.faultstring || f.Reason?.Text || 'SOAP Fault';
-    throw new SoapError(`ARCA rechazo la solicitud: ${msg}`, 502, { fault: f, raw: text });
+    throw new SoapError(`ARCA rechazo la solicitud: ${msg}`, 502, { tipo: 'fault', fault: f, raw: text });
   }
 
   if (!res.ok) {
-    throw new SoapError(`ARCA respondio HTTP ${res.status}`, 502, { raw: text });
+    throw new SoapError(`ARCA respondio HTTP ${res.status}`, 502, { tipo: 'http', status: res.status, raw: text });
   }
 
   return body || {};
