@@ -3,6 +3,15 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.2] - 2026-11-20
+
+### Corregido
+- Por API vale lo mismo que en la UI: WSMTXCA tambien completa nombre y domicilio del receptor
+  con CUIT desde el padron al emitir (WSFEv1 ya lo hacia), y el PDF (`GET /api/comprobantes/.../pdf`,
+  una sola ruta para UI y API) completa emisor y receptor.
+- OpenAPI documenta `receptorNombre`, `receptorDomicilio`, `condicionIvaReceptor`, `condicionVenta`,
+  `items`, `pdf` y `contingencia` en la emision.
+
 ## [0.10.1] - 2026-11-20
 
 ### Corregido

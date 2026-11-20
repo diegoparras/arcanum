@@ -200,6 +200,8 @@ async function authorize(cuit, inv) {
     const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
     if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
   }
+  // Nombre y domicilio del receptor con CUIT para el PDF, del padron si no vinieron (best-effort).
+  inv = { ...inv, ...(await require('./datosImpresion').completarReceptor(c, inv)) };
   const ptoVta = parseInt(inv.puntoVenta, 10);
   const tipoCbte = parseInt(inv.tipoComprobante, 10);
   const concepto = parseInt(inv.concepto ?? 1, 10);
@@ -251,6 +253,7 @@ async function authorize(cuit, inv) {
       docTipo: parseInt(inv.tipoDocReceptor ?? 99, 10),
       docNro: String(normalizeCuit(inv.nroDocReceptor ?? 0) || 0),
       receptorNombre: inv.receptorNombre || null,
+      receptorDomicilio: inv.receptorDomicilio || null,
       items: (Array.isArray(inv.items) ? inv.items : []).map((it) => ({
         codigo: it.codigo,
         descripcion: it.descripcion || it.desc,

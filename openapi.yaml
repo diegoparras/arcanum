@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arcanum — Gateway REST para ARCA (ex-AFIP)
-  version: 0.10.1
+  version: 0.10.2
   description: >
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
@@ -82,6 +82,16 @@ components:
         fechaServicioDesde: { type: string, nullable: true }
         fechaServicioHasta: { type: string, nullable: true }
         fechaVtoPago: { type: string, nullable: true }
+        condicionIvaReceptor: { type: integer, description: "RG 5616: 1 Responsable Inscripto, 4 Exento, 5 Consumidor Final, 6 Monotributo" }
+        receptorNombre: { type: string, description: "Para el PDF. Con CUIT (tipoDocReceptor 80), si falta se toma del padron de ARCA" }
+        receptorDomicilio: { type: string, description: "Para el PDF. Con CUIT, si falta se toma del padron de ARCA" }
+        condicionVenta: { type: string, example: "Contado", description: "Para el PDF" }
+        items:
+          type: array
+          description: "Detalle para el PDF (no viaja a ARCA en WSFEv1)"
+          items: { type: object, properties: { codigo: { type: string }, descripcion: { type: string }, cantidad: { type: number }, unidadMedida: { type: string }, precioUnitario: { type: number }, bonifPct: { type: number }, subtotal: { type: number } } }
+        pdf: { type: object, properties: { modelo: { type: string, enum: [arca, arcanum] }, nombreArchivo: { type: string } } }
+        contingencia: { type: boolean, description: "Si ARCA no responde, encolar (202) en vez de fallar" }
 paths:
   /api/health:
     get: { tags: [Metricas], summary: Estado del servicio (sin auth), security: [], responses: { '200': { description: OK } } }
