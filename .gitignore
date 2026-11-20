@@ -12,3 +12,4 @@ AUDIT-*.md
 *.csr
 !data/certs/.gitkeep
 !data/cache/.gitkeep
+.superpowers/
