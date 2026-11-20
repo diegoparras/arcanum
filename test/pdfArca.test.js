@@ -57,3 +57,11 @@ test('preferencias de PDF se validan', () => {
   assert.deepStrictEqual(pdf.preferencias(undefined), { modelo: 'arca', nombreArchivo: null });
   assert.throws(() => pdf.preferencias({ modelo: 'otro' }), (e) => e.httpStatus === 400);
 });
+
+test('comprobante CAEA: QR con tipoCodAut A', async () => {
+  const url = await pdf.qrUrl({ ...CMP, raw: { ...CMP.raw, modo: 'CAEA' } });
+  const datos = JSON.parse(Buffer.from(url.split('?p=')[1], 'base64').toString());
+  assert.strictEqual(datos.tipoCodAut, 'A');
+  const normal = JSON.parse(Buffer.from((await pdf.qrUrl(CMP)).split('?p=')[1], 'base64').toString());
+  assert.strictEqual(normal.tipoCodAut, 'E');
+});

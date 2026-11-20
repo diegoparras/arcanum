@@ -195,9 +195,10 @@ function pagina(doc, cmp, emisor, copia, qrPng) {
   doc.font('Helvetica-BoldOblique').fontSize(8.5).text('Comprobante Autorizado', 114, 695);
   doc.fontSize(5.3).text('Esta Agencia no se responsabiliza por los datos ingresados en el detalle de la operación', 114, 713, { lineBreak: false });
   doc.font('Helvetica-Bold').fontSize(8.5).text('Pág. 1/1', 268, 662, { lineBreak: false });
-  doc.font('Helvetica-Bold').fontSize(9.5).text('CAE N°:', 350, 656, { width: 134, align: 'right' });
+  const esCaea = (cmp.raw || {}).modo === 'CAEA';
+  doc.font('Helvetica-Bold').fontSize(9.5).text(esCaea ? 'CAEA N°:' : 'CAE N°:', 350, 656, { width: 134, align: 'right' });
   doc.font('Helvetica').text(String(cmp.cae || ''), 488, 656, { lineBreak: false });
-  doc.font('Helvetica-Bold').text('Fecha de Vto. de CAE:', 300, 672, { width: 184, align: 'right' });
+  doc.font('Helvetica-Bold').text(esCaea ? 'Fecha de Vto. de CAEA:' : 'Fecha de Vto. de CAE:', 300, 672, { width: 184, align: 'right' });
   doc.font('Helvetica').text(ymd(cmp.cae_vto), 488, 672, { lineBreak: false });
 }
 

@@ -305,6 +305,36 @@ CREATE TABLE IF NOT EXISTS emision_cola (
 );
 CREATE INDEX IF NOT EXISTS emision_cola_estado_idx ON emision_cola (estado, proximo_intento_at);
 
+-- CAEA (0.10): opcional por CUIT. Fechas como AAAAMMDD (asi las da ARCA).
+CREATE TABLE IF NOT EXISTS caea_config (
+  cuit            TEXT PRIMARY KEY,
+  activo          BOOLEAN NOT NULL DEFAULT false,
+  punto_venta     INTEGER,
+  minutos_espera  INTEGER NOT NULL DEFAULT 30,
+  actualizado_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  actualizado_por TEXT
+);
+CREATE TABLE IF NOT EXISTS caea (
+  id          SERIAL PRIMARY KEY,
+  cuit        TEXT NOT NULL,
+  entorno     TEXT NOT NULL,
+  periodo     INTEGER NOT NULL,
+  orden       INTEGER NOT NULL,
+  caea        TEXT NOT NULL,
+  vig_desde   TEXT NOT NULL,
+  vig_hasta   TEXT NOT NULL,
+  tope_inf    TEXT NOT NULL,
+  obtenido_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (cuit, entorno, periodo, orden)
+);
+CREATE TABLE IF NOT EXISTS caea_sin_mov (
+  caea_id      INTEGER NOT NULL,
+  punto_venta  INTEGER NOT NULL,
+  informado_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resultado    JSONB,
+  PRIMARY KEY (caea_id, punto_venta)
+);
+
 CREATE TABLE IF NOT EXISTS webhooks (
   id          SERIAL PRIMARY KEY,
   url         TEXT NOT NULL,

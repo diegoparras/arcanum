@@ -226,7 +226,7 @@ async function authorizeInvoice(cuit, inv) {
  * Arma <FeCAEReq> de FECAESolicitar. Nombres y orden segun el WSDL real de WSFEv1
  * (test/wsfev1Xml.test.js lo valida contra test/fixtures/wsfev1.wsdl).
  */
-function armarFeCAEReq(inv, { ptoVta, tipoCbte, concepto, numero, cbteFecha }) {
+function armarFeCAEReq(inv, { ptoVta, tipoCbte, concepto, numero, cbteFecha, caea = null, fchHsGen = null }) {
   // Para Servicios (concepto 2 o 3) ARCA exige fechas de servicio y vto de pago.
   let serviceDates = '';
   if (concepto === 2 || concepto === 3) {
@@ -240,7 +240,7 @@ function armarFeCAEReq(inv, { ptoVta, tipoCbte, concepto, numero, cbteFecha }) {
   }
 
   const detalle =
-    '<ar:FeDetReq><ar:FECAEDetRequest>' +
+    `<ar:FeDetReq><ar:${caea ? 'FECAEADetRequest' : 'FECAEDetRequest'}>` +
     `<ar:Concepto>${concepto}</ar:Concepto>` +
     `<ar:DocTipo>${parseInt(inv.tipoDocReceptor ?? 99, 10)}</ar:DocTipo>` +
     `<ar:DocNro>${normalizeCuit(inv.nroDocReceptor ?? 0) || 0}</ar:DocNro>` +
@@ -268,7 +268,9 @@ function armarFeCAEReq(inv, { ptoVta, tipoCbte, concepto, numero, cbteFecha }) {
     buildCbtesAsoc(inv.comprobantesAsociados) +
     buildTributos(inv.tributos) +
     buildAlicuotas(inv.alicuotasIva) +
-    '</ar:FECAEDetRequest></ar:FeDetReq>';
+    // CAEA (FECAEARegInformativo): FECAEADetRequest = FEDetRequest + CAEA + CbteFchHsGen.
+    (caea ? `<ar:CAEA>${escapeXml(caea)}</ar:CAEA><ar:CbteFchHsGen>${escapeXml(fchHsGen || '')}</ar:CbteFchHsGen>` : '') +
+    `</ar:${caea ? 'FECAEADetRequest' : 'FECAEDetRequest'}></ar:FeDetReq>`;
 
   const cabecera =
     '<ar:FeCabReq>' +
@@ -277,7 +279,8 @@ function armarFeCAEReq(inv, { ptoVta, tipoCbte, concepto, numero, cbteFecha }) {
     `<ar:CbteTipo>${tipoCbte}</ar:CbteTipo>` +
     '</ar:FeCabReq>';
 
-  return `<ar:FeCAEReq>${cabecera}${detalle}</ar:FeCAEReq>`;
+  const raiz = caea ? 'FeCAEARegInfReq' : 'FeCAEReq';
+  return `<ar:${raiz}>${cabecera}${detalle}</ar:${raiz}>`;
 }
 
 async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
@@ -402,6 +405,62 @@ async function registrarAdoptado(cuit, consultado, cuerpo, idem) {
   return raw; // el aviso comprobante_emitido lo manda la cola (uno solo)
 }
 
+// --- CAEA (Codigo de Autorizacion Electronico Anticipado), ver services/caea.js ---
+function caeaGet(r) {
+  const g = r && r.ResultGet;
+  if (!g || !g.CAEA) return null;
+  return {
+    caea: String(g.CAEA), periodo: Number(g.Periodo), orden: Number(g.Orden),
+    vigDesde: String(g.FchVigDesde), vigHasta: String(g.FchVigHasta), topeInf: String(g.FchTopeInf),
+  };
+}
+
+/** CAEA ya otorgado para (periodo, orden), o null si ARCA no tiene ninguno. */
+async function caeaConsultar(cuit, periodo, orden) {
+  return withTokenRetry(normalizeCuit(cuit), SERVICE, config.env, async () => {
+    const r = await call('FECAEAConsultar', (await auth(cuit)) + `<ar:Periodo>${parseInt(periodo, 10)}</ar:Periodo><ar:Orden>${parseInt(orden, 10)}</ar:Orden>`);
+    return caeaGet(r);
+  });
+}
+
+/** Pide el CAEA de (periodo, orden). Si ARCA no lo da (todavia no, ya existe, etc.) lanza 422. */
+async function caeaSolicitar(cuit, periodo, orden) {
+  return withTokenRetry(normalizeCuit(cuit), SERVICE, config.env, async () => {
+    const r = await call('FECAEASolicitar', (await auth(cuit)) + `<ar:Periodo>${parseInt(periodo, 10)}</ar:Periodo><ar:Orden>${parseInt(orden, 10)}</ar:Orden>`);
+    const g = caeaGet(r);
+    if (g) return g;
+    const errors = collectErrors(r);
+    throw new SoapError(errors.length ? errors.map((e) => `${e.code}: ${e.message}`).join('; ') : 'ARCA no otorgo el CAEA', 422, { errors });
+  });
+}
+
+/** Informa a ARCA un comprobante emitido con CAEA (FECAEARegInformativo). */
+async function caeaInformar(cuit, inv, { caea, numero, cbteFecha, fchHsGen }) {
+  const ptoVta = parseInt(inv.puntoVenta, 10);
+  const tipoCbte = parseInt(inv.tipoComprobante, 10);
+  const concepto = parseInt(inv.concepto ?? 1, 10);
+  return withTokenRetry(normalizeCuit(cuit), SERVICE, config.env, async () => {
+    const inner = (await auth(cuit)) + armarFeCAEReq(inv, { ptoVta, tipoCbte, concepto, numero, cbteFecha, caea, fchHsGen });
+    const r = await call('FECAEARegInformativo', inner);
+    const det = r?.FeDetResp?.FECAEADetResponse;
+    const d = Array.isArray(det) ? det[0] : det;
+    const obs = d?.Observaciones?.Obs;
+    return {
+      resultado: d?.Resultado || r?.FeCabResp?.Resultado || null,
+      observaciones: obs ? (Array.isArray(obs) ? obs : [obs]).map((o) => ({ code: o.Code, message: o.Msg })) : [],
+      errores: collectErrors(r),
+    };
+  });
+}
+
+/** Informa que un punto de venta no uso el CAEA (FECAEASinMovimientoInformar). */
+async function caeaSinMovimiento(cuit, ptoVta, caea) {
+  return withTokenRetry(normalizeCuit(cuit), SERVICE, config.env, async () => {
+    const r = await call('FECAEASinMovimientoInformar', (await auth(cuit)) + `<ar:PtoVta>${parseInt(ptoVta, 10)}</ar:PtoVta><ar:CAEA>${escapeXml(caea)}</ar:CAEA>`);
+    return { resultado: r?.Resultado || null, errores: collectErrors(r) };
+  });
+}
+
 /** Consulta un comprobante ya emitido (para reimprimir o verificar en ARCA). */
 async function consultar(cuit, ptoVta, tipoCbte, numero) {
   return withTokenRetry(normalizeCuit(cuit), SERVICE, config.env, async () => {
@@ -512,6 +571,10 @@ function parseLoteCsv(text) {
 module.exports = {
   armarFeCAEReq,
   registrarAdoptado,
+  caeaConsultar,
+  caeaSolicitar,
+  caeaInformar,
+  caeaSinMovimiento,
   dummy,
   lastAuthorized,
   authorizeInvoice,

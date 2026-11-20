@@ -77,3 +77,14 @@ test('la cabecera lleva CantReg, PtoVta y CbteTipo', () => {
   assert.match(xml, /<ar:CbteFch>20261120<\/ar:CbteFch>/);
   assert.doesNotMatch(xml, /CbteFecha|FeCAECabRequest|FECAEDetalle/);
 });
+
+test('FeCAEARegInfReq (CAEA) respeta el WSDL real', () => {
+  const xml = wsfev1.armarFeCAEReq({ ...INV, alicuotasIva: [], tributos: [], comprobantesAsociados: [] },
+    { ptoVta: 9, tipoCbte: 11, concepto: 1, numero: 3, cbteFecha: '20261120', caea: '31111111111111', fchHsGen: '20261120101500' });
+  const nodos = arbol(xml);
+  assert.deepStrictEqual(nodos.map((n) => n.nombre), ['FeCAEARegInfReq']);
+  validar(nodos[0].hijos, 'FECAEARequest', 'FeCAEARegInfReq');
+  const det = nodos[0].hijos.find((n) => n.nombre === 'FeDetReq').hijos[0];
+  assert.strictEqual(det.nombre, 'FECAEADetRequest');
+  assert.deepStrictEqual(det.hijos.slice(-2).map((n) => n.nombre), ['CAEA', 'CbteFchHsGen']);
+});

@@ -52,7 +52,8 @@ async function qrUrl(cmp) {
     ctz: Number((cmp.raw && cmp.raw.cotizacion) || cmp.cotizacion || 1),
     tipoDocRec: Number(cmp.doc_tipo) || 99,
     nroDocRec: Number(cmp.doc_nro) || 0,
-    tipoCodAut: 'E',
+    // 'E' = CAE, 'A' = CAEA (RG 4892).
+    tipoCodAut: cmp.raw && cmp.raw.modo === 'CAEA' ? 'A' : 'E',
     codAut: Number(cmp.cae),
   };
   const p = Buffer.from(JSON.stringify(data)).toString('base64');
