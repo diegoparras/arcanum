@@ -374,6 +374,32 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
   return out;
 }
 
+/**
+ * Guarda en `comprobantes` uno que ARCA ya autorizo pero cuya respuesta no nos llego (corte
+ * ambiguo): la cola lo ADOPTA en vez de emitir otro. Idempotente.
+ */
+async function registrarAdoptado(cuit, consultado, cuerpo, idem) {
+  const c = normalizeCuit(cuit);
+  const raw = {
+    ...cuerpo,
+    aprobado: true, resultado: 'A', adoptado: true, cuit: c,
+    cae: consultado.cae, caeVencimiento: consultado.caeVencimiento,
+    puntoVenta: consultado.puntoVenta, tipoComprobante: consultado.tipoComprobante, numero: consultado.numero,
+    fecha: consultado.fecha, importeTotal: Number(consultado.importeTotal),
+    docTipo: consultado.docTipo, docNro: consultado.docNro,
+  };
+  await db.query(
+    `INSERT INTO comprobantes
+       (cuit, entorno, punto_venta, tipo_cbte, numero, cae, cae_vto, resultado, fecha,
+        importe_total, doc_tipo, doc_nro, idempotency_key, raw)
+     VALUES ($1,$2,$3,$4,$5,$6, to_date($7,'YYYYMMDD'),'A', to_date($8,'YYYYMMDD'),$9,$10,$11,$12,$13)
+     ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
+    [c, config.env, consultado.puntoVenta, consultado.tipoComprobante, consultado.numero, consultado.cae,
+      consultado.caeVencimiento, consultado.fecha, raw.importeTotal, consultado.docTipo, consultado.docNro, idem, JSON.stringify(raw)]);
+  webhooks.emitir('comprobante_emitido', raw).catch(() => {});
+  return raw;
+}
+
 /** Consulta un comprobante ya emitido (para reimprimir o verificar en ARCA). */
 async function consultar(cuit, ptoVta, tipoCbte, numero) {
   return withTokenRetry(normalizeCuit(cuit), SERVICE, config.env, async () => {
@@ -483,6 +509,7 @@ function parseLoteCsv(text) {
 
 module.exports = {
   armarFeCAEReq,
+  registrarAdoptado,
   dummy,
   lastAuthorized,
   authorizeInvoice,

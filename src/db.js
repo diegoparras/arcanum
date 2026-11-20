@@ -282,6 +282,29 @@ CREATE TABLE IF NOT EXISTS mc_comprobantes (
 );
 CREATE INDEX IF NOT EXISTS mc_comprobantes_fecha_idx ON mc_comprobantes (cuit, tipo, fecha DESC);
 
+-- Cola de emision (0.10): comprobantes que esperan a que ARCA vuelva.
+CREATE TABLE IF NOT EXISTS emision_cola (
+  id                 SERIAL PRIMARY KEY,
+  cuit               TEXT NOT NULL,
+  entorno            TEXT NOT NULL,
+  idempotency_key    TEXT NOT NULL UNIQUE,
+  cuerpo             JSONB NOT NULL,
+  fecha              DATE,
+  concepto           INTEGER,
+  estado             TEXT NOT NULL,
+  intentos           INTEGER NOT NULL DEFAULT 0,
+  proximo_intento_at TIMESTAMPTZ,
+  numero_intentado   INTEGER,
+  ultimo_error       TEXT,
+  resultado          JSONB,
+  modo               TEXT NOT NULL DEFAULT 'CAE',
+  creado_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  actualizado_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  creado_por         TEXT,
+  origen             TEXT
+);
+CREATE INDEX IF NOT EXISTS emision_cola_estado_idx ON emision_cola (estado, proximo_intento_at);
+
 CREATE TABLE IF NOT EXISTS webhooks (
   id          SERIAL PRIMARY KEY,
   url         TEXT NOT NULL,
