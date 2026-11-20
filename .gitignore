@@ -13,3 +13,4 @@ AUDIT-*.md
 !data/certs/.gitkeep
 !data/cache/.gitkeep
 .superpowers/
+muestras/

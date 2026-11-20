@@ -3,6 +3,12 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.9.3] - 2026-11-20
+
+### Corregido
+- PDF: la linea del encabezado ya no tacha el "COD. xx" debajo de la letra, y los totales
+  siguen a la tabla de items en vez de quedar fijos abajo (sin hueco con pocas lineas).
+
 ## [0.9.2] - 2026-11-20
 
 ### Corregido

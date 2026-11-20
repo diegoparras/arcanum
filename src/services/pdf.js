@@ -153,7 +153,8 @@ async function generar(cmp, emisorDe) {
   // ---------- Encabezado con caja de letra ----------
   doc.fontSize(9).font('Helvetica-Bold').fillColor(TINTA).text('ORIGINAL', L, 43, { width: R - L, align: 'center' });
   doc.rect(L, 58, R - L, 110).lineWidth(0.8).strokeColor(LINEA).stroke();
-  doc.moveTo(MID, 100).lineTo(MID, 168).strokeColor(LINEA).stroke();
+  // La division arranca debajo de "COD. xx" para no tacharlo.
+  doc.moveTo(MID, 110).lineTo(MID, 168).strokeColor(LINEA).stroke();
   // Caja de letra centrada, montada sobre el borde superior
   doc.rect(MID - 24, 56, 48, 42).fillAndStroke('#ffffff', TINTA);
   doc.fillColor(TINTA).fontSize(28).font('Helvetica-Bold').text(letra, MID - 24, 61, { width: 48, align: 'center' });
@@ -256,7 +257,10 @@ async function generar(cmp, emisorDe) {
   const moneda = raw.moneda || 'PES';
   const cotiz = Number(raw.cotizacion || 1);
   const simb = moneda !== 'PES' ? moneda : '$';
-  let ty = 548;
+  // Los totales siguen a la tabla (con pocas lineas no queda un hueco), sin bajar de 548
+  // para no pisar leyendas ni el pie.
+  const yTotales = Math.min(y + 18, 548);
+  let ty = yTotales;
   const rowTot = (label, val, bold) => {
     doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 12 : 9).fillColor(bold ? TINTA : GRIS);
     doc.text(`${label}:`, 350, ty, { width: 108, align: 'right' });
@@ -295,7 +299,7 @@ async function generar(cmp, emisorDe) {
   const esCF = condRecId === 5 || (!condRecId && (letra === 'B' || letra === 'C'));
   if (letra === 'B' && esCF) {
     const bx = L;
-    const by = 545;
+    const by = yTotales - 3;
     const bw = 280;
     const bh = 50;
     doc.rect(bx, by, bw, bh).lineWidth(0.8).strokeColor('#a32d2d').stroke();
@@ -307,7 +311,8 @@ async function generar(cmp, emisorDe) {
   }
 
   // ---------- Leyendas ----------
-  let ly = 604;
+  let ly = Math.max(ty + (moneda !== 'PES' ? 40 : 6), letra === 'B' && esCF ? yTotales + 56 : 0, 0);
+  ly = Math.min(ly, 630);
   if (esCF && Number(cmp.importe_total) >= 10000000) { doc.font('Helvetica-Bold').fontSize(9).fillColor(TINTA).text('A CONSUMIDOR FINAL', L, ly); ly += 13; }
   if (letra === 'B' || letra === 'C') { doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(GRIS).text('*147 Telefono gratuito CABA - Area de Defensa y Proteccion del Consumidor.', L, ly); ly += 11; }
   if (letra === 'C') { doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(GRIS).text('El presente comprobante no genera credito fiscal.', L, ly); ly += 11; }
