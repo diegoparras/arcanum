@@ -85,10 +85,11 @@ test('mcp: respuestas largas se recortan bajo 20.000 caracteres', async () => {
 });
 
 // ---------- catalogo real de herramientas ----------
-test('mcp: exactamente las 11 herramientas de consulta', () => {
+test('mcp: exactamente las 12 herramientas de consulta', () => {
   assert.deepStrictEqual(HERRAMIENTAS.map((x) => x.nombre).sort(), [
     'comprobante', 'comprobantes_recientes', 'comunicaciones_ventanilla', 'estado_arca', 'mis_comprobantes', 'padron',
-    'puntos_de_venta', 'riesgo_fiscal', 'ultimo_comprobante', 'vencimiento_certificado', 'vista_previa_comprobante',
+    'puntos_de_venta', 'riesgo_fiscal', 'topes_monotributo', 'ultimo_comprobante', 'vencimiento_certificado',
+    'vista_previa_comprobante',
   ]);
 });
 test('mcp: resumen de Mis Comprobantes separa emitidos y recibidos y resta notas de credito', () => {

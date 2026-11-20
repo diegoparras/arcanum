@@ -14,6 +14,7 @@
 //   vencimiento_certificado -> vigencia de los certificados cargados
 //   vista_previa_comprobante -> valida un comprobante y muestra su numero, SIN emitir
 //   mis_comprobantes    -> emitidos y recibidos de Mis Comprobantes ya bajados (no entra a ARCA)
+//   topes_monotributo   -> facturado en 12 meses contra el tope de la categoria
 //
 // Las respuestas son datos (JSON), no instrucciones para un asistente.
 
@@ -754,10 +755,38 @@ const misComprobantesTool = {
   },
 };
 
+// ---------- topes_monotributo ----------
+const topesMonotributoTool = {
+  nombre: 'topes_monotributo',
+  titulo: 'Topes de Monotributo',
+  descripcion:
+    'Cuanto facturo un monotributista en los ultimos 12 meses contra el tope de su categoria. Suma Mis Comprobantes emitidos '
+    + '(ya bajados) mas lo emitido por Arcanum que no este ahi, con las notas de credito restando. JSON con total, ventana de '
+    + 'fechas, porcentaje usado, alerta (ok, 80 o 100), margen, categoria sugerida y la vigencia de los topes cargados (que '
+    + 'conviene verificar). La categoria sale del padron o se indica. No es asesoramiento: es un calculo. Solo lectura.',
+  esquema: {
+    type: 'object',
+    properties: {
+      cuit: { type: 'string', description: 'CUIT del monotributista.' },
+      categoria: { type: 'string', description: 'Opcional. Letra A a K si no se quiere tomar la del padron.' },
+    },
+    required: ['cuit'],
+    additionalProperties: false,
+  },
+  async ejecutar(args, ctx) {
+    const cuit = cuit11(args.cuit);
+    assertCuitAllowed(ctx.principal, cuit);
+    ctx.cuit = cuit;
+    if (args.categoria && !/^[A-Ka-k]$/.test(String(args.categoria))) throw error('"categoria" debe ser una letra de la A a la K');
+    const r = await require('../services/monotributo').topes(cuit, args.categoria ? { categoria: String(args.categoria).toUpperCase() } : {});
+    return { ...r, fuente: 'Mis Comprobantes de ARCA + registro de Arcanum; topes cargados en Arcanum' };
+  },
+};
+
 const HERRAMIENTAS = [
   padronTool, comprobanteTool, ultimoTool, puntosTool, estadoTool,
   riesgoTool, recientesTool, ventanillaTool, certTool, vistaPreviaTool,
-  misComprobantesTool,
+  misComprobantesTool, topesMonotributoTool,
 ];
 
 module.exports = {

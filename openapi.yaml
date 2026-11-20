@@ -16,6 +16,7 @@ security:
 tags:
   - name: MCP
   - name: Mis Comprobantes
+  - name: Monotributo
   - name: Claves
   - name: Auth
   - name: Config
@@ -516,6 +517,18 @@ paths:
     post: { tags: [Mis Comprobantes], summary: Pausa la receta o la IA y pasa el navegador a una persona, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
   /api/mis-comprobantes/corridas/{id}/devolver:
     post: { tags: [Mis Comprobantes], summary: Devuelve el control a la receta o la IA, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
+
+  /api/monotributo/categorias:
+    get: { tags: [Monotributo], summary: Topes por categoria cargados en Arcanum (con su vigencia), responses: { '200': { description: "categorias: { vigencia, fuente, topes }" } } }
+    put: { tags: [Monotributo], summary: Reemplaza los topes (superadmin), requestBody: { content: { application/json: { schema: { type: object, required: [topes], properties: { vigencia: { type: string }, fuente: { type: string }, topes: { type: object, additionalProperties: { type: number } } } } } } }, responses: { '200': { description: ok } } }
+  /api/monotributo/{cuit}:
+    get:
+      tags: [Monotributo]
+      summary: Facturado en los ultimos 12 meses contra el tope de la categoria (Mis Comprobantes + lo emitido por Arcanum)
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string } }
+        - { name: categoria, in: query, description: "A a K; si falta, se toma del padron", schema: { type: string } }
+      responses: { '200': { description: "monotributo: { ingresos, categoria, tope, usado, alerta, margen, categoriaSugerida, vigenciaTopes }" } }
 
   /api/wsaa/{cuit}/{service}:
     get:

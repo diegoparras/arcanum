@@ -16,6 +16,7 @@ const EVENTOS = [
   'clave_anomala', // uso raro de una clave (barrido de CUITs, muchos rechazos)
   'mis_comprobantes_sincronizado', // termino una bajada de Mis Comprobantes
   'mis_comprobantes_fallo', // fallo una bajada, o necesita a una persona (captcha)
+  'tope_monotributo', // un monotributista paso el 80% o el 100% de su categoria, o toca recategorizar
 ];
 
 async function listar() {

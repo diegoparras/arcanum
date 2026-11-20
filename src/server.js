@@ -44,7 +44,9 @@ const { crearServidor: crearServidorMcp } = require('./mcp/servidor');
 const { HERRAMIENTAS: HERRAMIENTAS_MCP } = require('./mcp/herramientas');
 const { crearRutas: crearRutasMc } = require('./rutas/misComprobantes');
 
+const { crearRutas: crearRutasMono } = require('./rutas/monotributo');
 const rutasMc = crearRutasMc();
+const rutasMono = crearRutasMono();
 
 // Si no se definio API key, generamos una y la mostramos una sola vez.
 let API_KEY = config.apiKey;
@@ -283,6 +285,7 @@ async function route(req, res, url) {
 
   // Mis Comprobantes (via Fisherboy) y la conexion con Fisherboy: ver src/rutas/misComprobantes.js
   if (await rutasMc(req, res, url, seg, principal)) return;
+  if (await rutasMono(req, res, url, seg, principal)) return;
 
   // --- Config del sistema ---
   // GET /api/config  -> entorno activo + version (para el "Acerca de")
