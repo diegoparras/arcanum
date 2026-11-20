@@ -288,7 +288,7 @@ Cada `git push` dispara **GitHub Actions**, que **buildea y publica la imagen mu
 
 Cada versión dice qué cambia, desde una sola fuente: la sección `## [X.Y.Z]` del `CHANGELOG.md` (sin ella el build no sale). Esas notas aparecen en:
 
-- **El log del contenedor** al arrancar (lo primero que se ve en el deploy de EasyPanel): `[arcanum] Novedades de la vX.Y.Z` y un renglón por cambio.
+- **Los registros del contenedor** (EasyPanel, pestaña Resumen): lo primero que escribe al levantar es un cartel `ARCANUM vX.Y.Z (fecha)` con lo que cambia, cortado a 80 columnas. El historial de *Implementaciones* de EasyPanel no admite texto propio (siempre dice "Deploy service").
 - **La interfaz**: al entrar después de una actualización avisa "Arcanum se actualizó a la vX.Y.Z" con todo lo que cambió desde la última versión que viste en ese navegador. El historial queda en el menú, **Novedades**.
 - **GitHub**: la imagen se etiqueta también `:X.Y.Z` (además de `:latest`), se crea el Release `vX.Y.Z` con las notas y el resumen de la corrida de Actions las muestra. Si se publica dos veces la misma versión, el CI avisa que no se subió el patch.
 

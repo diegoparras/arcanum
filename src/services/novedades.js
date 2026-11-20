@@ -54,6 +54,37 @@ function lineasLog(v) {
   return v.secciones.flatMap((s) => s.items.map((i) => `${s.titulo}: ${plano(i)}`));
 }
 
+/** Corta un texto en renglones de hasta `ancho`; el primero lleva `pre`, los demas `sangria`. */
+function cortar(texto, ancho, pre, sangria) {
+  const out = [];
+  let linea = pre;
+  for (const palabra of String(texto).split(/\s+/).filter(Boolean)) {
+    const base = linea === pre || linea === sangria;
+    if (!base && linea.length + 1 + palabra.length > ancho) { out.push(linea); linea = sangria; }
+    linea += (linea === pre || linea === sangria ? '' : ' ') + palabra;
+  }
+  out.push(linea);
+  return out;
+}
+
+/**
+ * Cartel que se imprime PRIMERO al levantar el contenedor (lo que se ve en los registros de
+ * EasyPanel): version, fecha y que cambia, cortado al ancho para leerlo sin scroll lateral.
+ */
+function cartelArranque(version, versiones, ancho = 80) {
+  const v = (versiones || []).find((x) => x.version === version);
+  const raya = '='.repeat(Math.min(ancho, 60));
+  const lineas = [raya, `ARCANUM v${version}${v && v.fecha ? `  (${v.fecha})` : ''}`];
+  if (!v || !v.secciones.length) {
+    lineas.push('Sin notas para esta version en el CHANGELOG.');
+  } else {
+    lineas.push('Que cambia en esta version:');
+    for (const l of lineasLog(v)) lineas.push(...cortar(l, ancho, '- ', '    '));
+  }
+  lineas.push(raya);
+  return lineas;
+}
+
 /** Notas en markdown para el Release de GitHub. */
 function notasMarkdown(v) {
   return v.secciones.map((s) => `### ${s.titulo}\n${s.items.map((i) => `- ${i}`).join('\n')}`).join('\n\n') + '\n';
@@ -71,4 +102,4 @@ function todas() {
   return cache;
 }
 
-module.exports = { parsear, desde, comparar, lineasLog, notasMarkdown, todas };
+module.exports = { parsear, desde, comparar, lineasLog, cartelArranque, notasMarkdown, todas };

@@ -922,6 +922,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function start() {
+  // Lo primero que se ve en los registros al levantar: version y que cambia (CHANGELOG).
+  const nov = require('./services/novedades');
+  for (const l of nov.cartelArranque(config.version, nov.todas())) console.log(`[arcanum] ${l}`);
   fs.mkdirSync(config.dataDir, { recursive: true });
   console.log('[arcanum] conectando a Postgres...');
   await db.waitForDb();
@@ -951,13 +954,6 @@ async function start() {
   server.listen(config.port, () => {
     console.log(`[arcanum] v${config.version} escuchando en :${config.port} (entorno ARCA: ${config.env})`);
     console.log(`[arcanum] Docs: http://localhost:${config.port}/docs`);
-    // Que trae esta version: lo primero que se lee en el log del deploy.
-    const nov = require('./services/novedades');
-    const v = nov.todas().find((x) => x.version === config.version);
-    if (v) {
-      console.log(`[arcanum] Novedades de la v${v.version}${v.fecha ? ` (${v.fecha})` : ''}:`);
-      for (const l of nov.lineasLog(v)) console.log(`[arcanum]   - ${l}`);
-    }
   });
 }
 

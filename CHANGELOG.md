@@ -3,6 +3,13 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.5] - 2026-11-20
+
+### Cambiado
+- **La version se ve apenas levanta**: lo primero que escribe el contenedor en los registros de
+  EasyPanel (Resumen) es un cartel con la version, la fecha y que cambia, cortado al ancho para
+  leerlo sin scroll lateral. Antes salia al final del arranque, en renglones que se cortaban.
+
 ## [0.10.4] - 2026-11-20
 
 ### Cambiado
