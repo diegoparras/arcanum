@@ -3,6 +3,14 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.4] - 2026-11-20
+
+### Cambiado
+- **Node 24 LTS**: la imagen pasa de `node:22-slim` a `node:24-slim` (24.22.3, fijada por digest).
+  Requisito minimo `node >= 22` (Node 20 ya no tiene soporte).
+- CI: acciones de GitHub actualizadas a sus versiones que corren sobre Node 24 (checkout v7,
+  setup-node v7, login v4, metadata v6, setup-buildx v4, build-push v7); se va el aviso de Node 20.
+
 ## [0.10.3] - 2026-11-20
 
 ### Nuevo

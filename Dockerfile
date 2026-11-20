@@ -1,6 +1,6 @@
 # Arcanum — imagen minima, sin root, con healthcheck. Patron de la suite Escriba.
-# Imagen base pinneada por digest para builds reproducibles (node:22-slim).
-FROM node:22-slim@sha256:d9f850096136edbc402debdd8729579a288aac64574ada0ff4db26b6ae58b0b2
+# Imagen base pinneada por digest para builds reproducibles (node:24-slim, LTS).
+FROM node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 
 ENV NODE_ENV=production \
     ARCANUM_DATA_DIR=/data \
