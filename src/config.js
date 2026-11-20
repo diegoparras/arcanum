@@ -12,8 +12,10 @@ const IS_PROD = ENV === 'prod' || ENV === 'produccion' || ENV === 'production';
 // y son alias de .arca.gob.ar. Se mantienen los historicos por estabilidad.
 const ENDPOINTS = {
   homo: {
-    wsaa: 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms',
-    wsfev1: 'https://wswhomo.afip.gov.ar/wsfev1/service.asmx',
+    // ARCANUM_ENDPOINT_WSAA / ARCANUM_ENDPOINT_WSFEV1: SOLO pruebas (stub local de ARCA en
+    // scripts/arca-stub.js). Pisan unicamente homologacion; produccion no se puede redirigir.
+    wsaa: process.env.ARCANUM_ENDPOINT_WSAA || 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms',
+    wsfev1: process.env.ARCANUM_ENDPOINT_WSFEV1 || 'https://wswhomo.afip.gov.ar/wsfev1/service.asmx',
     wsfex: 'https://wswhomo.afip.gov.ar/wsfexv1/service.asmx',
     wsmtxca: 'https://fwshomo.afip.gov.ar/wsmtxca/services/MTXCAService',
     padronA13: 'https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA13',

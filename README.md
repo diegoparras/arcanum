@@ -225,6 +225,23 @@ Por defecto el PDF es **igual al de ARCA** ("Comprobantes en línea": original, 
 
 `GET /api/comprobantes/:cuit/:pv/:tipo/:nro/pdf` respeta lo elegido; `?modelo=`, `?nombre=` y `?copias=1..3` lo pisan para esa descarga.
 
+## Contingencia: que la facturación no se corte
+
+- **Cola**: emitiendo con `"contingencia": true` (o con el tilde de Emitir), si ARCA no responde el comprobante queda en la cola (`202`) y sale solo cuando vuelve (el daemon reintenta con espera creciente y en el acto con `arca_restablecido`). Si el pedido llegó a ARCA pero la respuesta no volvió, antes de reintentar se consulta ese número: si ARCA lo otorgó, se **adopta ese CAE**. La fecha nunca cambia sola: si ARCA ya no la acepta, el comprobante espera tu decisión ("emitir con fecha de hoy" o cancelar). Todo en la pestaña **Contingencia**.
+- **CAEA (opcional por CUIT)**: se prende en Contingencia con un punto de venta de tipo CAEA. Arcanum pide el código de cada quincena, emite con CAEA solo si ARCA sigue caído pasados los minutos elegidos, e informa todo (y los "sin movimiento") cuando vuelve. Avisa (`caea_informe_pendiente`) a 2 días de la fecha tope. Pedir un CAEA obliga a informar: por eso está apagado por defecto.
+- **Lo emitido por fuera**: en Comprobantes, **Traer lo emitido por fuera** (o `POST /api/wsfev1/sincronizar`, y una vez por día) suma lo facturado en la web de ARCA u otro sistema, y avisa si algo no coincide.
+
+## Backups
+
+Diarios a las 3 (`ARCANUM_BACKUP_HORA`), cifrados con una clave derivada de la master key (o `ARCANUM_BACKUP_KEY`), en `/data/backups` (se guardan los últimos `ARCANUM_BACKUP_RETENER`, 14). El superadmin los ve y descarga en **Backups y master key**. Restaurar:
+
+```bash
+docker compose exec arcanum node src/tools/restaurar-backup.js /data/backups/arcanum-AAAAMMDD-HHMM.arcbak            # simulacro
+docker compose exec arcanum node src/tools/restaurar-backup.js /data/backups/arcanum-AAAAMMDD-HHMM.arcbak --confirmar
+```
+
+Sin la master key no se abren ni los certificados ni los backups: Arcanum muestra un aviso hasta que confirmes que la guardaste fuera del servidor.
+
 ## Vista previa de emisión
 
 `POST /api/wsfev1/comprobantes/vista-previa` recibe el mismo cuerpo que la emisión y **no emite nada**: valida importes, IVA, tipo, receptor (con su padrón si es CUIT), condición de IVA, fecha y RG 5866, sugiere la letra según emisor y receptor, y devuelve el número que le tocaría. Es la única excepción de `POST` permitida a las claves de rol `lectura`. En la UI es el botón **Vista previa** de Emitir.

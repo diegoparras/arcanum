@@ -3,6 +3,32 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.0] - 2026-11-20
+
+### Nuevo
+- **Cola de emision (contingencia)**: con `contingencia: true` (o el tilde en Emitir), si ARCA
+  no responde el comprobante queda en cola (202) y sale solo cuando vuelve. Antes de reintentar
+  se consulta en ARCA el numero que se habia intentado: si el CAE ya se otorgo, se **adopta**
+  (nunca dos CAE para la misma venta). La fecha nunca se cambia sola: si ARCA ya no la acepta
+  (5 dias productos, 10 servicios) queda "necesita tu decision". Pestana **Contingencia**,
+  `GET /api/cola`, reintentar, cancelar, MCP `cola_emision`.
+- **CAEA opcional por CUIT** (apagado por defecto): pide el CAEA de cada quincena, lo usa solo si
+  ARCA sigue sin responder pasados N minutos (y nunca tras un intento ambiguo con CAE), en el
+  punto de venta CAEA (validado en ARCA), informa lo emitido y los "sin movimiento", y avisa a 2
+  dias de la fecha tope. QR del PDF con `tipoCodAut` A.
+- **Traer lo emitido por fuera de Arcanum** (`POST /api/wsfev1/sincronizar` y diario): recorre
+  desde el ultimo numero de ARCA hacia atras, trae lo que falta (huecos incluidos) y avisa si un
+  comprobante no coincide.
+- **Backups cifrados diarios** (AES-256-GCM, clave derivada de la master key o
+  `ARCANUM_BACKUP_KEY`), retencion de 14, descarga para superadmin, restauracion con simulacro
+  (`src/tools/restaurar-backup.js`) y aviso hasta confirmar que la master key esta guardada
+  fuera del servidor.
+- Eventos `comprobante_encolado`, `cola_requiere_humano`, `caea_obtenido`,
+  `caea_informe_pendiente`, `caea_informe_error`, `emitidos_por_fuera`, `backup_creado`,
+  `backup_fallo`.
+- Stub local de ARCA (`scripts/arca-stub.js`) para pruebas de punta a punta, con modos caido y
+  lento (`ARCANUM_ENDPOINT_WSAA` / `ARCANUM_ENDPOINT_WSFEV1`, solo homologacion).
+
 ## [0.9.5] - 2026-11-20
 
 ### Corregido
