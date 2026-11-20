@@ -158,8 +158,27 @@ async function revisarVentanilla() {
   }
 }
 
+/**
+ * Envuelve una tarea para que no se apile: si la vuelta anterior sigue corriendo (ARCA lento, 100
+ * items x 15 s), la nueva se saltea. Sin esto, en una caida larga se acumulan vueltas, cada una
+ * con conexiones tomadas, y se agota el pool de Postgres (se cae la API entera).
+ */
+function sinSolapar(fn) {
+  let corriendo = false;
+  return async (...args) => {
+    if (corriendo) return undefined;
+    corriendo = true;
+    try {
+      return await fn(...args);
+    } finally {
+      corriendo = false;
+    }
+  };
+}
+
 // --- Cola de emision (contingencia) ---
-async function procesarCola() {
+const procesarCola = sinSolapar(procesarColaUnaVez);
+async function procesarColaUnaVez() {
   const hechos = await require('./services/colaEmision').servicio().procesarPendientes();
   const emitidos = hechos.filter((h) => h && h.estado === 'emitido').length;
   if (emitidos) console.log(`[arcanum][cola] ${emitidos} comprobante(s) emitidos desde la cola`);
@@ -167,7 +186,8 @@ async function procesarCola() {
 }
 
 // --- CAEA (solo CUIT con CAEA prendido) ---
-async function caeaPedirYAvisar() {
+const caeaPedirYAvisar = sinSolapar(caeaPedirYAvisarUnaVez);
+async function caeaPedirYAvisarUnaVez() {
   const caea = require('./services/caea').servicio();
   for (const cuit of await caea.activos()) {
     try { await caea.asegurar(cuit); } catch (e) { console.error(`[arcanum][caea] ${maskCuit(cuit)}: ${e.message}`); }
@@ -178,7 +198,8 @@ async function caeaPedirYAvisar() {
   }
 }
 
-async function caeaInformar() {
+const caeaInformar = sinSolapar(caeaInformarUnaVez);
+async function caeaInformarUnaVez() {
   if (!lastArcaOk) return; // con ARCA caido no tiene sentido: se informa cuando vuelve
   const caea = require('./services/caea').servicio();
   for (const cuit of await caea.paraInformar()) { // prendido o no: lo pedido se informa igual
@@ -305,4 +326,4 @@ function stop() {
   timers.forEach(clearInterval);
 }
 
-module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, backupDiario, tocaDiaria, rangoDiario };
+module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, backupDiario, sinSolapar, tocaDiaria, rangoDiario };
