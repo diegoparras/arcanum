@@ -300,6 +300,14 @@ async function route(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/api/config') {
     return sendJson(res, 200, { ok: true, entorno: config.env, version: config.version, entornos: ['homo', 'prod'] });
   }
+  // GET /api/novedades?desde=X.Y.Z  -> que cambio desde la ultima version vista (CHANGELOG)
+  if (req.method === 'GET' && url.pathname === '/api/novedades') {
+    const nov = require('./services/novedades');
+    const vista = /^\d+\.\d+\.\d+$/.test(url.searchParams.get('desde') || '') ? url.searchParams.get('desde') : null;
+    const todas = url.searchParams.get('todas') === '1';
+    const versiones = todas ? nov.todas().filter((x) => nov.comparar(x.version, config.version) <= 0) : nov.desde(nov.todas(), vista, config.version);
+    return sendJson(res, 200, { ok: true, version: config.version, versiones });
+  }
   // POST /api/config/entorno  { entorno }  -> cambia homo/prod (admin+), persistido
   if (req.method === 'POST' && url.pathname === '/api/config/entorno') {
     requireRole(principal, 'superadmin', 'admin');
@@ -943,6 +951,13 @@ async function start() {
   server.listen(config.port, () => {
     console.log(`[arcanum] v${config.version} escuchando en :${config.port} (entorno ARCA: ${config.env})`);
     console.log(`[arcanum] Docs: http://localhost:${config.port}/docs`);
+    // Que trae esta version: lo primero que se lee en el log del deploy.
+    const nov = require('./services/novedades');
+    const v = nov.todas().find((x) => x.version === config.version);
+    if (v) {
+      console.log(`[arcanum] Novedades de la v${v.version}${v.fecha ? ` (${v.fecha})` : ''}:`);
+      for (const l of nov.lineasLog(v)) console.log(`[arcanum]   - ${l}`);
+    }
   });
 }
 

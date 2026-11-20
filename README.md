@@ -286,6 +286,12 @@ Las consultas de padrón se guardan en memoria una hora (`ARCANUM_PADRON_CACHE_S
 
 Cada `git push` dispara **GitHub Actions**, que **buildea y publica la imagen multi-arch** (amd64 + arm64) en GHCR — sin tokens manuales. En cada deploy se sube el *patch* de la versión, que se ve en el menú **Acerca de**, para confirmar de un vistazo que el deploy tomó.
 
+Cada versión dice qué cambia, desde una sola fuente: la sección `## [X.Y.Z]` del `CHANGELOG.md` (sin ella el build no sale). Esas notas aparecen en:
+
+- **El log del contenedor** al arrancar (lo primero que se ve en el deploy de EasyPanel): `[arcanum] Novedades de la vX.Y.Z` y un renglón por cambio.
+- **La interfaz**: al entrar después de una actualización avisa "Arcanum se actualizó a la vX.Y.Z" con todo lo que cambió desde la última versión que viste en ese navegador. El historial queda en el menú, **Novedades**.
+- **GitHub**: la imagen se etiqueta también `:X.Y.Z` (además de `:latest`), se crea el Release `vX.Y.Z` con las notas y el resumen de la corrida de Actions las muestra. Si se publica dos veces la misma versión, el CI avisa que no se subió el patch.
+
 ## Estado y roadmap
 
 Operativo y verificado **end-to-end contra ARCA producción** (firma WSAA, consulta de padrón con datos reales, monitoreo de servicios). Roadmap: promover WSFEX/MTXCA/agro a módulos ricos, lotes y CAEA, federación con Lockatus (SSO de la suite). Ver [CHANGELOG.md](CHANGELOG.md).

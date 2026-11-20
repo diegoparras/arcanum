@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.3] - 2026-11-20
+
+### Nuevo
+- **Cada deploy dice que version es y que cambia**: al arrancar, el log del contenedor (lo que se
+  ve en EasyPanel) muestra la version y sus novedades; la UI avisa "Arcanum se actualizo a la
+  vX.Y.Z" con lo que cambio desde la ultima version que viste, y el menu tiene **Novedades**
+  (tambien en Acerca de). `GET /api/novedades?desde=X.Y.Z`.
+- El CI etiqueta la imagen con la version (`ghcr.io/.../arcanum:X.Y.Z`, ademas de `:latest`),
+  crea el Release vX.Y.Z en GitHub con las notas del CHANGELOG y las muestra en el resumen de la
+  corrida. Sin la seccion de la version en el CHANGELOG el build no sale.
 ## [0.10.2] - 2026-11-20
 
 ### Corregido

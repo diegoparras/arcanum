@@ -112,6 +112,12 @@
   pre{background:#1c1a17;color:#f0ebe1;padding:12px;border-radius:10px;overflow:auto;font-family:var(--mono);font-size:11.5px}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;place-items:center;z-index:20;padding:20px}
   .modal.open{display:grid}.modal .card{position:relative;max-width:620px;width:100%;max-height:85vh;overflow:auto}
+  .nov-ver{margin:14px 0 4px;display:flex;align-items:baseline;gap:10px}
+  .nov-ver b{font-family:var(--mono);font-size:14px}.nov-ver span{color:var(--muted);font-size:12.5px}
+  .nov-sec{margin:8px 0 2px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .nov-list{margin:2px 0 6px;padding-left:18px;font-size:13.5px;line-height:1.5}
+  .nov-list li{margin:3px 0}.nov-list code{font-family:var(--mono);font-size:12px}
+  .linkbtn{background:none;border:none;padding:0;color:var(--accent);cursor:pointer;font:inherit;text-decoration:underline}
   /* Responsive: el menú nunca se sale de pantalla; en angosto la nav pasa a una
      tira scrolleable abajo (topbar = logo + kebab), sin desbordar. */
   .menu{max-width:calc(100vw - 24px)}
@@ -197,6 +203,36 @@ async function boot(){
   try{ const h=await fetch('/api/health').then(r=>r.json()); ENV=h.env; }catch{}
   $('#loginView').classList.add('hidden');$('#appView').classList.remove('hidden');
   go((location.hash||'#panel').slice(1));
+  setTimeout(avisarNovedades,400);
+}
+
+/* ---------- NOVEDADES: que cambio en cada version (sale del CHANGELOG) ---------- */
+const NOV_KEY='arcanum.versionVista';
+function novMd(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`([^`]+)`/g,'<code>$1</code>');}
+function novHtml(versiones){
+  return versiones.map(v=>`<div class="nov-ver"><b>v${novMd(v.version)}</b>${v.fecha?`<span>${novMd(v.fecha)}</span>`:''}</div>`+
+    v.secciones.map(s=>`<div class="nov-sec">${novMd(s.titulo)}</div><ul class="nov-list">${s.items.map(i=>`<li>${novMd(i)}</li>`).join('')}</ul>`).join('')).join('');
+}
+function verNovedades(r,bajada){
+  modal(`<button class="modal-x" type="button" aria-label="Cerrar" onclick="closeModal()">&times;</button>
+   <h3 class="modal-tit">Novedades</h3>
+   <p class="modal-cuerpo">${bajada}</p>
+   ${r.versiones.length?novHtml(r.versiones):'<p class="hint">No hay notas para esta versión.</p>'}
+   <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="primary" type="button" onclick="closeModal()">Entendido</button></div>`);
+}
+async function avisarNovedades(){
+  let vista=null;try{vista=localStorage.getItem(NOV_KEY);}catch{}
+  let r;try{r=await api('/api/novedades'+(vista?'?desde='+encodeURIComponent(vista):''));}catch{return;}
+  try{localStorage.setItem(NOV_KEY,r.version);}catch{}
+  if(vista===r.version||!r.versiones.length)return;
+  if($('#modal').classList.contains('open'))return;
+  verNovedades(r,`Arcanum se actualizó a la <b>v${novMd(r.version)}</b>. Esto cambió desde la última versión que viste:`);
+}
+async function novedadesTodas(){
+  $('#appmenu').classList.remove('open');
+  try{const r=await api('/api/novedades?todas=1');verNovedades({...r,versiones:r.versiones.slice(0,15)},`Versión instalada: <b>v${novMd(r.version)}</b>. Últimas versiones, de la más nueva a la más vieja:`);}
+  catch(e){toast(e.message,true);}
 }
 
 /* ---------- PANEL ---------- */
@@ -1085,6 +1121,7 @@ function togglePw(id,btn){const el=$('#'+id);const show=el.type==='password';el.
 /* ---------- MENÚ (kebab): tema + entorno + Acerca de (modal) + salir ---------- */
 const I_LOGOUT='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
 const I_INFO='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>';
+const I_NEWS='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>';
 const I_GEAR='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>';
 function toggleMenu(){const m=$('#appmenu');const open=m.classList.toggle('open');if(open)renderMenu();}
 async function renderMenu(){
@@ -1104,6 +1141,7 @@ async function renderMenu(){
        </select></div>
      <div class="hint" style="padding:2px 12px 6px">Cambia los endpoints de ARCA para toda la instancia.</div></div>`:''}
    ${ME.role==='superadmin'?`<button class="menu-item" onclick="ajustesMc()">${I_GEAR}<span>Fisherboy y Mis Comprobantes</span></button><button class="menu-item" onclick="verBackups()">${I_GEAR}<span>Backups y master key</span></button>`:''}
+   <button class="menu-item" onclick="novedadesTodas()">${I_NEWS}<span>Novedades</span></button>
    <button class="menu-item" onclick="acercaDe()">${I_INFO}<span>Acerca de Arcanum</span></button>
    <div class="menu-sep"></div>
    <button class="menu-item" onclick="logout()">${I_LOGOUT}<span>Cerrar sesión</span></button>`;
@@ -1117,7 +1155,7 @@ async function acercaDe(){
    <h3 class="modal-tit">Arcanum</h3>
    <p class="modal-cuerpo">Gateway REST self-hosted para los Web Services de ARCA (ex-AFIP). Firma WSAA 100% local.</p>
    <dl class="about-rows">
-     <dt>Versión</dt><dd>v${cfg.version}</dd>
+     <dt>Versión</dt><dd>v${cfg.version} · <button class="linkbtn" type="button" onclick="novedadesTodas()">Qué cambió</button></dd>
      <dt>Usuario</dt><dd>${ME.username} (${ME.role})</dd>
      <dt>Entorno</dt><dd><span class="tag ${cfg.entorno==='prod'?'warn':''}">${env}</span></dd>
      <dt>Rol en la suite</dt><dd>Gateway</dd>

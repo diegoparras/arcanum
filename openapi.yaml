@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arcanum — Gateway REST para ARCA (ex-AFIP)
-  version: 0.10.2
+  version: 0.10.3
   description: >
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
@@ -160,6 +160,17 @@ paths:
 
   /api/config:
     get: { tags: [Config], summary: Entorno activo y version, responses: { '200': { description: ok } } }
+  /api/novedades:
+    get:
+      tags: [Config]
+      summary: Que cambio en cada version (del CHANGELOG)
+      description: Sin parametros, las notas de la version que corre. Con `desde`, las de las versiones posteriores a esa y hasta la actual (la UI lo usa para avisar despues de un deploy). Con `todas=1`, el historial.
+      parameters:
+        - { name: desde, in: query, required: false, schema: { type: string, example: 0.10.2 } }
+        - { name: todas, in: query, required: false, schema: { type: string, enum: ['1'] } }
+      responses:
+        '200':
+          description: '{ ok, version, versiones: [{ version, fecha, secciones: [{ titulo, items: [string] }] }] }'
   /api/config/entorno:
     post:
       tags: [Config]

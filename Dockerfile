@@ -15,6 +15,8 @@ RUN npm install --omit=dev --no-audit --no-fund
 COPY src ./src
 COPY public ./public
 COPY openapi.yaml ./openapi.yaml
+# Novedades por version: el log de arranque y la UI las leen de aca.
+COPY CHANGELOG.md ./CHANGELOG.md
 
 # Volumen persistente: certificados de cada CUIT + cache de tokens.
 RUN mkdir -p /data/certs /data/cache && chown -R node:node /data /app
