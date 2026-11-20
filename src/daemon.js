@@ -57,6 +57,7 @@ async function monitor() {
       if (ok && !lastArcaOk) {
         webhooks.emitir('arca_restablecido', { servicio: s.id }).catch(() => {});
         procesarCola().catch((e) => console.error('[arcanum][cola]', e.message)); // volvio ARCA: sale lo encolado
+        setTimeout(() => caeaInformar().catch(() => {}), 1000); // y se informa lo emitido con CAEA
       }
       lastArcaOk = ok;
     }
@@ -165,6 +166,27 @@ async function procesarCola() {
   return hechos;
 }
 
+// --- CAEA (solo CUIT con CAEA prendido) ---
+async function caeaPedirYAvisar() {
+  const caea = require('./services/caea').servicio();
+  for (const cuit of await caea.activos()) {
+    try { await caea.asegurar(cuit); } catch (e) { console.error(`[arcanum][caea] ${maskCuit(cuit)}: ${e.message}`); }
+    try { await caea.avisos(cuit); } catch (e) { console.error(`[arcanum][caea] avisos ${maskCuit(cuit)}: ${e.message}`); }
+  }
+}
+
+async function caeaInformar() {
+  if (!lastArcaOk) return; // con ARCA caido no tiene sentido: se informa cuando vuelve
+  const caea = require('./services/caea').servicio();
+  for (const cuit of await caea.activos()) {
+    try {
+      const r = await caea.informarPendientes(cuit);
+      await caea.informarSinMovimiento(cuit);
+      if (r.informados) console.log(`[arcanum][caea] ${maskCuit(cuit)}: ${r.informados} comprobante(s) CAEA informados`);
+    } catch (e) { console.error(`[arcanum][caea] informar ${maskCuit(cuit)}: ${e.message}`); }
+  }
+}
+
 // --- Mis Comprobantes diario ---
 const AR_OFFSET_MS = 3 * 60 * 60 * 1000; // Argentina: UTC-3 todo el ano
 function fechaAr(ahora) { return new Date(ahora.getTime() - AR_OFFSET_MS); }
@@ -230,6 +252,10 @@ function start() {
   }
   // Cola de emision: cada minuto intenta lo que ya toca (espera creciente por item).
   every(60 * 1000, procesarCola);
+  // CAEA: pedir/recuperar codigos y avisar topes cada 6 h; informar cada 15 min si ARCA responde.
+  setTimeout(() => caeaPedirYAvisar().catch((e) => console.error('[arcanum][caea]', e.message)), 4 * 60 * 1000);
+  every(6 * 60 * 60 * 1000, caeaPedirYAvisar);
+  every(15 * 60 * 1000, caeaInformar);
   // Mis Comprobantes: se fija cada 10 minutos si ya toca la corrida diaria.
   setTimeout(() => sincronizarMisComprobantes().catch((e) => console.error('[arcanum][mis-comprobantes]', e.message)), 3 * 60 * 1000);
   every(10 * 60 * 1000, sincronizarMisComprobantes);
@@ -240,4 +266,4 @@ function stop() {
   timers.forEach(clearInterval);
 }
 
-module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, tocaDiaria, rangoDiario };
+module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, tocaDiaria, rangoDiario };

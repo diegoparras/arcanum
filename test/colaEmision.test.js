@@ -184,3 +184,55 @@ test('fuera de ventana con 5 y 10 dias', () => {
   assert.strictEqual(cola.fueraDeVentana('20261110', 2, hoy), false);
   assert.strictEqual(cola.fueraDeVentana('20261109', 3, hoy), true);
 });
+
+function caeaFalso(corresponde) {
+  const c = { usados: [] };
+  c.corresponde = async () => corresponde;
+  c.emitirConCaea = async (cuit, item) => { c.usados.push(item.id); return { aprobado: true, modo: 'CAEA', cae: 'CAEA1', numero: 1 }; };
+  return c;
+}
+
+function armarConCaea(caea, opts = {}) {
+  const repo = repoFalso();
+  const wsfev1 = wsfeFalso(opts);
+  const s = cola.crear({ repo, wsfev1, webhooks: hooks(), ahora: () => AHORA, caea });
+  return { s, repo, wsfev1 };
+}
+
+test('cola usa CAEA si ARCA sigue sin responder y paso la espera', async () => {
+  const caea = caeaFalso(true);
+  const { s } = armarConCaea(caea, { autoriza: () => { throw caido(); } });
+  const it = await s.encolar('20263630743', { ...INV }, {});
+  const fin = await s.procesar(it.id);
+  assert.strictEqual(fin.estado, 'emitido');
+  assert.strictEqual(fin.modo, 'CAEA');
+  assert.deepStrictEqual(caea.usados, [it.id]);
+});
+
+test('cola no usa CAEA si esta apagado o todavia no corresponde', async () => {
+  const caea = caeaFalso(false);
+  const { s } = armarConCaea(caea, { autoriza: () => { throw caido(); } });
+  const it = await s.encolar('20263630743', { ...INV }, {});
+  assert.strictEqual((await s.procesar(it.id)).estado, 'pendiente');
+  assert.deepStrictEqual(caea.usados, []);
+});
+
+test('cola no usa CAEA si ARCA ya respondio', async () => {
+  const caea = caeaFalso(true);
+  const { s, wsfev1 } = armarConCaea(caea);
+  const it = await s.encolar('20263630743', { ...INV }, {});
+  const fin = await s.procesar(it.id);
+  assert.strictEqual(fin.estado, 'emitido');
+  assert.notStrictEqual(fin.modo, 'CAEA');
+  assert.strictEqual(wsfev1.emitidos.length, 1);
+  assert.deepStrictEqual(caea.usados, []);
+});
+
+test('cola nunca usa CAEA si hubo un intento ambiguo con CAE', async () => {
+  const caea = caeaFalso(true);
+  const { s } = armarConCaea(caea, { consulta: caido(), autoriza: () => { throw caido(); } });
+  const it = await s.encolar('20263630743', { ...INV }, { numeroIntentado: 40 });
+  const fin = await s.procesar(it.id);
+  assert.strictEqual(fin.estado, 'pendiente');
+  assert.deepStrictEqual(caea.usados, []);
+});

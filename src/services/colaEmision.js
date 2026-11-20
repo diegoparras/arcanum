@@ -109,16 +109,19 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
         const msg = `ARCA ya no acepta la fecha ${cuerpo.fecha} (${Number(item.concepto) === 1 ? '5' : '10'} dias como maximo). Decidi: emitir con fecha de hoy o cancelar.`;
         return terminar(item, { estado: 'requiere_humano', ultimo_error: msg }, 'cola_requiere_humano', { id: item.id, cuit, motivo: msg });
       }
-      // 3. CAEA (si el CUIT lo tiene prendido y ya se espero lo suficiente).
-      if (caea && (await caea.corresponde(item, ahora()))) {
-        const out = await caea.emitirConCaea(cuit, item);
-        return terminar(item, { estado: 'emitido', modo: 'CAEA', resultado: out, ultimo_error: null }, null);
-      }
-      // 4. Emitir (la idempotencyKey evita duplicar si ya salio por otro camino).
+      // 3. Emitir (la idempotencyKey evita duplicar si ya salio por otro camino).
       const out = await wsfev1.authorizeInvoice(cuit, cuerpo);
       return terminar(item, { estado: out.aprobado ? 'emitido' : 'rechazado', resultado: out, ultimo_error: null }, null);
     } catch (e) {
       if (esIndisponibilidad(e)) {
+        // 4. ARCA sigue sin responder: CAEA, si el CUIT lo prendio y ya se espero lo suficiente.
+        //    NUNCA si hubo un intento ambiguo con CAE: ese CAE pudo haberse otorgado y saldrian
+        //    dos comprobantes para la misma venta.
+        const ambiguo = !!(e.numeroIntentado || item.numero_intentado);
+        if (caea && !ambiguo && (await caea.corresponde(item, ahora()))) {
+          const out = await caea.emitirConCaea(cuit, item);
+          return terminar(item, { estado: 'emitido', modo: 'CAEA', resultado: out, ultimo_error: null }, null);
+        }
         const intentos = (item.intentos || 0) + 1;
         return repo.actualizar(item.id, {
           estado: 'pendiente',

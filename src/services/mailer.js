@@ -44,6 +44,9 @@ const ASUNTOS = {
   tope_monotributo: 'Aviso de tope de Monotributo',
   comprobante_encolado: 'Comprobante en cola: ARCA no responde',
   cola_requiere_humano: 'Un comprobante de la cola necesita tu decision',
+  caea_obtenido: 'CAEA obtenido',
+  caea_informe_pendiente: 'CAEA: falta informar y vence el plazo',
+  caea_informe_error: 'CAEA: ARCA rechazo un informe',
 };
 
 async function notify(evento, data) {

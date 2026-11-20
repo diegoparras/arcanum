@@ -48,6 +48,7 @@ const { crearRutas: crearRutasMono } = require('./rutas/monotributo');
 const { crearRutas: crearRutasCola, emitirOEncolar } = require('./rutas/cola');
 const rutasMc = crearRutasMc();
 const rutasCola = crearRutasCola();
+const rutasCaea = require('./rutas/caea').crearRutas();
 const rutasMono = crearRutasMono();
 
 // Si no se definio API key, generamos una y la mostramos una sola vez.
@@ -289,6 +290,7 @@ async function route(req, res, url) {
   if (await rutasMc(req, res, url, seg, principal)) return;
   if (await rutasMono(req, res, url, seg, principal)) return;
   if (await rutasCola(req, res, url, seg, principal)) return;
+  if (await rutasCaea(req, res, url, seg, principal)) return;
 
   // --- Config del sistema ---
   // GET /api/config  -> entorno activo + version (para el "Acerca de")

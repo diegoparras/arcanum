@@ -659,6 +659,40 @@ async function clAccion(id,a){
   catch(e){toast(e.message,true);}
 }
 
+/* CAEA por CUIT (dentro de Contingencia) */
+async function caeaCargar(cuitElegido){
+  const box=$('#cl_caea');if(!box)return;
+  let tenants=[];try{({tenants}=await api('/api/tenants'));}catch{}
+  const conCert=tenants.filter(t=>t.tieneCertificado);
+  const cuit=cuitElegido||(window._caeaCuit)||(conCert[0]&&conCert[0].cuit)||'';window._caeaCuit=cuit;
+  const admin=['superadmin','admin'].includes(ME.role),opera=admin||ME.role==='operador';
+  let st={config:null,caeas:[],pendientes:0};
+  if(cuit){try{st=(await api('/api/caea/'+cuit)).caea;}catch{}}
+  const c=st.config||{activo:false,punto_venta:'',minutos_espera:30};
+  const fmt=s=>s?`${String(s).slice(6,8)}/${String(s).slice(4,6)}/${String(s).slice(0,4)}`:'';
+  box.innerHTML=`<h2>CAEA</h2>
+   <div class="card"><p class="hint">Opcional por CUIT. Si está prendido, Arcanum pide el CAEA de cada quincena y, cuando ARCA no responde por más de los minutos indicados, emite con CAEA en el punto de venta CAEA. Pedir un CAEA obliga a informar todo lo emitido con él (o "sin movimiento") antes de la fecha tope: Arcanum lo hace solo cuando ARCA vuelve y avisa si algo queda pendiente.</p>
+   <div class="row"><select id="caea_cuit" style="width:auto" onchange="caeaCargar(this.value)">${conCert.map(t=>`<option value="${t.cuit}"${t.cuit===cuit?' selected':''}>${t.cuit} ${esc(t.nombre||'')}</option>`).join('')||'<option value="">Sin clientes con certificado</option>'}</select>
+   <span class="tag ${c.activo?'ok':''}">${c.activo?'CAEA PRENDIDO':'CAEA APAGADO'}</span>
+   ${st.pendientes?`<span class="tag warn">${st.pendientes} sin informar</span>`:''}</div>
+   ${admin&&cuit?`<div class="f3"><div><label class="chk" style="margin-top:28px"><input type="checkbox" id="caea_activo"${c.activo?' checked':''}> Usar CAEA en contingencia</label></div>
+     <div><label>Punto de venta CAEA</label><input id="caea_pv" class="mono" value="${esc(c.punto_venta||'')}" placeholder="De tipo CAEA en ARCA"></div>
+     <div><label>Minutos de espera antes de usarlo</label><input id="caea_min" class="mono" value="${esc(c.minutos_espera||30)}"></div></div>
+     <div class="row" style="margin-top:10px"><button class="primary" onclick="caeaGuardar()">Guardar</button></div>`:''}
+   ${opera&&cuit&&c.activo?`<div class="row" style="margin-top:10px"><button onclick="caeaAccion('solicitar')">Pedir CAEA ahora</button><button onclick="caeaAccion('informar')">Informar ahora</button></div>`:''}
+   ${st.caeas&&st.caeas.length?`<table style="margin-top:12px"><tr><th>Período</th><th>Quincena</th><th>CAEA</th><th>Vigencia</th><th>Informar hasta</th></tr>${st.caeas.map(x=>`<tr><td class="mono">${x.periodo}</td><td>${x.orden===1?'1 al 15':'16 a fin'}</td><td class="mono">${esc(x.caea)}</td><td class="mono">${fmt(x.vig_desde)} a ${fmt(x.vig_hasta)}</td><td class="mono">${fmt(x.tope_inf)}</td></tr>`).join('')}</table>`:''}
+   </div>`;
+}
+async function caeaGuardar(){
+  const b={activo:$('#caea_activo').checked,puntoVenta:$('#caea_pv').value.trim()||null,minutosEspera:$('#caea_min').value.trim()};
+  try{await api(`/api/caea/${window._caeaCuit}/config`,{method:'PUT',body:JSON.stringify(b)});toast('Configuración de CAEA guardada');caeaCargar(window._caeaCuit);}catch(e){toast(e.message,true);}
+}
+async function caeaAccion(a){
+  try{const r=await api(`/api/caea/${window._caeaCuit}/${a}`,{method:'POST',body:'{}'});
+    toast(a==='solicitar'?(r.quincenas||[]).map(q=>`${q.periodo}-${q.orden}: ${q.estado.replace('_',' ')}`).join(' · '):`Informados: ${r.informe.informados}, errores: ${r.informe.errores}`);caeaCargar(window._caeaCuit);}
+  catch(e){toast(e.message,true);}
+}
+
 /* ---------- COMPROBANTES ---------- */
 async function vComprobantes(){
   const v=$('#view');const {comprobantes}=await api('/api/comprobantes');

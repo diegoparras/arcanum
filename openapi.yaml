@@ -556,6 +556,20 @@ paths:
   /api/cola/{id}/cancelar:
     post: { tags: [Contingencia], summary: Cancela un item que todavia no salio, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: item }, '409': { description: ya emitido } } }
 
+  /api/caea/{cuit}:
+    get: { tags: [Contingencia], summary: "CAEA del CUIT: config, codigos por quincena y comprobantes CAEA sin informar", parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "caea: { config, caeas, pendientes }" } } }
+  /api/caea/{cuit}/config:
+    put:
+      tags: [Contingencia]
+      summary: Prende o apaga CAEA para el CUIT (admin+). El punto de venta se valida en ARCA (EmisionTipo CAEA)
+      parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { activo: { type: boolean }, puntoVenta: { type: integer }, minutosEspera: { type: integer, minimum: 5 } } } } } }
+      responses: { '200': { description: config }, '400': { description: punto de venta inexistente, bloqueado o no CAEA }, '503': { description: no se pudo validar con ARCA } }
+  /api/caea/{cuit}/solicitar:
+    post: { tags: [Contingencia], summary: Pide o recupera el CAEA de la quincena en curso y la proxima, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "quincenas: [{ periodo, orden, estado: obtenido|ya_estaba|todavia_no }]" } } }
+  /api/caea/{cuit}/informar:
+    post: { tags: [Contingencia], summary: "Informa a ARCA lo emitido con CAEA y los CAEA vencidos sin movimiento", parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "informe: { informados, errores }, sinMovimiento" } } }
+
   /api/wsaa/{cuit}/{service}:
     get:
       tags: [Servicios]

@@ -19,6 +19,9 @@ const EVENTOS = [
   'tope_monotributo', // un monotributista paso el 80% o el 100% de su categoria, o toca recategorizar
   'comprobante_encolado', // ARCA no respondia: el comprobante quedo en la cola de contingencia
   'cola_requiere_humano', // un comprobante de la cola necesita una decision (fecha vencida, error)
+  'caea_obtenido', // se obtuvo el CAEA de una quincena
+  'caea_informe_pendiente', // falta informar comprobantes CAEA (o sin movimiento) y la fecha tope esta a 2 dias
+  'caea_informe_error', // ARCA rechazo el informe de un comprobante CAEA
 ];
 
 async function listar() {
