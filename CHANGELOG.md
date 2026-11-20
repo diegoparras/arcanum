@@ -3,6 +3,11 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.9.5] - 2026-11-20
+
+### Corregido
+- PDF modelo ARCA: el CAE ya no toca el borde de la hoja y el texto bajo el isologo se lee.
+
 ## [0.9.4] - 2026-11-20
 
 ### Nuevo
