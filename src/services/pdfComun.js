@@ -20,6 +20,15 @@ const TIPOS = {
 };
 const LETRA = { 1: 'A', 2: 'A', 3: 'A', 6: 'B', 7: 'B', 8: 'B', 11: 'C', 12: 'C', 13: 'C', 51: 'M', 52: 'M', 53: 'M', 19: 'E' };
 const EMISOR_COND = { RI: 'Responsable Inscripto', MONOTRIBUTO: 'Responsable Monotributo', MONOTRIBUTISTA: 'Responsable Monotributo', EXENTO: 'IVA Sujeto Exento' };
+/**
+ * Condicion frente al IVA del emisor para el PDF. La cargada manda; sin dato se deduce de la letra:
+ * una C la emite un monotributista (o exento), nunca un Responsable Inscripto.
+ */
+function condicionEmisor(emisor, tipoCbte) {
+  const cargada = EMISOR_COND[String((emisor && emisor.condicionIva) || '').toUpperCase()];
+  if (cargada) return cargada;
+  return LETRA[Number(tipoCbte)] === 'C' ? 'Responsable Monotributo' : 'Responsable Inscripto';
+}
 const DOC_TIPO = { 80: 'CUIT', 86: 'CUIL', 87: 'CDI', 96: 'DNI', 99: 'Consumidor Final' };
 
 function money(n) {
@@ -60,4 +69,4 @@ async function qrUrl(cmp) {
   return 'https://www.afip.gob.ar/fe/qr/?p=' + p;
 }
 
-module.exports = { ARCA_PATHS, TIPOS, LETRA, EMISOR_COND, DOC_TIPO, money, ymd, isoFecha, qrUrl };
+module.exports = { ARCA_PATHS, TIPOS, LETRA, EMISOR_COND, condicionEmisor, DOC_TIPO, money, ymd, isoFecha, qrUrl };

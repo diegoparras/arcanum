@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const wsfev1 = require('./wsfev1');
 const padron = require('./padron');
 const emisores = require('./emisores');
+const datosImpresion = require('./datosImpresion');
 const reglas = require('./reglas-comprobante');
 const { analizarPadron } = require('./contribuyente');
 const { config } = require('../config');
@@ -182,8 +183,14 @@ async function vistaPrevia(cuit, inv) {
   // Condicion del emisor y del receptor (padron, si es CUIT) -> letra sugerida.
   let emisorCondicion = '';
   try {
-    emisorCondicion = ((await emisores.get(emisor)).condicionIva || '').toUpperCase();
-  } catch { /* sin datos de emisor */ }
+    const { emisor: datosEmisor, faltan } = await datosImpresion.completarEmisor(emisor);
+    emisorCondicion = (datosEmisor.condicionIva || '').toUpperCase();
+    if (faltan.length) {
+      r.advertencias.push(`El PDF va a salir sin ${faltan.map((f) => f.etiqueta).join(', ')} del emisor: cargalos en Clientes > Datos fiscales${faltan.some((f) => !f.desdeArca) ? ' (Ingresos Brutos e inicio de actividades no los da ARCA por web service)' : ''}.`);
+    }
+  } catch {
+    try { emisorCondicion = ((await emisores.get(emisor)).condicionIva || '').toUpperCase(); } catch { /* sin datos de emisor */ }
+  }
   let receptorPadron = null;
   if (datos.receptor.tipoDocumento === 'CUIT' && cuitValido(datos.receptor.numeroDocumento)) {
     try {
@@ -191,6 +198,7 @@ async function vistaPrevia(cuit, inv) {
       const a = analizarPadron(p);
       receptorPadron = {
         nombre: a.nombre,
+        domicilio: datosImpresion.fichaDesdePadron(p).domicilio,
         estadoClave: a.estadoClave,
         condicionIVA: a.condicionIVA,
         condicionIvaReceptorId: reglas.idDesdeTipoContribuyente(a.tipoContribuyente),
@@ -233,6 +241,8 @@ async function vistaPrevia(cuit, inv) {
   if (cuerpo.condicionIvaReceptor == null && receptorPadron && receptorPadron.condicionIvaReceptorId) {
     cuerpo.condicionIvaReceptor = receptorPadron.condicionIvaReceptorId;
   }
+  if (receptorPadron && !cuerpo.receptorNombre && receptorPadron.nombre && receptorPadron.nombre !== 'N/A') cuerpo.receptorNombre = receptorPadron.nombre;
+  if (receptorPadron && !cuerpo.receptorDomicilio && receptorPadron.domicilio) cuerpo.receptorDomicilio = receptorPadron.domicilio;
 
   return {
     valido: r.problemas.length === 0,

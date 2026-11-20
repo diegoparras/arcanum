@@ -38,6 +38,7 @@ const webhooks = require('./services/webhooks');
 const lotes = require('./services/lotes');
 const apikeys = require('./auth/apikeys');
 const vistaPrevia = require('./services/vistaPrevia');
+const datosImpresion = require('./services/datosImpresion');
 const { crearLimitador, crearDetector } = require('./auth/limites');
 const { requireRole, assertCuitAllowed, scopedRequiresCuit, assertPuedeEscribir } = require('./auth/permisos');
 const { crearServidor: crearServidorMcp } = require('./mcp/servidor');
@@ -530,7 +531,15 @@ async function route(req, res, url) {
     }
     // GET/PUT /api/tenants/:cuit/emisor  -> datos fiscales del emisor (encabezado del PDF)
     if (seg[2] && seg[3] === 'emisor') {
-      if (req.method === 'GET') return sendJson(res, 200, { ok: true, emisor: await emisores.get(seg[2]) });
+      // POST /api/tenants/:cuit/emisor/completar -> trae de ARCA (padron) lo que falte, sin pisar lo cargado
+      if (req.method === 'POST' && seg[4] === 'completar' && !seg[5]) {
+        return sendJson(res, 200, { ok: true, ...(await datosImpresion.completarEmisor(seg[2], { forzar: true })) });
+      }
+      if (seg[4]) return false;
+      if (req.method === 'GET') {
+        const emisor = await emisores.get(seg[2]);
+        return sendJson(res, 200, { ok: true, emisor, faltan: datosImpresion.faltantesEmisor(emisor) });
+      }
       if (req.method === 'PUT') {
         const body = await readJsonBody(req);
         return sendJson(res, 200, { ok: true, emisor: await emisores.set(seg[2], body) });
@@ -601,7 +610,15 @@ async function route(req, res, url) {
       // Modelo y nombre: los del pedido (?modelo, ?nombre, ?copias), si no los elegidos al facturar,
       // si no el modelo de ARCA y su nombre (CUIT_TIPO_PV_NUMERO.pdf).
       const elegido = pdf.preferencias({ ...(cmp.raw && cmp.raw.pdf), ...(q.get('modelo') ? { modelo: q.get('modelo') } : {}), ...(q.get('nombre') ? { nombreArchivo: q.get('nombre') } : {}) });
-      const buf = await pdf.generar(cmp, await emisores.get(cmp.cuit), { modelo: elegido.modelo, copias: q.get('copias') || 3 });
+      // Lo que falte y ARCA expone (padron) se completa y se guarda; si el padron no contesta, sale igual.
+      const { emisor } = await datosImpresion.completarEmisor(cmp.cuit).catch(() => ({ emisor: null }));
+      const raw = cmp.raw || {};
+      const extra = await datosImpresion.completarReceptor(cmp.cuit, { tipoDocReceptor: cmp.doc_tipo, nroDocReceptor: cmp.doc_nro, receptorNombre: raw.receptorNombre || raw.razonSocialReceptor, receptorDomicilio: raw.receptorDomicilio });
+      if (Object.keys(extra).length) {
+        cmp.raw = { ...raw, ...extra };
+        await comprobantes.completarRaw(cmp.id, extra).catch(() => {});
+      }
+      const buf = await pdf.generar(cmp, emisor || await emisores.get(cmp.cuit), { modelo: elegido.modelo, copias: q.get('copias') || 3 });
       res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': pdf.contentDisposition(pdf.nombreArchivo(cmp, elegido.nombreArchivo)) });
       return res.end(buf);
     }

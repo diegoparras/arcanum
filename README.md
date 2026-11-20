@@ -225,6 +225,8 @@ Por defecto el PDF es **igual al de ARCA** ("Comprobantes en línea": original, 
 
 `GET /api/comprobantes/:cuit/:pv/:tipo/:nro/pdf` respeta lo elegido; `?modelo=`, `?nombre=` y `?copias=1..3` lo pisan para esa descarga.
 
+**Datos del encabezado.** Lo que ARCA expone por web service se completa solo desde el padrón (constancia de inscripción): razón social, domicilio y condición frente al IVA del emisor (botón **Traer de ARCA** en Clientes > Datos fiscales, o al generar el PDF si faltan), y nombre y domicilio del receptor con CUIT (al emitir, o al generar el PDF de uno ya emitido). Nunca se pisa lo cargado a mano. **Ingresos Brutos** y **fecha de inicio de actividades** no los da ARCA por web service: se cargan una vez en Datos fiscales; la vista previa avisa si faltan. Sin condición cargada, una factura C sale como "Responsable Monotributo", nunca como inscripto.
+
 ## Contingencia: que la facturación no se corte
 
 - **Cola**: emitiendo con `"contingencia": true` (o con el tilde de Emitir), si ARCA no responde el comprobante queda en la cola (`202`) y sale solo cuando vuelve (el daemon reintenta con espera creciente y en el acto con `arca_restablecido`). Si el pedido llegó a ARCA pero la respuesta no volvió, antes de reintentar se consulta ese número: si ARCA lo otorgó, se **adopta ese CAE**. La fecha nunca cambia sola: si ARCA ya no la acepta, el comprobante espera tu decisión ("emitir con fecha de hoy" o cancelar). Todo en la pestaña **Contingencia**.

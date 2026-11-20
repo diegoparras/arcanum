@@ -13,7 +13,7 @@ const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
 const { config } = require('../config');
 const { condicionIvaLabel } = require('./reglas-comprobante');
-const { ARCA_PATHS, LETRA, EMISOR_COND, DOC_TIPO, ymd, qrUrl } = require('./pdfComun');
+const { ARCA_PATHS, LETRA, condicionEmisor, DOC_TIPO, ymd, qrUrl } = require('./pdfComun');
 
 const NEGRO = '#000000';
 const GRIS_TABLA = '#cccccc';
@@ -69,7 +69,7 @@ function pagina(doc, cmp, emisor, copia, qrPng) {
   y = 132;
   doc.font('Helvetica-Bold').fontSize(8.5).text('Domicilio Comercial:', L + 8, y, { width: 90 });
   doc.font('Helvetica').text(emisor.domicilio || '', L + 98, y, { width: MID - L - 106 });
-  const condEmisor = EMISOR_COND[String(emisor.condicionIva || '').toUpperCase()] || 'Responsable Inscripto';
+  const condEmisor = condicionEmisor(emisor, tipo);
   etiquetaValor(doc, L + 8, 161, 'Condición frente al IVA:', condEmisor, { negritaValor: true });
 
   // Comprobante (derecha)
@@ -106,8 +106,9 @@ function pagina(doc, cmp, emisor, copia, qrPng) {
   const condRec = condRecId ? condicionIvaLabel(condRecId) : (docTipo === 99 ? 'Consumidor Final' : '');
   doc.font('Helvetica-Bold').fontSize(7.5).text('Condición frente al IVA:', L + 6, y + 25);
   doc.font('Helvetica').fontSize(7.5).text(condRec || '', L + 108, y + 25, { width: 190 });
-  doc.font('Helvetica-Bold').fontSize(7.5).text('Domicilio:', 312, y + 25, { continued: true })
-    .font('Helvetica').text(` ${raw.receptorDomicilio || ''}`, { width: R - 320 });
+  // Etiqueta y valor por separado: un domicilio largo corta dentro del recuadro (no lo pisa).
+  doc.font('Helvetica-Bold').fontSize(7.5).text('Domicilio:', 312, y + 25, { lineBreak: false });
+  doc.font('Helvetica').fontSize(7.5).text(raw.receptorDomicilio || '', 352, y + 25, { width: R - 352 - 8, height: 18, ellipsis: true });
   doc.font('Helvetica-Bold').fontSize(7.5).text('Condición de venta:', L + 6, y + 43, { continued: true })
     .font('Helvetica').text(`    ${raw.condicionVenta || 'Contado'}`, { lineBreak: false });
   y += 58 + 8;

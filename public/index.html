@@ -249,22 +249,36 @@ async function crearCliente(){
     toast('Cliente creado'); }catch(e){toast(e.message,true);}
 }
 async function editarEmisor(cuit){
-  let e={};try{ e=(await api('/api/tenants/'+cuit+'/emisor')).emisor||{}; }catch{}
+  let e={},faltan=[];try{ const r=await api('/api/tenants/'+cuit+'/emisor'); e=r.emisor||{}; faltan=r.faltan||[]; }catch{}
+  const a=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   modal(`<h3>Datos fiscales del emisor · <span class="mono">${cuit}</span></h3>
     <p class="hint">Van en el encabezado legal del PDF. Se guardan <strong>por CUIT</strong>, así cada cliente sale con sus propios datos.</p>
-    <label>Razón social</label><input id="em_rs" value="${e.razonSocial||''}">
-    <label>Nombre de fantasía</label><input id="em_nf" value="${e.nombreFantasia||''}">
-    <label>Domicilio comercial</label><input id="em_dom" value="${e.domicilio||''}">
+    <div id="em_aviso">${faltan.length?`<p class="hint"><span class="tag warn">FALTAN</span> ${esc(faltan.map(f=>f.etiqueta).join(', '))}</p>`:''}</div>
+    <div class="row"><button onclick="traerEmisorDeArca('${cuit}')">Traer de ARCA</button>
+    <span class="hint">Razón social, domicilio y condición frente al IVA salen del padrón. Completa solo lo vacío.</span></div>
+    <label>Razón social</label><input id="em_rs" value="${a(e.razonSocial)}">
+    <label>Nombre de fantasía</label><input id="em_nf" value="${a(e.nombreFantasia)}">
+    <label>Domicilio comercial</label><input id="em_dom" value="${a(e.domicilio)}">
     <div class="f2"><div><label>Condición frente al IVA</label><select id="em_civa">
       <option value="">— elegir —</option>
       <option value="RI" ${e.condicionIva==='RI'?'selected':''}>Responsable Inscripto</option>
       <option value="MONOTRIBUTO" ${e.condicionIva==='MONOTRIBUTO'?'selected':''}>Responsable Monotributo</option>
       <option value="EXENTO" ${e.condicionIva==='EXENTO'?'selected':''}>IVA Sujeto Exento</option></select></div>
-    <div><label>Ingresos Brutos</label><input id="em_iibb" value="${e.iibb||''}"></div></div>
-    <div class="f2"><div><label>Inicio de actividades</label><input id="em_ia" placeholder="2010-01-01" value="${e.inicioActividades||''}"></div>
+    <div><label>Ingresos Brutos</label><input id="em_iibb" placeholder="Número, Exento o Convenio Multilateral" value="${a(e.iibb)}"></div></div>
+    <div class="f2"><div><label>Inicio de actividades</label><input id="em_ia" type="date" value="${a(e.inicioActividades)}"></div>
     <div><label>&nbsp;</label><label class="chk" style="padding:9px 0"><input type="checkbox" id="em_mipyme" ${e.mipyme?'checked':''}> Es MiPyME (FCE)</label></div></div>
+    <p class="hint">Ingresos Brutos e inicio de actividades no los da ARCA por web service: copialos de tu constancia (ARCA / tu provincia).</p>
     <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarEmisor('${cuit}')">Guardar</button>
     <button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function traerEmisorDeArca(cuit){
+  try{ const r=await api('/api/tenants/'+cuit+'/emisor/completar',{method:'POST',body:'{}'});
+    if(r.error){ toast('ARCA no respondió: '+r.error,true); return; }
+    const e=r.emisor||{};const set=(id,v)=>{const el=$(id);if(el&&!el.value&&v)el.value=v;};
+    set('#em_rs',e.razonSocial);set('#em_dom',e.domicilio);if(!$('#em_civa').value&&e.condicionIva)$('#em_civa').value=e.condicionIva;
+    $('#em_aviso').innerHTML=r.faltan&&r.faltan.length?`<p class="hint"><span class="tag warn">FALTAN</span> ${esc(r.faltan.map(f=>f.etiqueta).join(', '))}</p>`:'';
+    toast(r.completados.length?'Completado desde ARCA: '+r.completados.length+' dato(s)':'No había nada para traer de ARCA');
+  }catch(e){ toast(e.message,true); }
 }
 async function guardarEmisor(cuit){
   const body={razonSocial:$('#em_rs').value,nombreFantasia:$('#em_nf').value,domicilio:$('#em_dom').value,
@@ -374,7 +388,9 @@ async function vEmitir(){
     <div class="f3"><div><label>Alícuota IVA</label><select id="e_alic" onchange="recalc()"><option value="5">21%</option><option value="4">10.5%</option><option value="6">5%</option><option value="3">27%</option><option value="9">0%</option></select></div>
     <div><label>IVA</label><input id="e_iva" class="mono" readonly></div>
     <div><label>Total</label><input id="e_total" class="mono" readonly></div></div>
-    <div class="f2"><div><label>Condición IVA del receptor</label><select id="e_condiva"><option value="5">Consumidor Final</option><option value="1">Responsable Inscripto</option><option value="6">Monotributo</option><option value="4">Exento</option></select></div><div></div></div>
+    <div class="f2"><div><label>Condición IVA del receptor</label><select id="e_condiva"><option value="5">Consumidor Final</option><option value="1">Responsable Inscripto</option><option value="6">Monotributo</option><option value="4">Exento</option></select></div>
+    <div><label>Nombre / Razón social del receptor</label><input id="e_recnom" placeholder="Con CUIT: del padrón, si lo dejás vacío"></div></div>
+    <label>Domicilio del receptor</label><input id="e_recdom" placeholder="Con CUIT: del padrón, si lo dejás vacío">
     <div class="f2"><div><label>Modelo del PDF</label><select id="e_pdfmodelo"><option value="arca">Igual al de ARCA</option><option value="arcanum">Arcanum</option></select></div>
     <div><label>Nombre del archivo</label><input id="e_pdfnombre" placeholder="El de ARCA: CUIT_TIPO_PV_NUMERO.pdf" oninput="nombrePdfAyuda()"></div></div>
     <label class="chk" style="margin-top:12px"><input type="checkbox" id="e_contingencia" checked> Si ARCA no responde, dejarlo en cola y emitirlo solo cuando vuelva</label>
@@ -394,6 +410,7 @@ function cuerpoEmision(){
     tipoDocReceptor:+$('#e_doctipo').value,nroDocReceptor:$('#e_docnro').value,condicionIvaReceptor:+$('#e_condiva').value,
     importeNeto:tipoC?0:neto,importeIva:tipoC?0:iva,importeTotal:tipoC?neto+iva:neto+iva,
     alicuotasIva:tipoC?[]:[{id:alic,baseImponible:neto,importe:iva}],
+    receptorNombre:$('#e_recnom').value.trim()||undefined,receptorDomicilio:$('#e_recdom').value.trim()||undefined,
     pdf:{modelo:$('#e_pdfmodelo').value,nombreArchivo:$('#e_pdfnombre').value.trim()||undefined},
     contingencia:$('#e_contingencia').checked};
   if(tipoC){body.importeNeto=+(neto+iva).toFixed(2);body.importeIva=0;body.importeTotal=+(neto+iva).toFixed(2);}
@@ -408,6 +425,8 @@ async function previsualizar(){
   $('#e_result').innerHTML='<p class="hint">Revisando con ARCA…</p>';
   try{const {vistaPrevia:p}=await api('/api/wsfev1/comprobantes/vista-previa',{method:'POST',body:JSON.stringify(cuerpoEmision())});
     const li=a=>a.map(x=>`<li>${esc(x)}</li>`).join('');
+    const pp=p.receptor&&p.receptor.padron;
+    if(pp){ if(!$('#e_recnom').value&&pp.nombre&&pp.nombre!=='N/A')$('#e_recnom').value=pp.nombre; if(!$('#e_recdom').value&&pp.domicilio)$('#e_recdom').value=pp.domicilio; }
     const rec=p.receptor&&p.receptor.padron?`<tr><th>Receptor</th><td>${esc(p.receptor.padron.nombre||'')} <span class="hint">${esc(p.receptor.padron.condicionIVA||'')}</span></td></tr>`:'';
     $('#e_result').innerHTML=`<div class="card"><span class="tag ${p.valido?'ok':'no'}">${p.valido?'LISTO PARA EMITIR':'CON PROBLEMAS'}</span> <span class="hint">No se emitió nada.</span>
       <table style="margin-top:10px">${p.comprobante?`<tr><th>Comprobante</th><td class="mono">${esc(p.comprobante)}</td></tr>`:''}

@@ -54,4 +54,9 @@ async function exportCsv(filters) {
   return lines.join('\n');
 }
 
-module.exports = { get, list, exportCsv };
+/** Agrega datos para la impresion (receptor) al raw de un comprobante ya emitido. */
+async function completarRaw(id, campos) {
+  await db.query("UPDATE comprobantes SET raw = COALESCE(raw, '{}'::jsonb) || $1::jsonb WHERE id = $2", [JSON.stringify(campos), id]);
+}
+
+module.exports = { get, list, exportCsv, completarRaw };

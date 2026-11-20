@@ -3,6 +3,26 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.1] - 2026-11-20
+
+### Corregido
+- **PDF con datos del encabezado vacios**: razon social, domicilio y condicion frente al IVA del
+  emisor se completan desde el padron de ARCA (boton **Traer de ARCA** en Datos fiscales, y al
+  generar el PDF si faltan), sin pisar lo cargado a mano. Nombre y domicilio del receptor con CUIT
+  se toman del padron al emitir y al generar el PDF de un comprobante ya emitido (con tope de
+  espera: nunca frena la emision). Ingresos Brutos e inicio de actividades (que ARCA no expone por
+  web service) se cargan en Datos fiscales; la vista previa avisa lo que falta.
+- **Factura C con "Responsable Inscripto"**: sin condicion cargada, el emisor de una C sale como
+  "Responsable Monotributo".
+- Domicilio largo del receptor ya no se sale del recuadro en el modelo ARCA.
+- Contingencia sin `idempotencyKey` del cliente: el primer intento y la cola usan la misma clave
+  (podia salir un segundo CAE para la misma venta tras un corte; lo encontro el E2E).
+
+### Nuevo
+- Emitir (UI): campos de nombre y domicilio del receptor (la vista previa los llena del padron).
+- MCP: `receptorDomicilio` en la emision. `GET /api/tenants/:cuit/emisor` devuelve `faltan`;
+  `POST /api/tenants/:cuit/emisor/completar`.
+
 ## [0.10.0] - 2026-11-20
 
 ### Nuevo

@@ -215,6 +215,9 @@ async function authorizeInvoice(cuit, inv) {
   const tipoCbte = parseInt(inv.tipoComprobante, 10);
   const concepto = parseInt(inv.concepto ?? 1, 10);
   validarIdentificacionConsumidorFinal(inv, tipoCbte);
+  // Nombre y domicilio del receptor con CUIT para el PDF, del padron si no vinieron (best-effort,
+  // con tope de espera: nunca frena ni hace fallar la emision).
+  inv = { ...inv, ...(await require('./datosImpresion').completarReceptor(c, inv)) };
 
   // Lock por (cuit, entorno, ptoVta, tipoCbte): serializa la emision para que dos
   // requests no lean el mismo "ultimo autorizado" y colisionen el numero.

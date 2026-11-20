@@ -17,7 +17,7 @@ const TINTA = '#1c1a17';
 const GRIS = '#6b6358';
 const LINEA = '#c9c3b8';
 
-const { ARCA_PATHS, TIPOS, LETRA, EMISOR_COND, DOC_TIPO, money, ymd, isoFecha, qrUrl } = require('./pdfComun');
+const { ARCA_PATHS, TIPOS, LETRA, condicionEmisor, DOC_TIPO, money, ymd, isoFecha, qrUrl } = require('./pdfComun');
 
 // --- Codigo de barras Interleaved 2 of 5 (RG 1415) ---
 const I25 = { 0: 'NNWWN', 1: 'WNNNW', 2: 'NWNNW', 3: 'WWNNN', 4: 'NNWNW', 5: 'WNWNN', 6: 'NWWNN', 7: 'NNNWW', 8: 'WNNWN', 9: 'NWNWN' };
@@ -113,7 +113,7 @@ async function generarArcanum(cmp, emisorDe) {
   doc.font('Helvetica').fontSize(8.5).fillColor(GRIS);
   if (emisor.nombreFantasia) { doc.text(emisor.nombreFantasia, L + 10, y, { width: 258 }); y += 12; }
   if (emisor.domicilio) { doc.text(emisor.domicilio, L + 10, y, { width: 258 }); y += 12; }
-  const condEmisor = EMISOR_COND[emisor.condicionIva] || 'Responsable Inscripto';
+  const condEmisor = condicionEmisor(emisor, cmp.tipo_cbte);
   doc.text(`Condicion frente al IVA: ${condEmisor}`, L + 10, y, { width: 258 }); y += 12;
   if (emisor.iibb) { doc.text(`Ingresos Brutos: ${emisor.iibb}`, L + 10, y); y += 12; }
   if (emisor.inicioActividades) { doc.text(`Inicio de actividades: ${ymd(emisor.inicioActividades)}`, L + 10, y); y += 12; }

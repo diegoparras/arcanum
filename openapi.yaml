@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arcanum — Gateway REST para ARCA (ex-AFIP)
-  version: 0.10.0
+  version: 0.10.1
   description: >
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
@@ -184,6 +184,24 @@ paths:
       parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
       requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { nombre: { type: string }, keyPem: { type: string }, certPem: { type: string } } } } } }
       responses: { '200': { description: ok } }
+  /api/tenants/{cuit}/emisor:
+    get:
+      tags: [Clientes]
+      summary: Datos fiscales del emisor para el PDF y cuales faltan
+      parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: "emisor { razonSocial, nombreFantasia, domicilio, condicionIva (RI|MONOTRIBUTO|EXENTO), iibb, inicioActividades, mipyme }, faltan [{ campo, etiqueta, desdeArca }]" } }
+    put:
+      tags: [Clientes]
+      summary: Guarda los datos fiscales del emisor (rol operador+)
+      parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { razonSocial: { type: string }, nombreFantasia: { type: string }, domicilio: { type: string }, condicionIva: { type: string, enum: [RI, MONOTRIBUTO, EXENTO] }, iibb: { type: string }, inicioActividades: { type: string, format: date }, mipyme: { type: boolean } } } } } }
+      responses: { '200': { description: ok } }
+  /api/tenants/{cuit}/emisor/completar:
+    post:
+      tags: [Clientes]
+      summary: Completa desde el padron de ARCA razon social, domicilio y condicion frente al IVA que esten vacios (no pisa lo cargado). Ingresos Brutos e inicio de actividades no los da ARCA.
+      parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: "emisor, completados [campo], faltan [...], error (si el padron no respondio)" } }
   /api/tenants/{cuit}:
     delete:
       tags: [Clientes]
