@@ -12,6 +12,7 @@
 //   GET      /api/mis-comprobantes/:cuit                comprobantes bajados (cualquier rol, con scope)
 //   GET      /api/mis-comprobantes/:cuit/export.csv
 //   GET      /api/mis-comprobantes/:cuit/corridas
+//   GET      /api/mis-comprobantes/:cuit/rango?tipo=      proxima sincronizacion (incremental)
 //   GET/PUT/DELETE /api/mis-comprobantes/:cuit/credencial   (PUT/DELETE admin+)
 //   POST     /api/mis-comprobantes/:cuit/sincronizar    admin+ u operador con ese CUIT -> 202
 //   POST     /api/mis-comprobantes/:cuit/constatar      constata los recibidos pendientes (WSCDC + APOC)
@@ -128,6 +129,10 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       }
       if (req.method === 'POST' && seg[4] === 'tomar-control') return json(res, 200, { ok: true, ...(await fb().tomarControl(c.token_fb)) });
       if (req.method === 'POST' && seg[4] === 'devolver') return json(res, 200, { ok: true, ...(await fb().devolver(c.token_fb)) });
+      if (req.method === 'POST' && (seg[4] === 'ok' || seg[4] === 'no')) {
+        await servicio().responderOk(c.id, seg[4] === 'ok');
+        return json(res, 200, { ok: true });
+      }
       return false;
     }
 
@@ -152,7 +157,7 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       return json(res, 200, { ok: true, corridas: await servicio().corridas(cuit, q.get('limite')) });
     }
     if (seg[3] === 'credencial') {
-      if (req.method === 'GET') return json(res, 200, { ok: true, credencial: await servicio().estadoCredencial(cuit) });
+      if (req.method === 'GET') return json(res, 200, { ok: true, credencial: await servicio().estadoCredencial(cuit), diaria: require('../daemon').horaMcDiaria() });
       requireRole(principal, 'superadmin', 'admin');
       if (req.method === 'PUT') {
         const b = await readJsonBody(req);
@@ -169,6 +174,9 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       puedeOperar(principal, cuit);
       const b = await readJsonBody(req);
       return json(res, 200, { ok: true, constatacion: await cons().constatarRecibidos(cuit, { limite: b.limite }) });
+    }
+    if (req.method === 'GET' && seg[3] === 'rango') {
+      return json(res, 200, { ok: true, rango: await servicio().rangoSugerido(cuit, q.get('tipo') || 'ambos') });
     }
     if (req.method === 'POST' && seg[3] === 'sincronizar') {
       puedeOperar(principal, cuit);

@@ -11,14 +11,23 @@
 // La clave fiscal vive cifrada con el vault. Se descifra solo para armar `secretos` del pedido
 // a Fisherboy y nunca se registra, ni se devuelve por la API.
 
-const { RECETA_DEFAULT, DOMINIOS } = require('./misComprobantes.receta');
+const { RECETA_DEFAULT, DOMINIOS, OK_AUTOMATICO } = require('./misComprobantes.receta');
 const { desdeArchivo } = require('./mcParser');
 
-const ESTADOS_VIVOS = ['iniciando', 'corriendo', 'esperando_humano', 'humano'];
+const ESTADOS_VIVOS = ['iniciando', 'corriendo', 'esperando_humano', 'humano', 'esperando_ok'];
 const TIPOS = { emitidos: 'emitido', recibidos: 'recibido' };
 const BOTON = { emitido: 'Emitidos', recibido: 'Recibidos' };
 const TIMEOUT_SESION_MS = 25 * 60 * 1000;
+// Si el registro de Fisherboy no suma ni una linea en este tiempo (y no hay una persona al
+// mando), la sesion esta trabada: se corta con el paso donde quedo en vez de esperar los 25 min.
+const SIN_AVANCE_MS = (Number(process.env.ARCANUM_MC_SIN_AVANCE_MIN) > 0 ? Number(process.env.ARCANUM_MC_SIN_AVANCE_MIN) : 5) * 60 * 1000;
 const TRAMO_DIAS = Number(process.env.ARCANUM_MC_TRAMO_DIAS) || 365;
+// Sincronizacion incremental: la primera trae los ultimos 12 meses completos (lo que necesitan
+// los topes de Monotributo); las siguientes arrancan en lo ultimo bajado menos un solape, porque
+// ARCA muestra algunos comprobantes dias despues de su fecha (CAEA, servicios con fecha atras).
+// Repetir dias no duplica: el guardado es sin duplicados.
+const MESES_PRIMERA = 12;
+const SOLAPE_DIAS = Number(process.env.ARCANUM_MC_SOLAPE_DIAS) >= 0 && process.env.ARCANUM_MC_SOLAPE_DIAS !== undefined && process.env.ARCANUM_MC_SOLAPE_DIAS !== '' ? Number(process.env.ARCANUM_MC_SOLAPE_DIAS) : 30;
 
 function err(message, httpStatus) {
   return Object.assign(new Error(message), { httpStatus });
@@ -35,6 +44,8 @@ function dia(s) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) throw err(`Fecha invalida: ${s} (use AAAA-MM-DD)`, 400);
   return new Date(`${s}T00:00:00Z`);
 }
+/** Fecha de hoy en Argentina (UTC-3), AAAA-MM-DD. */
+function hoyAr(d) { return iso(new Date(d.getTime() - 3 * 3600000)); }
 function ddmmaaaa(s) { const [a, m, d] = s.split('-'); return `${d}/${m}/${a}`; }
 
 /** Parte [desde, hasta] en tramos de a lo sumo `maxDias` dias (ARCA limita el rango). */
@@ -79,6 +90,19 @@ function repoSql() {
     async borrarCredencial(cuit) {
       await db.query('DELETE FROM mc_credenciales WHERE cuit = $1', [cuit]);
     },
+    /** Hasta que fecha se bajo cada tipo, segun las corridas que terminaron bien. */
+    async cubierto(cuit) {
+      const { rows } = await db.query(
+        `SELECT tipo, to_char(MAX(hasta), 'YYYY-MM-DD') AS hasta FROM mc_corridas
+          WHERE cuit = $1 AND estado = 'terminado' GROUP BY tipo`, [cuit]);
+      const out = { emitido: null, recibido: null };
+      const mayor = (a, b) => (!a || (b && b > a) ? b : a);
+      for (const r of rows) {
+        if (r.tipo === 'emitidos' || r.tipo === 'ambos') out.emitido = mayor(out.emitido, r.hasta);
+        if (r.tipo === 'recibidos' || r.tipo === 'ambos') out.recibido = mayor(out.recibido, r.hasta);
+      }
+      return out;
+    },
     async conSincronizacion() {
       const { rows } = await db.query('SELECT cuit FROM mc_credenciales WHERE sincronizar = true AND rechazada_at IS NULL ORDER BY cuit');
       return rows.map((r) => r.cuit);
@@ -115,7 +139,7 @@ function repoSql() {
       const cols = Object.keys(campos);
       if (!cols.length) return null;
       const set = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
-      const vals = cols.map((c) => (c === 'log' ? JSON.stringify(campos[c]) : campos[c]));
+      const vals = cols.map((c) => (c === 'log' || c === 'progreso' ? JSON.stringify(campos[c]) : campos[c]));
       const { rows } = await db.query(`UPDATE mc_corridas SET ${set} WHERE id = $1 RETURNING *`, [id, ...vals]);
       return rows[0];
     },
@@ -168,7 +192,7 @@ function repoSql() {
     },
     async corridas(cuit, limite = 20) {
       const { rows } = await db.query(
-        `SELECT id, cuit, tipo, desde, hasta, estado, origen, usuario, iniciada_at, terminada_at, cantidad, error
+        `SELECT id, cuit, tipo, desde, hasta, estado, origen, usuario, iniciada_at, terminada_at, cantidad, error, progreso
            FROM mc_corridas WHERE cuit = $1 ORDER BY id DESC LIMIT $2`, [cuit, Math.min(Number(limite) || 20, 200)]);
       return rows;
     },
@@ -176,13 +200,53 @@ function repoSql() {
 }
 
 /** ARCA no acepto la clave: fallo el paso marcado verifica_login, o el aviso de la pagina lo dice. */
+/**
+ * En que paso de la receta va la sesion, a partir del registro de Fisherboy.
+ * `paso` es el que se esta ejecutando (el siguiente al ultimo que salio bien, o el que fallo y
+ * la IA esta reintentando); `ia` cuenta las acciones de la IA desde ese fallo. La descripcion
+ * sale del `objetivo` del paso con las variables reemplazadas; un secreto nunca se muestra.
+ */
+function progresoDe(log, pasos, variables = {}) {
+  const total = (pasos || []).length;
+  const lineas = Array.isArray(log) ? log : [];
+  let ultima = -1;
+  for (let i = lineas.length - 1; i >= 0; i -= 1) {
+    const l = lineas[i];
+    if (l && l.origen !== 'ia' && Number.isInteger(l.n)) { ultima = i; break; }
+  }
+  const ref = ultima >= 0 ? lineas[ultima] : null;
+  const fallo = !!(ref && ref.ok === false);
+  const paso = ref ? (fallo ? ref.n : Math.min(ref.n + 1, total || ref.n + 1)) : 1;
+  const ia = fallo ? lineas.slice(ultima + 1).filter((l) => l && l.origen === 'ia').length : 0;
+  const def = (pasos || [])[paso - 1] || {};
+  const descripcion = String(def.objetivo || def.do || '')
+    .replace(/\{\{secret:[A-Za-z0-9_]+\}\}/g, '')
+    .replace(/\{\{var:([A-Za-z0-9_]+)\}\}/g, (m, k) => (k === 'clave_fiscal' || variables[k] === undefined ? '' : String(variables[k])))
+    .replace(/\s{2,}/g, ' ').trim();
+  return { paso, total, descripcion, ia, error: fallo ? String(ref.error || '').slice(0, 200) : null };
+}
+
+/**
+ * La receta es RPA: pasos fijos verificados sobre la pagina real. La IA de Fisherboy (que toma
+ * un paso fallido y le manda la pagina a un modelo) queda apagada salvo ARCANUM_MC_IA=1: sin
+ * ella un paso roto falla enseguida y con un error claro, no se manda la pagina de ARCA a un
+ * modelo y no hay costo por intento.
+ */
+function iaPorEntorno(env = process.env) {
+  return env.ARCANUM_MC_IA === '1';
+}
+
+function plano(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
 function loginRechazado(st) {
   if ((st.log || []).some((l) => l && l.verifica_login && l.ok === false)) return true;
   return /clave|contrase|usuario/i.test(String(st.alerta || ''));
 }
 
 // --- el servicio --------------------------------------------------------------
-function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () => new Date() } = {}) {
+function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () => new Date(), sinAvanceMs = SIN_AVANCE_MS, ia = iaPorEntorno() } = {}) {
   const lanzados = new Set();
 
   async function receta() {
@@ -229,9 +293,37 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     return estadoCredencial(c);
   }
 
+  /**
+   * Rango de la proxima sincronizacion de `tipo` para el CUIT: si alguno de los tipos pedidos
+   * nunca se bajo, es la primera (12 meses completos); si no, arranca en lo ultimo bajado del
+   * tipo mas atrasado menos SOLAPE_DIAS. Siempre hasta hoy (Argentina).
+   */
+  async function rangoSugerido(cuit, tipo = 'ambos') {
+    const c = cuitDe(cuit);
+    if (!['emitidos', 'recibidos', 'ambos'].includes(tipo)) throw err('tipo: emitidos | recibidos | ambos', 400);
+    const cubierto = await repo.cubierto(c);
+    const hasta = hoyAr(ahora());
+    const tipos = tipo === 'ambos' ? ['emitido', 'recibido'] : [TIPOS[tipo]];
+    const fechas = tipos.map((t) => cubierto[t]);
+    if (fechas.some((f) => !f)) {
+      const h = dia(hasta);
+      const desde = iso(new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - MESES_PRIMERA, 1)));
+      return { desde, hasta, primera: true, cubierto };
+    }
+    const base = fechas.sort()[0];
+    let desde = iso(new Date(dia(base).getTime() - SOLAPE_DIAS * 86400000));
+    if (desde > hasta) desde = hasta;
+    return { desde, hasta, primera: false, cubierto };
+  }
+
   async function sincronizar(cuit, { tipo = 'ambos', desde, hasta, origen = 'manual', usuario } = {}) {
     const c = cuitDe(cuit);
     if (!['emitidos', 'recibidos', 'ambos'].includes(tipo)) throw err('tipo: emitidos | recibidos | ambos', 400);
+    if (!desde || !hasta) {
+      const r = await rangoSugerido(c, tipo);
+      desde = desde || r.desde;
+      hasta = hasta || r.hasta;
+    }
     tramos(desde, hasta); // valida fechas
     const cred = await repo.credencial(c);
     if (!cred || !cred.clave_cifrada) throw err('Este CUIT no tiene clave fiscal cargada en Mis Comprobantes', 400);
@@ -252,23 +344,48 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
   }
 
   async function correrSesion(id, corrida, cred, tipo, tramo, r, secretos, avisado) {
+    const variables = { cuit_login: cred.cuit_login || corrida.cuit, cuit: corrida.cuit, tipo_boton: BOTON[tipo], rango: `${ddmmaaaa(tramo.desde)} - ${ddmmaaaa(tramo.hasta)}` };
     const { token } = await fisherboy.iniciar({
       url: r.url,
       receta: r.pasos,
-      variables: { cuit_login: cred.cuit_login || corrida.cuit, cuit: corrida.cuit, tipo_boton: BOTON[tipo], rango: `${ddmmaaaa(tramo.desde)} - ${ddmmaaaa(tramo.hasta)}` },
+      variables,
       secretos,
       dominios: DOMINIOS,
-      ia: true,
+      ia,
     });
     await repo.actualizarCorrida(id, { token_fb: token, estado: 'corriendo', latido_at: ahora() });
     try {
       const fin = Date.now() + TIMEOUT_SESION_MS;
       let st;
+      let lineas = -1;
+      let avance = Date.now();
+      let okDado = false;
       for (;;) {
         st = await fisherboy.estado(token);
         if (['terminado', 'error', 'cerrado'].includes(st.estado)) break;
-        if (['corriendo', 'esperando_humano', 'humano'].includes(st.estado)) {
-          await repo.actualizarCorrida(id, { estado: st.estado, latido_at: ahora() });
+        const n = Array.isArray(st.log) ? st.log.length : 0;
+        const pideOk = st.estado === 'esperando_ok';
+        const pedido = pideOk ? { texto: String((st.ok_pedido && st.ok_pedido.texto) || '').slice(0, 120), motivo: String((st.ok_pedido && st.ok_pedido.motivo) || '').slice(0, 300) } : null;
+        const okSolo = pideOk && OK_AUTOMATICO.includes(plano(pedido.texto));
+        const conPersona = st.estado === 'humano' || st.estado === 'esperando_humano' || (pideOk && !okSolo);
+        if (n !== lineas || conPersona) { lineas = n; avance = Date.now(); }
+        const progreso = { ...progresoDe(st.log, r.pasos, variables), tipo, desde: tramo.desde, hasta: tramo.hasta, avance: new Date(avance).toISOString(), ok: pedido };
+        if (['corriendo', 'esperando_humano', 'humano', 'esperando_ok'].includes(st.estado)) {
+          await repo.actualizarCorrida(id, { estado: st.estado, latido_at: ahora(), progreso });
+        }
+        if (okSolo && !okDado) {
+          okDado = true;
+          await Promise.resolve(fisherboy.ok(token)).catch(() => {}); // 409 = ya no lo esperaba
+        } else if (pideOk && !okSolo && !avisado.ok) {
+          avisado.ok = true;
+          await webhooks.emitir('mis_comprobantes_fallo', { cuit: corrida.cuit, corrida: id, necesitaHumano: true, motivo: `Fisherboy pide un OK para tocar "${pedido.texto}"` }).catch(() => {});
+        }
+        if (!pideOk) okDado = false;
+        if (Date.now() - avance > sinAvanceMs) {
+          const min = Math.max(1, Math.round(sinAvanceMs / 60000));
+          const e = err(`Sin avance hace ${min} min en el paso ${progreso.paso} de ${progreso.total} (${progreso.descripcion})${progreso.error ? `: ${progreso.error}` : ''}. Se corto la sesion para no dejarla abierta.`, 504);
+          e.logFb = (st.log || []).slice(-40);
+          throw e;
         }
         if (st.estado === 'esperando_humano' && !avisado.hecho) {
           avisado.hecho = true;
@@ -288,7 +405,11 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
         throw e;
       }
       const archivos = st.archivos || [];
-      if (!archivos.length) throw err('La receta termino sin descargar nada de Mis Comprobantes', 502);
+      if (!archivos.length) {
+        const e = err('La receta termino sin descargar nada de Mis Comprobantes', 502);
+        e.logFb = (st.log || []).slice(-40);
+        throw e;
+      }
       let n = 0;
       for (const a of archivos) {
         const filas = desdeArchivo(await fisherboy.archivo(token, a.n), a.nombre, tipo);
@@ -332,6 +453,14 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     }
   }
 
+  /** La persona responde el OK que pidio Fisherboy (si = true). */
+  async function responderOk(id, si) {
+    const fila = await repo.corrida(Number(id));
+    if (!fila) throw err(`No existe la corrida ${id}`, 404);
+    if (fila.estado !== 'esperando_ok' || !fila.token_fb) throw err('La corrida no esta esperando un OK', 409);
+    return si ? fisherboy.ok(fila.token_fb) : fisherboy.no(fila.token_fb);
+  }
+
   async function exportarCsv(cuit, filtros) {
     const filas = await repo.listar(cuitDe(cuit), { ...filtros, limite: 5000 });
     const cols = ['tipo', 'fecha', 'cbte_tipo', 'punto_venta', 'numero_desde', 'numero_hasta', 'cae', 'doc_tipo', 'doc_nro', 'contraparte', 'moneda', 'tipo_cambio', 'neto_gravado', 'no_gravado', 'exento', 'iva', 'total'];
@@ -346,7 +475,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     receta, guardarReceta, restaurarReceta,
     estadoCredencial, guardarCredencial,
     borrarCredencial: async (cuit) => repo.borrarCredencial(cuitDe(cuit)),
-    sincronizar, seguir, lanzar,
+    sincronizar, seguir, lanzar, responderOk, rangoSugerido,
     /** Al arrancar: las corridas que seguian vivas perdieron su seguimiento (estaba en memoria). */
     marcarHuerfanas: async () => repo.marcarHuerfanas('Arcanum se reinicio durante la corrida: volve a sincronizar'),
     corrida: async (id) => repo.corrida(Number(id)),
@@ -370,4 +499,4 @@ function servicio() {
   return porDefecto;
 }
 
-module.exports = { crear, servicio, tramos, cuitDe, ESTADOS_VIVOS, RECETA_DEFAULT };
+module.exports = { crear, servicio, tramos, cuitDe, progresoDe, iaPorEntorno, ESTADOS_VIVOS, RECETA_DEFAULT };

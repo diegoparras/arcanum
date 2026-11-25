@@ -82,6 +82,7 @@ test('GET credencial nunca trae la clave y solo admin la carga', async () => {
     const r = await (await pedir(base, 'GET', '/api/mis-comprobantes/20263630743/credencial')).json();
     assert.strictEqual(r.credencial.cargada, true);
     assert.ok(!('clave' in r.credencial) && !('clave_cifrada' in r.credencial));
+    assert.ok(Number.isInteger(r.diaria.hora) && typeof r.diaria.activa === 'boolean');
     const put = await pedir(base, 'PUT', '/api/mis-comprobantes/20263630743/credencial', { cuitLogin: '20263630743', clave: 'secreta' });
     assert.strictEqual(put.status, 200);
     assert.ok(!(await put.text()).includes('secreta'));
@@ -146,5 +147,29 @@ test('constatacion: lista por JSON o CSV con scope, y constatar recibidos', asyn
   await conServidor(LECTURA_ACOTADA, { mc: mcFalso(), fisherboy: fbFalso(), constatacion }, async (base) => {
     assert.strictEqual((await pedir(base, 'POST', '/api/constatacion', { cuit: '20263630743', items: [{}] })).status, 403);
     assert.strictEqual((await pedir(base, 'POST', '/api/constatacion', { cuit: '30711111118', items: [{}] })).status, 200);
+  });
+});
+
+test('el OK que pide Fisherboy se responde desde Arcanum (si y no)', async () => {
+  const mc = mcFalso();
+  mc.responderOk = async (id, si) => { mc.llamadas.push(['ok', id, si]); return { ok: true }; };
+  await conServidor(OPERADOR, { mc, fisherboy: fbFalso() }, async (base) => {
+    // El operador solo opera su CUIT: la corrida 7 es de otro.
+    assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/corridas/7/ok')).status, 403);
+  });
+  await conServidor(ADMIN, { mc, fisherboy: fbFalso() }, async (base) => {
+    assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/corridas/7/ok')).status, 200);
+    assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/corridas/7/no')).status, 200);
+    assert.deepStrictEqual(mc.llamadas, [['ok', 7, true], ['ok', 7, false]]);
+  });
+});
+
+test('rango sugerido: respeta el cuit_allow y devuelve la proxima sincronizacion', async () => {
+  const mc = mcFalso();
+  mc.rangoSugerido = async (cuit, tipo) => ({ desde: '2026-10-26', hasta: '2026-11-25', primera: false, cuit, tipo });
+  await conServidor(OPERADOR, { mc, fisherboy: fbFalso() }, async (base) => {
+    assert.strictEqual((await pedir(base, 'GET', '/api/mis-comprobantes/20263630743/rango')).status, 403);
+    const r = await (await pedir(base, 'GET', '/api/mis-comprobantes/30711111118/rango?tipo=emitidos')).json();
+    assert.deepStrictEqual([r.rango.desde, r.rango.tipo], ['2026-10-26', 'emitidos']);
   });
 });

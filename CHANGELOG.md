@@ -32,6 +32,103 @@ Versionado semantico.
   de la clave. Constatar los recibidos de Mis Comprobantes, que guarda el resultado, sigue
   exigiendo operador.
 
+## [2.0.9] - 2026-11-25
+
+### Corregido
+- **Mis Comprobantes se abre por el buscador del portal de ARCA.** La receta tocaba el primer
+  link que dijera "Mis Comprobantes", y el carrusel de Novedades del portal puede tener un
+  video con ese nombre que abre YouTube (Fisherboy lo bloquea y la corrida fallaba en el paso
+  8). Ahora escribe "Mis Comprobantes" en el buscador y toca ese resultado, que esta siempre,
+  aunque el servicio no figure en "Mas utilizados". Verificado sobre el portal real.
+- En la credencial de ARCA, el campo de la clave fiscal quedaba mas abajo que el del CUIT:
+  la aclaracion "dejala vacia para no cambiarla" paso al texto de ayuda del campo.
+
+## [2.0.8] - 2026-11-25
+
+### Cambiado
+- **Mis Comprobantes corre como RPA puro, sin IA generativa.** La receta tiene todos sus
+  pasos verificados sobre la pagina real de ARCA, asi que la IA de respaldo de Fisherboy queda
+  apagada: si un paso falla, la corrida termina enseguida con un error claro, no se manda la
+  pagina de ARCA a ningun modelo y no hay costo por intento. Se puede volver a habilitar con
+  `ARCANUM_MC_IA=1`.
+
+## [2.0.7] - 2026-11-25
+
+### Corregido
+- **Mis Comprobantes no encontraba el boton para exportar.** La receta buscaba la clase
+  `.buttons-csv`, que el boton de ARCA no tiene; ahora lo busca por su titulo
+  ("Exportar como CSV"), verificado sobre la pagina real.
+- **La descarga reintenta una vez.** ARCA arma el ZIP en su servidor y el primer pedido puede
+  responder 503; la receta hace un intento, espera 5 segundos y vuelve a pedirlo. Si salen
+  los dos archivos, el guardado no duplica comprobantes.
+- Cuando la receta termina sin descargar nada, la corrida ahora guarda el registro de
+  Fisherboy para poder ver que paso.
+
+## [2.0.6] - 2026-11-25
+
+### Corregido
+- **Mis Comprobantes buscaba solo el dia de ayer.** El campo de fecha de ARCA es un calendario
+  que lee lo escrito recien cuando detecta una tecla; la receta cambiaba el texto sin teclas y
+  ARCA buscaba con su fecha por defecto (ayer). Ahora la receta toca una tecla despues de
+  cargar el rango y la busqueda sale con el periodo pedido.
+
+## [2.0.5] - 2026-11-25
+
+### Cambiado
+- **Mis Comprobantes sincroniza de forma incremental.** La primera vez baja los ultimos 12
+  meses (o desde la fecha que elijas, para traer mas historia) y lo guarda en la base. Las
+  siguientes, manuales o la diaria, arrancan en lo ultimo que se bajo de cada tipo, con 30
+  dias de solape (`ARCANUM_MC_SOLAPE_DIAS`) para tomar lo que ARCA muestra tarde; lo repetido
+  no se duplica. Si un dia la diaria falla, la siguiente retoma desde donde quedo.
+- La tarjeta **Sincronizar** propone ese rango y dice hasta que fecha esta bajado cada tipo.
+
+## [2.0.4] - 2026-11-25
+
+### Corregido
+- **Mis Comprobantes ya no se queda esperando un OK que nadie ve.** Fisherboy frena antes de
+  tocar un boton que podria no deshacerse (todo boton de envio, como "Buscar") y pide un OK.
+  Arcanum no conocia ese estado: la corrida parecia "Operando ARCA" sin avanzar hasta
+  cortarse. Ahora los botones que solo consultan (Buscar, Consultar, Filtrar) se aprueban
+  solos, y para cualquier otro la vista en vivo muestra "Pide tu OK" con el boton en
+  cuestion y las opciones **Si, dale** / **No**, avisa por webhook y no corta la corrida
+  mientras espera.
+- **El paso que abre Mis Comprobantes no toma mas el link al video de YouTube** que el
+  portal de ARCA tiene con el mismo nombre (Fisherboy lo bloqueaba y habia que recurrir a
+  la IA).
+
+## [2.0.3] - 2026-11-25
+
+### Agregado
+- **Se ve en que va la sincronizacion de Mis Comprobantes.** Mientras corre, la vista en vivo
+  y la tabla de sincronizaciones dicen el paso de la receta (por ejemplo "Emitidos · Paso 13
+  de 16: Cargar el rango de fechas"), si ese paso fallo y la IA lo esta reintentando, y hace
+  cuanto fue el ultimo avance. Asi se distingue una corrida lenta de una trabada.
+- **Una corrida trabada se corta sola.** Si el registro de Fisherboy no avanza en 5 minutos
+  (`ARCANUM_MC_SIN_AVANCE_MIN`) y no hay una persona al mando, la sesion se cierra y el error
+  dice en que paso quedo y por que fallo, en vez de esperar los 25 minutos del tope.
+
+## [2.0.2] - 2026-11-25
+
+### Cambiado
+- **La casilla de sincronizacion diaria dice a que hora corre** (por ejemplo "todos los dias
+  a las 6:00"), tomando la hora real del servidor (`ARCANUM_MC_HORA`, hora argentina). Si el
+  servidor tiene la sincronizacion automatica apagada, la pantalla lo avisa.
+
+### Corregido
+- **Un valor invalido en `ARCANUM_MC_HORA` ya no apaga la corrida diaria.** Antes, algo como
+  `ARCANUM_MC_HORA=abc` o `24` hacia que la sincronizacion de Mis Comprobantes no corriera
+  nunca; ahora se usa la hora por defecto (6:00).
+
+## [2.0.1] - 2026-11-25
+
+### Corregido
+- **El menu de la derecha (los tres puntitos) se salia de la pantalla** y aparecia una barra de
+  scroll horizontal. Ahora se abre hacia la izquierda, alineado con el boton.
+- **Mis Comprobantes solo aparece si Fisherboy esta configurado.** Sin la URL y el token de
+  Fisherboy, la seccion no se muestra en el panel lateral (no podia bajar nada). Aparece sola
+  cuando se cargan `FISHERBOY_URL` y `FISHERBOY_TOKEN`, o cuando un superadmin guarda la
+  conexion desde el menu **Fisherboy y Mis Comprobantes**.
+
 ## [2.0.0] - 2026-11-25
 
 ### Cambiado

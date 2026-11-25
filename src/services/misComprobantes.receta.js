@@ -28,18 +28,38 @@ const RECETA_DEFAULT = {
     { do: 'click', sel: "[id='F1:btnIngresar']", objetivo: 'Apretar Ingresar en el login de ARCA' },
     { do: 'human_if', sel: CAPTCHA, motivo: 'ARCA pide resolver un captcha para ingresar' },
     { do: 'wait_url', contains: 'portal', timeout_s: 30, verifica_login: true },
-    { do: 'click', sel: 'text=Mis Comprobantes', timeout_s: 20, objetivo: "Abrir el servicio 'Mis Comprobantes' del portal de ARCA (esta en Mis servicios o se encuentra con el buscador)" },
+    // Por el buscador del portal (#buscadorInput, un typeahead que responde a fill) y su
+    // resultado li[role=option]: un link suelto que diga "Mis Comprobantes" puede ser un video del
+    // carrusel de Novedades que abre YouTube por codigo, y la tarjeta de "Mas utilizados" depende
+    // de cada usuario. Verificado sobre el portal real.
+    { do: 'fill', sel: '#buscadorInput', text: 'Mis Comprobantes', timeout_s: 20, objetivo: "Buscar 'Mis Comprobantes' en el buscador del portal de ARCA" },
+    { do: 'click', sel: 'li[role="option"]:has-text("Mis Comprobantes")', timeout_s: 15, objetivo: "Abrir el servicio 'Mis Comprobantes' desde los resultados del buscador" },
     { do: 'switch_tab', timeout_s: 30 },
     { do: 'click', sel: 'text={{var:cuit}}', timeout_s: 8, optional: true },
     { do: 'click', sel: '#btn{{var:tipo_boton}}', timeout_s: 20, objetivo: "Entrar a la seccion '{{var:tipo_boton}}' de Mis Comprobantes" },
     { do: 'capture', pattern: 'listaResultados|generarConsulta' },
     { do: 'fill', sel: '#fechaEmision', text: '{{var:rango}}', objetivo: 'Cargar el rango de fechas {{var:rango}} en Fecha de Emision' },
+    // El calendario de ARCA (daterangepicker) toma lo escrito recien en keyup: fill solo cambia el
+    // texto y la busqueda salia con la fecha por defecto (ayer). End genera la tecla sin enviar el
+    // formulario ni mover el foco.
+    { do: 'press', sel: '#fechaEmision', key: 'End' },
     { do: 'click', sel: '#buscarComprobantes', objetivo: 'Apretar Buscar para consultar los comprobantes' },
     { do: 'wait_for', sel: '#tablaDataTables', timeout_s: 60, objetivo: 'Esperar a que aparezca la tabla de resultados' },
-    { do: 'download', sel: '.buttons-csv', timeout_s: 60, objetivo: 'Exportar los resultados como CSV' },
+    // El boton de ARCA es <button title="Exportar como CSV"> (sin la clase .buttons-csv de
+    // DataTables). Hace location.href a descargarComprobantes.do, que devuelve un ZIP con el CSV
+    // en la misma pestana. El primer pedido puede responder 503 mientras ARCA lo arma: un intento
+    // opcional, una espera y el intento que vale. Si salen los dos, el guardado no duplica.
+    { do: 'download', sel: 'button[title="Exportar como CSV"]', timeout_s: 30, optional: true },
+    { do: 'wait', s: 5 },
+    { do: 'download', sel: 'button[title="Exportar como CSV"]', timeout_s: 60, objetivo: 'Exportar los resultados como CSV' },
   ],
 };
 
 const DOMINIOS = ['afip.gob.ar', 'arca.gob.ar'];
 
-module.exports = { RECETA_DEFAULT, DOMINIOS };
+// Fisherboy frena antes de tocar un boton que "no se deshace" (todo submit, por ejemplo) y pide
+// un OK. Estos textos son consultas que no cambian nada en ARCA: Arcanum da el OK solo, asi la
+// sincronizacion diaria no queda esperando a nadie. Cualquier otro texto lo decide una persona.
+const OK_AUTOMATICO = ['buscar', 'consultar', 'filtrar'];
+
+module.exports = { RECETA_DEFAULT, DOMINIOS, OK_AUTOMATICO };

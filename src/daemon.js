@@ -6,8 +6,8 @@
 //  - vencimientos: avisa por webhook cuando un certificado o una clave de API esta por vencer.
 //  - e-Ventanilla: avisa por webhook cuando llega una comunicacion nueva de ARCA.
 //  - Mis Comprobantes: una vez por dia (ARCANUM_MC_HORA, hora argentina) baja emitidos y
-//    recibidos del mes anterior y el actual de los CUIT con sincronizacion diaria, y revisa
-//    los topes de Monotributo.
+//    recibidos de los CUIT con sincronizacion diaria desde la ultima vez que se bajaron (la
+//    primera vez, los ultimos 12 meses), y revisa los topes de Monotributo.
 
 const db = require('./db');
 const { config } = require('./config');
@@ -263,17 +263,25 @@ function rangoDiario(ahora) {
   return { desde, hasta: hoy, hoy };
 }
 
+/** Hora (argentina) de la corrida diaria de Mis Comprobantes y si los daemons corren. */
+function horaMcDiaria(env = process.env) {
+  const n = Number(env.ARCANUM_MC_HORA);
+  const hora = env.ARCANUM_MC_HORA !== undefined && env.ARCANUM_MC_HORA !== '' && Number.isInteger(n) && n >= 0 && n <= 23 ? n : 6;
+  return { hora, activa: env.ARCANUM_DAEMONS !== '0' };
+}
+
 async function sincronizarMisComprobantes(ahora = new Date()) {
-  const hora = parseInt(process.env.ARCANUM_MC_HORA || '6', 10);
+  const { hora } = horaMcDiaria();
   const { rows } = await db.query("SELECT value FROM settings WHERE key = 'mc_ultima_diaria'");
   if (!tocaDiaria(ahora, hora, rows[0] && rows[0].value)) return;
-  const { desde, hasta, hoy } = rangoDiario(ahora);
+  const { hoy } = rangoDiario(ahora);
   await db.query(
     "INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('mc_ultima_diaria',$1,'daemon',now()) ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=now()", [hoy]);
   const mc = require('./services/misComprobantes').servicio();
   for (const cuit of await mc.conSincronizacion()) {
     try {
-      const corrida = await mc.sincronizar(cuit, { tipo: 'ambos', desde, hasta, origen: 'diaria', usuario: 'daemon' });
+      // Sin rango: arranca desde lo ultimo que se bajo de ese CUIT (incremental).
+      const corrida = await mc.sincronizar(cuit, { tipo: 'ambos', origen: 'diaria', usuario: 'daemon' });
       await mc.seguir(corrida.id); // de a un CUIT por vez: Fisherboy admite 2 sesiones
     } catch (e) {
       console.error(`[arcanum][mis-comprobantes] ${maskCuit(cuit)}: ${e.message}`);
@@ -319,11 +327,11 @@ function start() {
   // Mis Comprobantes: se fija cada 10 minutos si ya toca la corrida diaria.
   setTimeout(() => sincronizarMisComprobantes().catch((e) => console.error('[arcanum][mis-comprobantes]', e.message)), 3 * 60 * 1000);
   every(10 * 60 * 1000, sincronizarMisComprobantes);
-  console.log(`[arcanum] daemons activos (monitor 5m, vencimientos 12h, e-Ventanilla ${ventanillaMin > 0 ? `${ventanillaMin}m` : 'apagado'}, Mis Comprobantes diario ${process.env.ARCANUM_MC_HORA || '6'} h)`);
+  console.log(`[arcanum] daemons activos (monitor 5m, vencimientos 12h, e-Ventanilla ${ventanillaMin > 0 ? `${ventanillaMin}m` : 'apagado'}, Mis Comprobantes diario ${horaMcDiaria().hora} h)`);
 }
 
 function stop() {
   timers.forEach(clearInterval);
 }
 
-module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, backupDiario, sinSolapar, tocaDiaria, rangoDiario };
+module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, backupDiario, sinSolapar, tocaDiaria, rangoDiario, horaMcDiaria };

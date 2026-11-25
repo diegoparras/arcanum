@@ -244,3 +244,228 @@ test('al arrancar, las corridas vivas huerfanas quedan en error', async () => {
   assert.strictEqual(await s.marcarHuerfanas(), 2);
   assert.match(repo.huerfanas, /reinicio/);
 });
+
+// --- avance visible y corte por falta de avance --------------------------------
+const OK = (n) => ({ n, do: 'x', ok: true, origen: 'receta' });
+
+test('progresoDe: paso siguiente al ultimo que salio bien', () => {
+  const p = mc.progresoDe([OK(1), OK(2), OK(3)], RECETA_DEFAULT.pasos, {});
+  assert.strictEqual(p.paso, 4);
+  assert.strictEqual(p.total, RECETA_DEFAULT.pasos.length);
+  assert.strictEqual(p.ia, 0);
+  assert.match(p.descripcion, /clave fiscal/i);
+  assert.ok(!/\{\{/.test(p.descripcion), 'sin placeholders');
+});
+
+test('progresoDe: paso que fallo, reintentos de la IA y variables reemplazadas', () => {
+  const nFecha = RECETA_DEFAULT.pasos.findIndex((x) => x.sel === '#fechaEmision') + 1;
+  const log = [...Array.from({ length: nFecha - 1 }, (_, i) => OK(i + 1)),
+    { n: nFecha, do: 'fill', ok: false, error: 'Element is not editable', origen: 'receta' },
+    { do: 'ia:click', ok: false, origen: 'ia' }, { do: 'ia:fill', ok: true, origen: 'ia' }];
+  const p = mc.progresoDe(log, RECETA_DEFAULT.pasos, { rango: '01/10/2026 - 25/11/2026' });
+  assert.strictEqual(p.paso, nFecha);
+  assert.strictEqual(p.ia, 2);
+  assert.strictEqual(p.error, 'Element is not editable');
+  assert.strictEqual(p.descripcion, 'Cargar el rango de fechas 01/10/2026 - 25/11/2026 en Fecha de Emision');
+});
+
+test('progresoDe: la descripcion nunca muestra un secreto', () => {
+  const p = mc.progresoDe([OK(1), OK(2), OK(3)], RECETA_DEFAULT.pasos, { clave_fiscal: 'no-deberia' });
+  assert.ok(!p.descripcion.includes('no-deberia'));
+});
+
+test('cada sondeo guarda el avance en la corrida', async () => {
+  const repo = repoFalso();
+  const log = [OK(1), OK(2)];
+  const { s } = servicio(repo, fisherboyFalso([{ estado: 'corriendo', log }, { ...TERMINADO, log }]));
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  const p = repo.corridas[c.id].progreso;
+  assert.strictEqual(p.paso, 3);
+  assert.strictEqual(p.tipo, 'emitido');
+  assert.ok(p.avance, 'marca de ultimo avance');
+});
+
+test('sin avance en el registro de Fisherboy, la corrida se corta con el paso trabado', async () => {
+  const repo = repoFalso();
+  const trabado = { estado: 'corriendo', log: [...Array.from({ length: 12 }, (_, i) => OK(i + 1)), { n: 13, do: 'fill', ok: false, error: 'Element is not editable', origen: 'receta' }] };
+  const fb = fisherboyFalso([trabado]);
+  const s = mc.crear({ repo, fisherboy: fb, vault, webhooks: webhooks(), esperaMs: 1, sinAvanceMs: 30 });
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  const f = repo.corridas[c.id];
+  assert.strictEqual(f.estado, 'error');
+  assert.match(f.error, /sin avance/i);
+  assert.ok(f.error.includes(`paso 13 de ${RECETA_DEFAULT.pasos.length}`), f.error);
+  assert.match(f.error, /not editable/);
+  assert.deepStrictEqual(fb.cerrados, ['tok-1'], 'cierra la sesion de Fisherboy');
+});
+
+test('mientras una persona tiene el control no se corta por falta de avance', async () => {
+  const repo = repoFalso();
+  const h = { estado: 'humano', log: [OK(1)] };
+  const estados = [h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, { ...TERMINADO, log: [OK(1)] }];
+  const fb = fisherboyFalso(estados);
+  fb.estado = async () => { await new Promise((r) => setTimeout(r, 3)); return estados.shift() || TERMINADO; };
+  const s = mc.crear({ repo, fisherboy: fb, vault, webhooks: webhooks(), esperaMs: 1, sinAvanceMs: 20 });
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
+});
+
+// --- el OK que pide Fisherboy antes de lo que "no se deshace" (estado esperando_ok) ------
+function conOk(estados) {
+  const fb = fisherboyFalso(estados);
+  fb.oks = []; fb.nos = [];
+  fb.ok = async (t) => { fb.oks.push(t); return { ok: true }; };
+  fb.no = async (t) => { fb.nos.push(t); return { ok: true }; };
+  return fb;
+}
+
+test('esperando_ok para Buscar se aprueba solo: es una consulta, no cambia nada en ARCA', async () => {
+  const repo = repoFalso();
+  const pide = { estado: 'esperando_ok', ok_pedido: { texto: 'BUSCAR', motivo: '' }, log: [OK(1)] };
+  const fb = conOk([pide, { ...TERMINADO, log: [OK(1)] }]);
+  const { s, w } = servicio(repo, fb);
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.deepStrictEqual(fb.oks, ['tok-1']);
+  assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
+  assert.ok(!w.eventos.some(([e]) => e === 'mis_comprobantes_fallo'), 'no molesta a nadie');
+});
+
+test('esperando_ok para otra cosa espera a una persona, avisa una vez y no se corta por falta de avance', async () => {
+  const repo = repoFalso();
+  const pide = { estado: 'esperando_ok', ok_pedido: { texto: 'Confirmar', motivo: 'la IA quiere confirmar' }, log: [OK(1)] };
+  const estados = Array(15).fill(pide).concat([{ ...TERMINADO, log: [OK(1)] }]);
+  const fb = conOk(estados);
+  fb.estado = async () => { await new Promise((r) => setTimeout(r, 3)); return estados.shift() || TERMINADO; };
+  const w = webhooks();
+  const s = mc.crear({ repo, fisherboy: fb, vault, webhooks: w, esperaMs: 1, sinAvanceMs: 20 });
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  const vistos = [];
+  const orig = repo.actualizarCorrida;
+  repo.actualizarCorrida = async (id, campos) => { if (campos.estado) vistos.push(campos.estado); if (campos.progreso && campos.progreso.ok) vistos.push(campos.progreso.ok.texto); return orig(id, campos); };
+  await s.seguir(c.id);
+  assert.deepStrictEqual(fb.oks, [], 'no aprueba solo');
+  assert.ok(vistos.includes('esperando_ok') && vistos.includes('Confirmar'), 'la corrida muestra que pide OK y para que');
+  assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
+  const avisos = w.eventos.filter(([e, p]) => e === 'mis_comprobantes_fallo' && p.necesitaHumano);
+  assert.strictEqual(avisos.length, 1);
+});
+
+test('responderOk reenvia si/no a Fisherboy solo si la corrida esta esperando el OK', async () => {
+  const repo = repoFalso();
+  const fb = conOk([TERMINADO]);
+  const { s } = servicio(repo, fb);
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  Object.assign(repo.corridas[c.id], { estado: 'esperando_ok', token_fb: 'tok-9' });
+  await s.responderOk(c.id, true);
+  await s.responderOk(c.id, false);
+  assert.deepStrictEqual([fb.oks, fb.nos], [['tok-9'], ['tok-9']]);
+  repo.corridas[c.id].estado = 'corriendo';
+  await assert.rejects(() => s.responderOk(c.id, true), /no esta esperando/i);
+});
+
+test('Mis Comprobantes se abre por el buscador del portal, nunca por un link de la pagina', () => {
+  // El carrusel de Novedades puede tener un video "Mis Comprobantes" que abre YouTube por codigo,
+  // y la tarjeta de "Mas utilizados" depende de cada usuario: el buscador siempre esta.
+  const pasos = RECETA_DEFAULT.pasos;
+  const i = pasos.findIndex((p) => p.sel === '#buscadorInput');
+  assert.ok(i > 0, 'usa el buscador');
+  assert.deepStrictEqual([pasos[i].do, pasos[i].text], ['fill', 'Mis Comprobantes']);
+  assert.strictEqual(pasos[i + 1].do, 'click');
+  assert.match(pasos[i + 1].sel, /^li\[role="option"\]/);
+  assert.strictEqual(pasos[i + 2].do, 'switch_tab');
+  assert.ok(!pasos.some((p) => /^text=Mis Comprobantes$|a:has-text\("Mis Comprobantes"\)/.test(p.sel || '')), 'ningun link suelto');
+});
+
+// --- sincronizacion incremental: la primera trae 12 meses, las siguientes arrancan donde quedo ---
+function conCobertura(cubierto) {
+  const repo = repoFalso();
+  repo.cubierto = async () => cubierto;
+  return repo;
+}
+const HOY = () => new Date('2026-11-25T15:00:00Z'); // 12:00 en Argentina
+
+test('primera sincronizacion: los ultimos 12 meses completos hasta hoy', async () => {
+  const s = mc.crear({ repo: conCobertura({ emitido: null, recibido: null }), fisherboy: fisherboyFalso([TERMINADO]), vault, webhooks: webhooks(), ahora: HOY });
+  assert.deepStrictEqual(await s.rangoSugerido('20263630743', 'ambos'),
+    { desde: '2025-11-01', hasta: '2026-11-25', primera: true, cubierto: { emitido: null, recibido: null } });
+});
+
+test('siguientes: desde lo ultimo bajado menos 30 dias de solape (ARCA informa tarde algunos)', async () => {
+  const s = mc.crear({ repo: conCobertura({ emitido: '2026-11-20', recibido: '2026-11-10' }), fisherboy: fisherboyFalso([TERMINADO]), vault, webhooks: webhooks(), ahora: HOY });
+  const ambos = await s.rangoSugerido('20263630743', 'ambos');
+  assert.deepStrictEqual([ambos.desde, ambos.hasta, ambos.primera], ['2026-10-11', '2026-11-25', false], 'toma el tipo mas atrasado');
+  assert.strictEqual((await s.rangoSugerido('20263630743', 'emitidos')).desde, '2026-10-21');
+  assert.strictEqual((await s.rangoSugerido('20263630743', 'recibidos')).desde, '2026-10-11');
+});
+
+test('si un tipo nunca se bajo, "ambos" vuelve a ser primera sincronizacion', async () => {
+  const s = mc.crear({ repo: conCobertura({ emitido: '2026-11-20', recibido: null }), fisherboy: fisherboyFalso([TERMINADO]), vault, webhooks: webhooks(), ahora: HOY });
+  const r = await s.rangoSugerido('20263630743', 'ambos');
+  assert.deepStrictEqual([r.desde, r.primera], ['2025-11-01', true]);
+  assert.strictEqual((await s.rangoSugerido('20263630743', 'emitidos')).primera, false);
+});
+
+test('sincronizar sin rango usa el sugerido (lo que usa la diaria)', async () => {
+  const repo = conCobertura({ emitido: '2026-11-20', recibido: '2026-11-20' });
+  const s = mc.crear({ repo, fisherboy: fisherboyFalso([TERMINADO]), vault, webhooks: webhooks(), ahora: HOY });
+  const c = await s.sincronizar('20263630743', { tipo: 'ambos', origen: 'diaria' });
+  assert.deepStrictEqual([c.desde, c.hasta], ['2026-10-21', '2026-11-25']);
+});
+
+test('el rango de fechas se carga con una tecla despues, para que el calendario de ARCA lo lea', () => {
+  const pasos = RECETA_DEFAULT.pasos;
+  const i = pasos.findIndex((p) => p.sel === '#fechaEmision' && p.do === 'fill');
+  assert.ok(i >= 0);
+  // fill solo cambia el valor; el daterangepicker de ARCA parsea el campo en keyup.
+  assert.deepStrictEqual({ do: pasos[i + 1].do, sel: pasos[i + 1].sel }, { do: 'press', sel: '#fechaEmision' });
+  assert.ok(pasos[i + 1].key && pasos[i + 1].key !== 'Enter' && pasos[i + 1].key !== 'Tab', 'una tecla que no envie ni mueva el foco');
+});
+
+test('la descarga usa el boton real de ARCA y reintenta una vez (el primer pedido puede dar 503)', () => {
+  const pasos = RECETA_DEFAULT.pasos;
+  const descargas = pasos.map((p, i) => [p, i]).filter(([p]) => p.do === 'download');
+  assert.strictEqual(descargas.length, 2);
+  for (const [p] of descargas) assert.strictEqual(p.sel, 'button[title="Exportar como CSV"]');
+  const [[primera, i1], [segunda, i2]] = descargas;
+  assert.strictEqual(primera.optional, true, 'si el primero falla, sigue sin pasarle el paso a la IA');
+  assert.ok(!segunda.optional, 'el segundo es el que vale');
+  assert.ok(pasos.slice(i1 + 1, i2).some((p) => p.do === 'wait'), 'espera entre intentos');
+});
+
+test('dos descargas del mismo periodo no duplican: se procesan las dos y el guardado deduplica', async () => {
+  const repo = repoFalso();
+  const { s } = servicio(repo, fisherboyFalso([{ estado: 'terminado', archivos: [{ n: 0, nombre: 'a.zip' }, { n: 1, nombre: 'b.zip' }], log: [] }]));
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
+});
+
+test('si la receta termina sin descargar, la corrida guarda el registro de Fisherboy', async () => {
+  const repo = repoFalso();
+  const log = [{ n: 16, do: 'download', ok: false, error: 'Page.click: Timeout 60000ms exceeded.', origen: 'receta' }, { do: 'ia:done', ok: true, origen: 'ia' }];
+  const { s } = servicio(repo, fisherboyFalso([{ estado: 'terminado', archivos: [], log }]));
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  const f = repo.corridas[c.id];
+  assert.match(f.error, /sin descargar/);
+  assert.strictEqual(f.log.length, 2);
+});
+
+test('la receta corre sin IA por defecto (RPA puro); ARCANUM_MC_IA=1 la habilita como respaldo', async () => {
+  const correr = async (opts) => {
+    const fb = fisherboyFalso([TERMINADO]);
+    const s = mc.crear({ repo: repoFalso(), fisherboy: fb, vault, webhooks: webhooks(), esperaMs: 1, ...opts });
+    const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+    await s.seguir(c.id);
+    return fb.iniciados[0].ia;
+  };
+  assert.strictEqual(await correr({}), false);
+  assert.strictEqual(await correr({ ia: true }), true);
+  assert.strictEqual(mc.iaPorEntorno({}), false);
+  assert.strictEqual(mc.iaPorEntorno({ ARCANUM_MC_IA: '1' }), true);
+  assert.strictEqual(mc.iaPorEntorno({ ARCANUM_MC_IA: '0' }), false);
+});

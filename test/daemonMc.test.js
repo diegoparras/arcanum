@@ -22,3 +22,14 @@ test('rango diario: primer dia del mes anterior hasta hoy (hora argentina)', () 
   assert.deepStrictEqual(rangoDiario(new Date('2026-11-19T12:00:00Z')), { desde: '2026-10-01', hasta: '2026-11-19', hoy: '2026-11-19' });
   assert.deepStrictEqual(rangoDiario(new Date('2026-01-05T12:00:00Z')), { desde: '2025-12-01', hasta: '2026-01-05', hoy: '2026-01-05' });
 });
+
+test('hora de la diaria: ARCANUM_MC_HORA valida, si no 6; y si los daemons estan apagados', () => {
+  const { horaMcDiaria } = require('../src/daemon');
+  assert.deepStrictEqual(horaMcDiaria({}), { hora: 6, activa: true });
+  assert.deepStrictEqual(horaMcDiaria({ ARCANUM_MC_HORA: '4' }), { hora: 4, activa: true });
+  // Un valor invalido no puede dejar la diaria sin correr nunca: vuelve al default.
+  assert.deepStrictEqual(horaMcDiaria({ ARCANUM_MC_HORA: 'abc' }), { hora: 6, activa: true });
+  assert.deepStrictEqual(horaMcDiaria({ ARCANUM_MC_HORA: '24' }), { hora: 6, activa: true });
+  assert.deepStrictEqual(horaMcDiaria({ ARCANUM_MC_HORA: '-1' }), { hora: 6, activa: true });
+  assert.deepStrictEqual(horaMcDiaria({ ARCANUM_DAEMONS: '0' }), { hora: 6, activa: false });
+});

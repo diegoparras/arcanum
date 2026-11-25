@@ -90,6 +90,8 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
     evento: (token, cmd) => json('POST', `/api/agent/${t(token)}/event`, cmd || {}),
     tomarControl: (token) => json('POST', `/api/agent/${t(token)}/takeover`, {}),
     devolver: (token) => json('POST', `/api/agent/${t(token)}/resume`, {}),
+    ok: (token) => json('POST', `/api/agent/${t(token)}/ok`, {}),
+    no: (token) => json('POST', `/api/agent/${t(token)}/no`, {}),
     cerrar: (token) => json('DELETE', `/api/agent/${t(token)}`),
     async frame(token, desde = 0) {
       const r = await pedir(await cfg(), 'GET', `/api/agent/${t(token)}/frame?desde=${Number(desde) || 0}`,
@@ -100,6 +102,11 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
       const r = await pedir(await cfg(), 'GET', `/api/agent/${t(token)}/files/${Number(n)}`, { binario: true, timeoutMs: 60000 });
       if (r.status >= 400) throw err(`Fisherboy no entrego el archivo ${n} (${r.status})`, 502);
       return r.body;
+    },
+    /** Hay URL y token cargados (no prueba la conexion). La UI lo usa para mostrar o no
+     *  lo que depende de Fisherboy. Ante cualquier error responde false. */
+    async configurado() {
+      try { const c = await leerConfig(); return !!(c && c.url && c.token); } catch { return false; }
     },
     async salud() {
       const r = await pedir(await cfg(), 'GET', '/healthz');
