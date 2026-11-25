@@ -3,6 +3,20 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.0.0] - 2026-11-25
+
+### Cambiado
+- **Nueva interfaz.** Arcanum 2.0 cierra el rediseño que empezo en la 0.10.10: menu de
+  secciones al costado y una pantalla mas limpia, con el acabado final que sigue.
+- **Header y panel lateral forman una sola superficie.** Se sacaron la linea de abajo del
+  header y la linea derecha del panel de secciones: los dos comparten el mismo fondo y el
+  contenido queda como un panel encastrado, con la esquina de arriba a la izquierda curva.
+  La esquina se mantiene en su lugar al hacer scroll y acompana al panel cuando se achica a
+  iconos. En el celular, donde el panel se abre encima, no hace falta y no aparece.
+- **Botones de rayitas y de menu (los tres puntitos) planos.** Ya no van dentro de un
+  recuadro: son iconos sueltos que se sombrean suavemente al pasar el mouse y muestran el
+  anillo de foco al navegar con el teclado.
+
 ## [0.10.11] - 2026-11-25
 
 ### Corregido

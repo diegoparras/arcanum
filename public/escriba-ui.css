@@ -96,6 +96,11 @@ button.mini { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
 button.icon-btn { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; line-height: 0;
   background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 10px; }
 button.icon-btn:hover { background: var(--card-2); border-color: var(--hairline); }
+/* Variante plana (topbar con panel lateral): icono suelto, sin recuadro; el fondo aparece
+   solo al pasar el mouse y el anillo de foco con teclado. */
+button.icon-btn.plano { background: transparent; border-color: transparent; color: var(--muted); }
+button.icon-btn.plano:hover { background: var(--card); border-color: transparent; color: var(--text); }
+button.icon-btn.plano:focus-visible { outline: none; box-shadow: var(--ring); }
 
 /* ---- Badge ----------------------------------------------------------------- */
 .badge { font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 999px;
@@ -202,13 +207,22 @@ button.icon-btn:hover { background: var(--card-2); border-color: var(--hairline)
 /* Panel agrupado a la izquierda que se achica a una barra de iconos con el boton de rayitas
    del topbar (estado en localStorage "<app>.nav" = "min" | "full", aplicado como
    html[data-nav="min"] desde el <head> para que no parpadee). En angosto (<=760px) es un
-   cajon que se abre encima: html[data-nav-movil="abierto"]. Referencia: Arcanum. */
-:root { --nav-w: 232px; --nav-w-min: 60px; --top-h: 59px; }
+   cajon que se abre encima: html[data-nav-movil="abierto"]. Referencia: Arcanum.
+   Superficie continua: el header y el panel comparten fondo (--panel) y no llevan lineas
+   divisorias (ni borde inferior en el header ni derecho en el panel); el contenido (--bg)
+   se lee como un panel encastrado gracias a la esquina curva de arriba a la izquierda. */
+:root { --nav-w: 232px; --nav-w-min: 60px; --top-h: 59px; --shell-curva: 16px; }
 .esc-shell { display: flex; align-items: flex-start; }
-.esc-shell > main { flex: 1; min-width: 0; }
+.esc-shell > main { flex: 1; min-width: 0; order: 2; }
+/* Esquina curva: pegajosa bajo el header, asi se mantiene al hacer scroll y acompana al
+   panel cuando se achica a iconos. No ocupa lugar (margen negativo) ni captura clics. */
+.esc-shell::before { content: ""; order: 1; position: sticky; top: var(--top-h); z-index: 5;
+  flex: 0 0 var(--shell-curva); width: var(--shell-curva); height: var(--shell-curva);
+  margin-right: calc(-1 * var(--shell-curva)); pointer-events: none;
+  background: radial-gradient(circle at 100% 100%, transparent calc(var(--shell-curva) - .5px), var(--panel) var(--shell-curva)); }
 .crumb { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidenav { position: sticky; top: var(--top-h); height: calc(100vh - var(--top-h)); width: var(--nav-w); flex: 0 0 auto;
-  border-right: 1px solid var(--border); background: var(--panel); overflow-y: auto; overflow-x: hidden;
+  background: var(--panel); overflow-y: auto; overflow-x: hidden;
   padding: 10px 8px 16px; transition: width .18s ease; }
 .nav-g { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
   padding: 14px 10px 4px; white-space: nowrap; }
@@ -226,6 +240,7 @@ button.icon-btn:hover { background: var(--card-2); border-color: var(--hairline)
 :root[data-nav="min"] .nav-g { font-size: 0; padding: 0; margin: 10px 8px; border-top: 1px solid var(--border); }
 .scrim { display: none; }
 @media (max-width: 760px) {
+  .esc-shell::before { display: none; }
   .sidenav, :root[data-nav="min"] .sidenav { position: fixed; left: 0; top: var(--top-h); bottom: 0; height: auto;
     width: min(270px, 84vw); z-index: 30; transform: translateX(-100%); transition: transform .2s ease; box-shadow: var(--shadow); }
   :root[data-nav="min"] .nav-it { justify-content: flex-start; padding: 8px 10px; }
