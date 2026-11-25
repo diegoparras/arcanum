@@ -295,7 +295,7 @@ test('sin avance en el registro de Fisherboy, la corrida se corta con el paso tr
   const f = repo.corridas[c.id];
   assert.strictEqual(f.estado, 'error');
   assert.match(f.error, /sin avance/i);
-  assert.match(f.error, /paso 13 de 16/);
+  assert.ok(f.error.includes(`paso 13 de ${RECETA_DEFAULT.pasos.length}`), f.error);
   assert.match(f.error, /not editable/);
   assert.deepStrictEqual(fb.cerrados, ['tok-1'], 'cierra la sesion de Fisherboy');
 });
@@ -406,4 +406,13 @@ test('sincronizar sin rango usa el sugerido (lo que usa la diaria)', async () =>
   const s = mc.crear({ repo, fisherboy: fisherboyFalso([TERMINADO]), vault, webhooks: webhooks(), ahora: HOY });
   const c = await s.sincronizar('20263630743', { tipo: 'ambos', origen: 'diaria' });
   assert.deepStrictEqual([c.desde, c.hasta], ['2026-10-21', '2026-11-25']);
+});
+
+test('el rango de fechas se carga con una tecla despues, para que el calendario de ARCA lo lea', () => {
+  const pasos = RECETA_DEFAULT.pasos;
+  const i = pasos.findIndex((p) => p.sel === '#fechaEmision' && p.do === 'fill');
+  assert.ok(i >= 0);
+  // fill solo cambia el valor; el daterangepicker de ARCA parsea el campo en keyup.
+  assert.deepStrictEqual({ do: pasos[i + 1].do, sel: pasos[i + 1].sel }, { do: 'press', sel: '#fechaEmision' });
+  assert.ok(pasos[i + 1].key && pasos[i + 1].key !== 'Enter' && pasos[i + 1].key !== 'Tab', 'una tecla que no envie ni mueva el foco');
 });

@@ -37,6 +37,10 @@ const RECETA_DEFAULT = {
     { do: 'click', sel: '#btn{{var:tipo_boton}}', timeout_s: 20, objetivo: "Entrar a la seccion '{{var:tipo_boton}}' de Mis Comprobantes" },
     { do: 'capture', pattern: 'listaResultados|generarConsulta' },
     { do: 'fill', sel: '#fechaEmision', text: '{{var:rango}}', objetivo: 'Cargar el rango de fechas {{var:rango}} en Fecha de Emision' },
+    // El calendario de ARCA (daterangepicker) toma lo escrito recien en keyup: fill solo cambia el
+    // texto y la busqueda salia con la fecha por defecto (ayer). End genera la tecla sin enviar el
+    // formulario ni mover el foco.
+    { do: 'press', sel: '#fechaEmision', key: 'End' },
     { do: 'click', sel: '#buscarComprobantes', objetivo: 'Apretar Buscar para consultar los comprobantes' },
     { do: 'wait_for', sel: '#tablaDataTables', timeout_s: 60, objetivo: 'Esperar a que aparezca la tabla de resultados' },
     { do: 'download', sel: '.buttons-csv', timeout_s: 60, objetivo: 'Exportar los resultados como CSV' },

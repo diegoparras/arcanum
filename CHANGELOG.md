@@ -3,6 +3,14 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.0.6] - 2026-11-25
+
+### Corregido
+- **Mis Comprobantes buscaba solo el dia de ayer.** El campo de fecha de ARCA es un calendario
+  que lee lo escrito recien cuando detecta una tecla; la receta cambiaba el texto sin teclas y
+  ARCA buscaba con su fecha por defecto (ayer). Ahora la receta toca una tecla despues de
+  cargar el rango y la busqueda sale con el periodo pedido.
+
 ## [2.0.5] - 2026-11-25
 
 ### Cambiado
