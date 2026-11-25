@@ -266,11 +266,13 @@ test('factorum alcance: helpers de cliente y consultante', () => {
   assert.strictEqual(consultanteDelAlcance({ role: 'lectura', cuitAllow: ['20222222223'] }, undefined), '20222222223');
 });
 
-test('factorum: la clave de Arcanum para Factorum no puede ser de rol lectura (POST /api/constatacion)', () => {
-  // Factorum constata con POST /api/constatacion: la regla de solo lectura lo frena con 403, y la
-  // ruta ademas exige operador. Por eso DESPLIEGUE.md pide una clave operador acotada a los CUITs.
+test('factorum: la clave de Arcanum para Factorum puede ser de rol lectura (POST /api/constatacion)', () => {
+  // Factorum constata con POST /api/constatacion, que solo consulta: es una excepcion de POST
+  // para el rol lectura, como la vista previa. El resto de los POST sigue cerrado.
   const permisos = require('../src/auth/permisos');
-  assert.throws(() => permisos.assertPuedeEscribir({ role: 'lectura' }, 'POST', '/api/constatacion'), (e) => e.httpStatus === 403);
+  assert.doesNotThrow(() => permisos.assertPuedeEscribir({ role: 'lectura' }, 'POST', '/api/constatacion'));
+  assert.throws(() => permisos.assertPuedeEscribir({ role: 'lectura' }, 'POST', '/api/wsfev1/comprobantes'), (e) => e.httpStatus === 403);
+  assert.throws(() => permisos.assertPuedeEscribir({ role: 'lectura' }, 'POST', '/api/mis-comprobantes/30711111118/constatar'), (e) => e.httpStatus === 403);
   assert.doesNotThrow(() => permisos.assertPuedeEscribir({ role: 'lectura' }, 'GET', '/api/padron/a5/30500010912'));
   assert.doesNotThrow(() => permisos.assertPuedeEscribir({ role: 'operador', cuitAllow: ['30711111118'] }, 'POST', '/api/constatacion'));
 });

@@ -9,7 +9,7 @@
 #
 # Factorum lee las facturas (QR, texto, OCR y, si hay modelo, IA), corre los controles y las
 # constata llamando a Arcanum (POST /api/constatacion y GET /api/padron/a5/:cuit) con
-# ARCANUM_API_KEY: una clave de Arcanum de rol operador, limitada a los CUITs que constatan
+# ARCANUM_API_KEY: una clave de Arcanum de rol lectura, limitada a los CUITs que constatan
 # (ver DESPLIEGUE.md). Arcanum le habla por la red interna con FACTORUM_TOKEN (= FACTORUM_API_KEY).
 # Para la IA vale cualquier proveedor compatible con OpenAI: LLM_API_BASE_URL / LLM_API_KEY /
 # LLM_MODEL. Sin IA anda igual (QR, texto y OCR).
@@ -43,7 +43,7 @@ services:
       FACTORUM_API_KEY: ${FACTORUM_TOKEN:?definí FACTORUM_TOKEN (openssl rand -hex 24)}
       FACTORUM_MASTER_KEY: ${FACTORUM_MASTER_KEY:-}        # obligatoria con R2 (openssl rand -hex 32)
       ARCANUM_URL: http://arcanum:8094
-      ARCANUM_API_KEY: ${FACTORUM_ARCANUM_API_KEY:-}       # clave de Arcanum (rol operador, acotada a CUITs)
+      ARCANUM_API_KEY: ${FACTORUM_ARCANUM_API_KEY:-}       # clave de Arcanum (rol lectura, acotada a CUITs)
       ARCANUM_CUIT_CONSULTANTE: ${ARCANUM_CUIT_CONSULTANTE:-}
       LLM_API_BASE_URL: ${FACTORUM_LLM_API_BASE_URL:-}     # ej. http://ollama:11434/v1 con el perfil "ia"
       LLM_API_KEY: ${FACTORUM_LLM_API_KEY:-}

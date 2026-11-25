@@ -270,7 +270,7 @@ Sin la master key no se abren ni los certificados ni los backups: Arcanum muestr
 
 ## Vista previa de emisión
 
-`POST /api/wsfev1/comprobantes/vista-previa` recibe el mismo cuerpo que la emisión y **no emite nada**: valida importes, IVA, tipo, receptor (con su padrón si es CUIT), condición de IVA, fecha y RG 5866, sugiere la letra según emisor y receptor, y devuelve el número que le tocaría. Es la única excepción de `POST` permitida a las claves de rol `lectura`. En la UI es el botón **Vista previa** de Emitir.
+`POST /api/wsfev1/comprobantes/vista-previa` recibe el mismo cuerpo que la emisión y **no emite nada**: valida importes, IVA, tipo, receptor (con su padrón si es CUIT), condición de IVA, fecha y RG 5866, sugiere la letra según emisor y receptor, y devuelve el número que le tocaría. Junto con `POST /api/constatacion` (constatar una lista sin guardar nada), es una de las dos excepciones de `POST` permitidas a las claves de rol `lectura`. En la UI es el botón **Vista previa** de Emitir.
 
 ## Avisos proactivos
 
@@ -299,7 +299,7 @@ Las consultas de padrón se guardan en memoria una hora (`ARCANUM_PADRON_CACHE_S
 
 - **Firma local**: la clave privada se usa solo para firmar el TRA, en memoria, dentro del contenedor. No se transmite a ningún lado.
 - **Cifrado en reposo**: claves privadas cifradas con AES-256-GCM; la master key vive fuera de la base.
-- **Roles**: superadmin / admin / operador / lectura. Las operaciones sensibles (clientes, webhooks, usuarios, catálogo) exigen rol. El rol `lectura` (usuario o clave) solo puede hacer `GET`: la regla falla cerrada, para cualquier ruta nueva también.
+- **Roles**: superadmin / admin / operador / lectura. Las operaciones sensibles (clientes, webhooks, usuarios, catálogo) exigen rol. El rol `lectura` (usuario o clave) solo puede hacer `GET`, más dos `POST` que solo consultan (vista previa y constatación de una lista): la regla falla cerrada, para cualquier ruta nueva también.
 - **Scope por CUIT** opcional: un usuario puede quedar limitado a ciertos CUITs (cierra el acceso cruzado).
 - **Anti fuerza bruta** en el login, **anti-SSRF** en los webhooks, comparaciones en tiempo constante, imagen sin root, auditoría de peticiones (usuario + IP).
 - En producción: `ARCANUM_ENV=prod`, secretos propios y detrás de HTTPS.

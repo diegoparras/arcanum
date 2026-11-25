@@ -140,13 +140,11 @@ constata con ARCA **a traves de Arcanum**. La conexion va en los dos sentidos:
 
 En Arcanum, **Usuarios -> Claves de API -> Nueva**:
 
-- **Rol `operador`**, no `lectura`. La constatacion es un `POST`, y el rol `lectura` solo puede
-  hacer `GET` (la regla falla cerrada: `POST /api/constatacion` le responde `403`). Ademas la
-  ruta exige operador.
+- **Rol `lectura`**. Alcanza: `POST /api/constatacion` es una de las excepciones de `POST` del rol
+  lectura (como la vista previa), porque solo consulta WSCDC y apocrifos y no guarda nada. Con
+  lectura, la clave no puede emitir ni modificar nada aunque se filtre.
 - **CUITs permitidos**: solo los que constatan (los que tienen certificado con WSCDC y reciben las
-  facturas). Asi, aunque la clave sea de operador, no puede tocar ningun otro CUIT. Tene en cuenta
-  que una clave operador tambien podria emitir para esos CUITs: guardala como cualquier secreto y
-  no la reuses para otra cosa.
+  facturas). Con otro CUIT, Arcanum responde `403`.
 - Opcional: vencimiento y limite por minuto (un lote grande constata de a muchos; 120 por minuto
   alcanza para la mayoria).
 
@@ -166,7 +164,7 @@ En el `.env`:
 
 ```
 FACTORUM_TOKEN=<el de arriba>
-FACTORUM_ARCANUM_API_KEY=<la clave operador del paso 1>
+FACTORUM_ARCANUM_API_KEY=<la clave de lectura del paso 1>
 ARCANUM_CUIT_CONSULTANTE=<CUIT por defecto para constatar, si no se indica otro>
 # opcional, IA (compatible con OpenAI, incluido Ollama):
 FACTORUM_LLM_API_BASE_URL=http://ollama:11434/v1
@@ -193,7 +191,7 @@ docker compose exec ollama ollama pull qwen2.5vl:7b
 FACTORUM_DATABASE_URL=postgres://USUARIO:PASSWORD@<postgres-de-factorum>:5432/BASE
 FACTORUM_API_KEY=<FACTORUM_TOKEN>
 ARCANUM_URL=http://<servicio-arcanum>:8094
-ARCANUM_API_KEY=<la clave operador del paso 1>
+ARCANUM_API_KEY=<la clave de lectura del paso 1>
 ARCANUM_CUIT_CONSULTANTE=<CUIT por defecto>
 # opcional, IA:
 LLM_API_BASE_URL=...

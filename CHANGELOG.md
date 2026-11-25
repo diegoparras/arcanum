@@ -26,8 +26,11 @@ Versionado semantico.
   Factorum configurado devuelven un error claro.
 - `docker-compose.factorum.yml` para levantar Factorum (con su Postgres y Ollama opcional, perfil
   `ia`) junto a Arcanum. En DESPLIEGUE.md, como darle a Factorum su clave de Arcanum: rol
-  `operador` acotado a los CUITs que constatan (el rol `lectura` no puede hacer el `POST` de la
-  constatacion).
+  `lectura` acotado a los CUITs que constatan.
+- `POST /api/constatacion` (constatar una lista, sin guardar nada) ahora se permite al rol
+  `lectura`, como la vista previa: solo consulta WSCDC y apocrifos. Respeta los CUITs permitidos
+  de la clave. Constatar los recibidos de Mis Comprobantes, que guarda el resultado, sigue
+  exigiendo operador.
 
 ## [2.0.0] - 2026-11-25
 

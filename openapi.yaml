@@ -655,7 +655,7 @@ paths:
   /api/constatacion:
     post:
       tags: [Mis Comprobantes]
-      summary: Constatacion masiva de comprobantes recibidos (WSCDC + APOC del emisor), hasta 500
+      summary: Constatacion masiva de comprobantes recibidos (WSCDC + APOC del emisor), hasta 500. Solo consulta, no guarda; la permite el rol lectura (dentro de sus CUITs)
       requestBody: { content: { application/json: { schema: { type: object, required: [cuit], properties: { cuit: { type: string, description: quien los recibio (con certificado y WSCDC) }, items: { type: array, items: { type: object } }, csv: { type: string, description: "formato propio (cuitEmisor;puntoVenta;tipo;numero;fecha;importe;cae) o el CSV de Mis Comprobantes recibidos" } } } } } }
       responses: { '200': { description: "constatacion: { cantidad, validos, invalidos, conError, emisoresApocrifos, resultados }" }, '413': { description: mas de 500 } }
   /api/mis-comprobantes/{cuit}/constatar:
