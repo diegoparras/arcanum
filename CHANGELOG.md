@@ -3,6 +3,17 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.0.3] - 2026-11-25
+
+### Agregado
+- **Se ve en que va la sincronizacion de Mis Comprobantes.** Mientras corre, la vista en vivo
+  y la tabla de sincronizaciones dicen el paso de la receta (por ejemplo "Emitidos · Paso 13
+  de 16: Cargar el rango de fechas"), si ese paso fallo y la IA lo esta reintentando, y hace
+  cuanto fue el ultimo avance. Asi se distingue una corrida lenta de una trabada.
+- **Una corrida trabada se corta sola.** Si el registro de Fisherboy no avanza en 5 minutos
+  (`ARCANUM_MC_SIN_AVANCE_MIN`) y no hay una persona al mando, la sesion se cierra y el error
+  dice en que paso quedo y por que fallo, en vez de esperar los 25 minutos del tope.
+
 ## [2.0.2] - 2026-11-25
 
 ### Cambiado

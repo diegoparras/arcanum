@@ -18,6 +18,9 @@ const ESTADOS_VIVOS = ['iniciando', 'corriendo', 'esperando_humano', 'humano'];
 const TIPOS = { emitidos: 'emitido', recibidos: 'recibido' };
 const BOTON = { emitido: 'Emitidos', recibido: 'Recibidos' };
 const TIMEOUT_SESION_MS = 25 * 60 * 1000;
+// Si el registro de Fisherboy no suma ni una linea en este tiempo (y no hay una persona al
+// mando), la sesion esta trabada: se corta con el paso donde quedo en vez de esperar los 25 min.
+const SIN_AVANCE_MS = (Number(process.env.ARCANUM_MC_SIN_AVANCE_MIN) > 0 ? Number(process.env.ARCANUM_MC_SIN_AVANCE_MIN) : 5) * 60 * 1000;
 const TRAMO_DIAS = Number(process.env.ARCANUM_MC_TRAMO_DIAS) || 365;
 
 function err(message, httpStatus) {
@@ -115,7 +118,7 @@ function repoSql() {
       const cols = Object.keys(campos);
       if (!cols.length) return null;
       const set = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
-      const vals = cols.map((c) => (c === 'log' ? JSON.stringify(campos[c]) : campos[c]));
+      const vals = cols.map((c) => (c === 'log' || c === 'progreso' ? JSON.stringify(campos[c]) : campos[c]));
       const { rows } = await db.query(`UPDATE mc_corridas SET ${set} WHERE id = $1 RETURNING *`, [id, ...vals]);
       return rows[0];
     },
@@ -168,7 +171,7 @@ function repoSql() {
     },
     async corridas(cuit, limite = 20) {
       const { rows } = await db.query(
-        `SELECT id, cuit, tipo, desde, hasta, estado, origen, usuario, iniciada_at, terminada_at, cantidad, error
+        `SELECT id, cuit, tipo, desde, hasta, estado, origen, usuario, iniciada_at, terminada_at, cantidad, error, progreso
            FROM mc_corridas WHERE cuit = $1 ORDER BY id DESC LIMIT $2`, [cuit, Math.min(Number(limite) || 20, 200)]);
       return rows;
     },
@@ -176,13 +179,39 @@ function repoSql() {
 }
 
 /** ARCA no acepto la clave: fallo el paso marcado verifica_login, o el aviso de la pagina lo dice. */
+/**
+ * En que paso de la receta va la sesion, a partir del registro de Fisherboy.
+ * `paso` es el que se esta ejecutando (el siguiente al ultimo que salio bien, o el que fallo y
+ * la IA esta reintentando); `ia` cuenta las acciones de la IA desde ese fallo. La descripcion
+ * sale del `objetivo` del paso con las variables reemplazadas; un secreto nunca se muestra.
+ */
+function progresoDe(log, pasos, variables = {}) {
+  const total = (pasos || []).length;
+  const lineas = Array.isArray(log) ? log : [];
+  let ultima = -1;
+  for (let i = lineas.length - 1; i >= 0; i -= 1) {
+    const l = lineas[i];
+    if (l && l.origen !== 'ia' && Number.isInteger(l.n)) { ultima = i; break; }
+  }
+  const ref = ultima >= 0 ? lineas[ultima] : null;
+  const fallo = !!(ref && ref.ok === false);
+  const paso = ref ? (fallo ? ref.n : Math.min(ref.n + 1, total || ref.n + 1)) : 1;
+  const ia = fallo ? lineas.slice(ultima + 1).filter((l) => l && l.origen === 'ia').length : 0;
+  const def = (pasos || [])[paso - 1] || {};
+  const descripcion = String(def.objetivo || def.do || '')
+    .replace(/\{\{secret:[A-Za-z0-9_]+\}\}/g, '')
+    .replace(/\{\{var:([A-Za-z0-9_]+)\}\}/g, (m, k) => (k === 'clave_fiscal' || variables[k] === undefined ? '' : String(variables[k])))
+    .replace(/\s{2,}/g, ' ').trim();
+  return { paso, total, descripcion, ia, error: fallo ? String(ref.error || '').slice(0, 200) : null };
+}
+
 function loginRechazado(st) {
   if ((st.log || []).some((l) => l && l.verifica_login && l.ok === false)) return true;
   return /clave|contrase|usuario/i.test(String(st.alerta || ''));
 }
 
 // --- el servicio --------------------------------------------------------------
-function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () => new Date() } = {}) {
+function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () => new Date(), sinAvanceMs = SIN_AVANCE_MS } = {}) {
   const lanzados = new Set();
 
   async function receta() {
@@ -252,10 +281,11 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
   }
 
   async function correrSesion(id, corrida, cred, tipo, tramo, r, secretos, avisado) {
+    const variables = { cuit_login: cred.cuit_login || corrida.cuit, cuit: corrida.cuit, tipo_boton: BOTON[tipo], rango: `${ddmmaaaa(tramo.desde)} - ${ddmmaaaa(tramo.hasta)}` };
     const { token } = await fisherboy.iniciar({
       url: r.url,
       receta: r.pasos,
-      variables: { cuit_login: cred.cuit_login || corrida.cuit, cuit: corrida.cuit, tipo_boton: BOTON[tipo], rango: `${ddmmaaaa(tramo.desde)} - ${ddmmaaaa(tramo.hasta)}` },
+      variables,
       secretos,
       dominios: DOMINIOS,
       ia: true,
@@ -264,11 +294,23 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     try {
       const fin = Date.now() + TIMEOUT_SESION_MS;
       let st;
+      let lineas = -1;
+      let avance = Date.now();
       for (;;) {
         st = await fisherboy.estado(token);
         if (['terminado', 'error', 'cerrado'].includes(st.estado)) break;
+        const n = Array.isArray(st.log) ? st.log.length : 0;
+        const conPersona = st.estado === 'humano' || st.estado === 'esperando_humano';
+        if (n !== lineas || conPersona) { lineas = n; avance = Date.now(); }
+        const progreso = { ...progresoDe(st.log, r.pasos, variables), tipo, desde: tramo.desde, hasta: tramo.hasta, avance: new Date(avance).toISOString() };
         if (['corriendo', 'esperando_humano', 'humano'].includes(st.estado)) {
-          await repo.actualizarCorrida(id, { estado: st.estado, latido_at: ahora() });
+          await repo.actualizarCorrida(id, { estado: st.estado, latido_at: ahora(), progreso });
+        }
+        if (Date.now() - avance > sinAvanceMs) {
+          const min = Math.max(1, Math.round(sinAvanceMs / 60000));
+          const e = err(`Sin avance hace ${min} min en el paso ${progreso.paso} de ${progreso.total} (${progreso.descripcion})${progreso.error ? `: ${progreso.error}` : ''}. Se corto la sesion para no dejarla abierta.`, 504);
+          e.logFb = (st.log || []).slice(-40);
+          throw e;
         }
         if (st.estado === 'esperando_humano' && !avisado.hecho) {
           avisado.hecho = true;
@@ -370,4 +412,4 @@ function servicio() {
   return porDefecto;
 }
 
-module.exports = { crear, servicio, tramos, cuitDe, ESTADOS_VIVOS, RECETA_DEFAULT };
+module.exports = { crear, servicio, tramos, cuitDe, progresoDe, ESTADOS_VIVOS, RECETA_DEFAULT };

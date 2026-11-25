@@ -63,6 +63,7 @@
   button.ghost{border:none;color:var(--accent-ink);padding:6px 9px;display:inline-flex;align-items:center;gap:5px}
   button.ghost svg,nav button svg{width:16px;height:16px}
   /* Botones de icono del header (rayitas y kebab): planos, sin recuadro. */
+  .mc-avance{margin:10px 0 0;font-size:13px;color:var(--text)}
   .iconbtn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:9px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;transition:color .15s,background-color .15s}
   .iconbtn:hover{color:var(--ink);background:var(--card);border-color:transparent;box-shadow:none}
   .iconbtn:focus-visible{outline:none;box-shadow:var(--ring)}
@@ -586,7 +587,7 @@ async function vMis(){
      <div class="row"><h3 style="margin:0;text-transform:none">Navegador en vivo</h3><span class="tag" id="mc_vivo_estado"></span>
        <span style="margin-left:auto" class="row"><button id="mc_tomar" onclick="mcControl('tomar-control')">Tomar el control</button>
        <button id="mc_devolver" class="primary" onclick="mcControl('devolver')">Devolver a la receta</button></span></div>
-     <p class="hint" id="mc_vivo_motivo" style="margin:8px 0"></p>
+     <p class="mc-avance hidden" id="mc_vivo_avance"></p><p class="hint" id="mc_vivo_motivo" style="margin:8px 0"></p>
      <div id="mc_pantalla" tabindex="0" style="position:relative;margin-top:8px;border:1px solid var(--line);border-radius:10px;overflow:hidden;outline:none;background:var(--bg)">
        <img id="mc_img" alt="Pantalla del navegador de Fisherboy" style="display:block;width:100%;height:auto;aspect-ratio:1280/800">
      </div>
@@ -643,11 +644,16 @@ async function mcCorridas(retomar){
       <td class="mono">${c.id}</td><td>${esc(c.tipo)}</td><td class="mono">${String(c.desde).slice(0,10)} a ${String(c.hasta).slice(0,10)}</td>
       <td><span class="tag ${c.estado==='terminado'?'ok':c.estado==='error'?'no':'warn'}">${esc(MC_ESTADO[c.estado]||c.estado)}</span></td>
       <td class="mono">${c.cantidad}</td><td class="hint">${new Date(c.iniciada_at).toLocaleString('es-AR')}</td>
-      <td class="hint">${esc(c.error||'')}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${c.id})">Ver en vivo</button>`:''}</td></tr>`).join('')}</table>`:'<p class="hint">Todavía no se sincronizó este CUIT.</p>';
+      <td class="hint">${esc(c.error||mcAvance(c,true))}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${c.id})">Ver en vivo</button>`:''}</td></tr>`).join('')}</table>`:'<p class="hint">Todavía no se sincronizó este CUIT.</p>';
     const viva=corridas.find(c=>MC_VIVOS.includes(c.estado));
     if(retomar&&viva)mcSeguir(viva.id);
   }catch(e){$('#mc_corridas').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
+function mcHace(iso){const s=Math.max(0,Math.round((Date.now()-new Date(iso))/1000));return s<60?`${s} s`:`${Math.floor(s/60)} min ${s%60} s`;}
+function mcAvance(c,corto){const p=c&&c.progreso;if(!p||!MC_VIVOS.includes(c.estado))return '';
+  const tipo=p.tipo==='recibido'?'Recibidos':p.tipo==='emitido'?'Emitidos':'';
+  const ia=p.ia>0?` · el paso falló y la IA lo está reintentando (${p.ia} ${p.ia===1?'acción':'acciones'})`:'';
+  return `${tipo?tipo+' · ':''}Paso ${p.paso} de ${p.total}: ${p.descripcion||'—'}${ia}${corto?'':` · último avance hace ${p.avance?mcHace(p.avance):'—'}`}`;}
 function mcSeguir(id){
   mcPararTimers();MC.corrida=id;MC.seq=0;$('#mc_vivo').classList.remove('hidden');
   const paso=async()=>{
@@ -657,6 +663,7 @@ function mcSeguir(id){
       const humano=c.estado==='humano'||c.estado==='esperando_humano';
       $('#mc_tomar').classList.toggle('hidden',humano||!MC_VIVOS.includes(c.estado));
       $('#mc_devolver').classList.toggle('hidden',!humano);
+      const av=$('#mc_vivo_avance'),ta=mcAvance(c);av.textContent=ta;av.classList.toggle('hidden',!ta);av.title=c.progreso&&c.progreso.error?`Error del paso: ${c.progreso.error}`:'';
       $('#mc_vivo_motivo').textContent=c.estado==='esperando_humano'?'ARCA pide a una persona (captcha o segundo factor). Resolvelo en la pantalla y después tocá "Devolver a la receta".':c.estado==='error'?(c.error||''):c.estado==='terminado'?`Listo: ${c.cantidad} comprobantes.`:'';
       if(!MC_VIVOS.includes(c.estado)){mcPararTimers();mcCorridas(false);mcCargarTabla();mcMonotributo();}
     }catch{}

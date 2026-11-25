@@ -244,3 +244,70 @@ test('al arrancar, las corridas vivas huerfanas quedan en error', async () => {
   assert.strictEqual(await s.marcarHuerfanas(), 2);
   assert.match(repo.huerfanas, /reinicio/);
 });
+
+// --- avance visible y corte por falta de avance --------------------------------
+const OK = (n) => ({ n, do: 'x', ok: true, origen: 'receta' });
+
+test('progresoDe: paso siguiente al ultimo que salio bien', () => {
+  const p = mc.progresoDe([OK(1), OK(2), OK(3)], RECETA_DEFAULT.pasos, {});
+  assert.strictEqual(p.paso, 4);
+  assert.strictEqual(p.total, RECETA_DEFAULT.pasos.length);
+  assert.strictEqual(p.ia, 0);
+  assert.match(p.descripcion, /clave fiscal/i);
+  assert.ok(!/\{\{/.test(p.descripcion), 'sin placeholders');
+});
+
+test('progresoDe: paso que fallo, reintentos de la IA y variables reemplazadas', () => {
+  const log = [...Array.from({ length: 12 }, (_, i) => OK(i + 1)),
+    { n: 13, do: 'fill', ok: false, error: 'Element is not editable', origen: 'receta' },
+    { do: 'ia:click', ok: false, origen: 'ia' }, { do: 'ia:fill', ok: true, origen: 'ia' }];
+  const p = mc.progresoDe(log, RECETA_DEFAULT.pasos, { rango: '01/10/2026 - 25/11/2026' });
+  assert.strictEqual(p.paso, 13);
+  assert.strictEqual(p.ia, 2);
+  assert.strictEqual(p.error, 'Element is not editable');
+  assert.strictEqual(p.descripcion, 'Cargar el rango de fechas 01/10/2026 - 25/11/2026 en Fecha de Emision');
+});
+
+test('progresoDe: la descripcion nunca muestra un secreto', () => {
+  const p = mc.progresoDe([OK(1), OK(2), OK(3)], RECETA_DEFAULT.pasos, { clave_fiscal: 'no-deberia' });
+  assert.ok(!p.descripcion.includes('no-deberia'));
+});
+
+test('cada sondeo guarda el avance en la corrida', async () => {
+  const repo = repoFalso();
+  const log = [OK(1), OK(2)];
+  const { s } = servicio(repo, fisherboyFalso([{ estado: 'corriendo', log }, { ...TERMINADO, log }]));
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  const p = repo.corridas[c.id].progreso;
+  assert.strictEqual(p.paso, 3);
+  assert.strictEqual(p.tipo, 'emitido');
+  assert.ok(p.avance, 'marca de ultimo avance');
+});
+
+test('sin avance en el registro de Fisherboy, la corrida se corta con el paso trabado', async () => {
+  const repo = repoFalso();
+  const trabado = { estado: 'corriendo', log: [...Array.from({ length: 12 }, (_, i) => OK(i + 1)), { n: 13, do: 'fill', ok: false, error: 'Element is not editable', origen: 'receta' }] };
+  const fb = fisherboyFalso([trabado]);
+  const s = mc.crear({ repo, fisherboy: fb, vault, webhooks: webhooks(), esperaMs: 1, sinAvanceMs: 30 });
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  const f = repo.corridas[c.id];
+  assert.strictEqual(f.estado, 'error');
+  assert.match(f.error, /sin avance/i);
+  assert.match(f.error, /paso 13 de 16/);
+  assert.match(f.error, /not editable/);
+  assert.deepStrictEqual(fb.cerrados, ['tok-1'], 'cierra la sesion de Fisherboy');
+});
+
+test('mientras una persona tiene el control no se corta por falta de avance', async () => {
+  const repo = repoFalso();
+  const h = { estado: 'humano', log: [OK(1)] };
+  const estados = [h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, h, { ...TERMINADO, log: [OK(1)] }];
+  const fb = fisherboyFalso(estados);
+  fb.estado = async () => { await new Promise((r) => setTimeout(r, 3)); return estados.shift() || TERMINADO; };
+  const s = mc.crear({ repo, fisherboy: fb, vault, webhooks: webhooks(), esperaMs: 1, sinAvanceMs: 20 });
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
+});
