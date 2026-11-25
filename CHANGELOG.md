@@ -3,6 +3,22 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.8] - 2026-11-24
+
+### Seguridad
+- **Dependencias sin vulnerabilidades conocidas** (`npm audit` en cero):
+  - `node-forge` 1.4.0 -> 1.4.3: firma del login con ARCA (WSAA) y certificados. Corrige,
+    entre otros, falsificacion de firmas RSA y saltos en la validacion de certificados.
+  - `nodemailer` 6 -> 10.1.7: avisos por email. Corrige inyeccion de cabeceras y comandos
+    SMTP, envio a dominios no previstos y denegaciones de servicio. Sin cambios en la
+    configuracion: sigue usando las mismas variables `ARCANUM_SMTP_*`.
+  - `fast-xml-parser` 4 -> 5.12.0: lectura de las respuestas de ARCA. Mismo resultado que la
+    version anterior sobre las respuestas de ARCA (verificado); corrige un consumo de CPU
+    cuadratico con XML mal formado.
+  - Herramientas de desarrollo (`brace-expansion`, `js-yaml`, via eslint): fuera de la imagen.
+- Las dependencias quedan fijadas a una version exacta, con al menos dos semanas de
+  publicada, para que un build no tome sola una version recien salida.
+
 ## [0.10.7] - 2026-11-24
 
 ### Corregido
