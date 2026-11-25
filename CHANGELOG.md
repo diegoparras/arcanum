@@ -3,6 +3,17 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.0.9] - 2026-11-25
+
+### Corregido
+- **Mis Comprobantes se abre por el buscador del portal de ARCA.** La receta tocaba el primer
+  link que dijera "Mis Comprobantes", y el carrusel de Novedades del portal puede tener un
+  video con ese nombre que abre YouTube (Fisherboy lo bloquea y la corrida fallaba en el paso
+  8). Ahora escribe "Mis Comprobantes" en el buscador y toca ese resultado, que esta siempre,
+  aunque el servicio no figure en "Mas utilizados". Verificado sobre el portal real.
+- En la credencial de ARCA, el campo de la clave fiscal quedaba mas abajo que el del CUIT:
+  la aclaracion "dejala vacia para no cambiarla" paso al texto de ayuda del campo.
+
 ## [2.0.8] - 2026-11-25
 
 ### Cambiado

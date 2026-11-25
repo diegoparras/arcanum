@@ -258,11 +258,12 @@ test('progresoDe: paso siguiente al ultimo que salio bien', () => {
 });
 
 test('progresoDe: paso que fallo, reintentos de la IA y variables reemplazadas', () => {
-  const log = [...Array.from({ length: 12 }, (_, i) => OK(i + 1)),
-    { n: 13, do: 'fill', ok: false, error: 'Element is not editable', origen: 'receta' },
+  const nFecha = RECETA_DEFAULT.pasos.findIndex((x) => x.sel === '#fechaEmision') + 1;
+  const log = [...Array.from({ length: nFecha - 1 }, (_, i) => OK(i + 1)),
+    { n: nFecha, do: 'fill', ok: false, error: 'Element is not editable', origen: 'receta' },
     { do: 'ia:click', ok: false, origen: 'ia' }, { do: 'ia:fill', ok: true, origen: 'ia' }];
   const p = mc.progresoDe(log, RECETA_DEFAULT.pasos, { rango: '01/10/2026 - 25/11/2026' });
-  assert.strictEqual(p.paso, 13);
+  assert.strictEqual(p.paso, nFecha);
   assert.strictEqual(p.ia, 2);
   assert.strictEqual(p.error, 'Element is not editable');
   assert.strictEqual(p.descripcion, 'Cargar el rango de fechas 01/10/2026 - 25/11/2026 en Fecha de Emision');
@@ -366,10 +367,17 @@ test('responderOk reenvia si/no a Fisherboy solo si la corrida esta esperando el
   await assert.rejects(() => s.responderOk(c.id, true), /no esta esperando/i);
 });
 
-test('el paso que abre Mis Comprobantes no puede tomar el link al video de YouTube', () => {
-  const p = RECETA_DEFAULT.pasos.find((x) => /Abrir el servicio/.test(x.objetivo || ''));
-  assert.ok(!/^text=/.test(p.sel), p.sel);
-  assert.match(p.sel, /youtu/);
+test('Mis Comprobantes se abre por el buscador del portal, nunca por un link de la pagina', () => {
+  // El carrusel de Novedades puede tener un video "Mis Comprobantes" que abre YouTube por codigo,
+  // y la tarjeta de "Mas utilizados" depende de cada usuario: el buscador siempre esta.
+  const pasos = RECETA_DEFAULT.pasos;
+  const i = pasos.findIndex((p) => p.sel === '#buscadorInput');
+  assert.ok(i > 0, 'usa el buscador');
+  assert.deepStrictEqual([pasos[i].do, pasos[i].text], ['fill', 'Mis Comprobantes']);
+  assert.strictEqual(pasos[i + 1].do, 'click');
+  assert.match(pasos[i + 1].sel, /^li\[role="option"\]/);
+  assert.strictEqual(pasos[i + 2].do, 'switch_tab');
+  assert.ok(!pasos.some((p) => /^text=Mis Comprobantes$|a:has-text\("Mis Comprobantes"\)/.test(p.sel || '')), 'ningun link suelto');
 });
 
 // --- sincronizacion incremental: la primera trae 12 meses, las siguientes arrancan donde quedo ---

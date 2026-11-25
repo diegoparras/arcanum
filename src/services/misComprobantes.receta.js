@@ -28,10 +28,12 @@ const RECETA_DEFAULT = {
     { do: 'click', sel: "[id='F1:btnIngresar']", objetivo: 'Apretar Ingresar en el login de ARCA' },
     { do: 'human_if', sel: CAPTCHA, motivo: 'ARCA pide resolver un captcha para ingresar' },
     { do: 'wait_url', contains: 'portal', timeout_s: 30, verifica_login: true },
-    // No `text=`: el portal tambien tiene un link a un video de YouTube que dice "Mis Comprobantes"
-    // y Fisherboy lo bloquea (dominio no permitido). Si este selector no encuentra la tarjeta, la IA
-    // usa el buscador del portal.
-    { do: 'click', sel: 'a:has-text("Mis Comprobantes"):not([href*="youtu"])', timeout_s: 20, objetivo: "Abrir el servicio 'Mis Comprobantes' del portal de ARCA (esta en Mis servicios o se encuentra con el buscador)" },
+    // Por el buscador del portal (#buscadorInput, un typeahead que responde a fill) y su
+    // resultado li[role=option]: un link suelto que diga "Mis Comprobantes" puede ser un video del
+    // carrusel de Novedades que abre YouTube por codigo, y la tarjeta de "Mas utilizados" depende
+    // de cada usuario. Verificado sobre el portal real.
+    { do: 'fill', sel: '#buscadorInput', text: 'Mis Comprobantes', timeout_s: 20, objetivo: "Buscar 'Mis Comprobantes' en el buscador del portal de ARCA" },
+    { do: 'click', sel: 'li[role="option"]:has-text("Mis Comprobantes")', timeout_s: 15, objetivo: "Abrir el servicio 'Mis Comprobantes' desde los resultados del buscador" },
     { do: 'switch_tab', timeout_s: 30 },
     { do: 'click', sel: 'text={{var:cuit}}', timeout_s: 8, optional: true },
     { do: 'click', sel: '#btn{{var:tipo_boton}}', timeout_s: 20, objetivo: "Entrar a la seccion '{{var:tipo_boton}}' de Mis Comprobantes" },
