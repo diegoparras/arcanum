@@ -3,6 +3,12 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.11] - 2026-11-25
+
+### Corregido
+- El contenido de cada seccion ya no queda pegado a la barra de arriba: tiene su margen
+  superior (en el celular, un poco menor).
+
 ## [0.10.10] - 2026-11-25
 
 ### Cambiado

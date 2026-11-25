@@ -75,7 +75,9 @@
   .pwwrap{position:relative} .pwwrap input{padding-right:38px}
   .eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:30px;height:30px;display:grid;place-items:center;color:var(--muted);cursor:pointer;background:none;border:none}
   .eye:hover{color:var(--ink)} .eye svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-  main{padding:24px 0 80px}
+  /* main tambien es .wrap: el padding va con los dos selectores, si no .wrap (padding:0 20px)
+     lo pisa y el contenido queda pegado al header. */
+  main.wrap{padding:28px 20px 80px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
   .stat .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
@@ -122,6 +124,7 @@
   .menu{max-width:calc(100vw - 24px)}
   @media(max-width:760px){
     .wrap{padding:0 14px}
+    main.wrap{padding:18px 14px 60px}
     .topbar{padding:0 12px;gap:10px}
   }
 </style>
