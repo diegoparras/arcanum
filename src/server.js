@@ -53,6 +53,7 @@ const rutasCola = crearRutasCola();
 const rutasCaea = require('./rutas/caea').crearRutas();
 const rutasBackups = require('./rutas/backups').crearRutas();
 const rutasMono = crearRutasMono();
+const rutasFactorum = require('./rutas/factorum').crearRutas();
 
 // Clave de API maestra: la del entorno o una generada que queda en el volumen (nunca en el log).
 // Se resuelve al primer uso (start() la pide justo despues del cartel de version, para que la
@@ -125,7 +126,8 @@ const mcp = crearServidorMcp({
   timeoutMs: parseInt(process.env.ARCANUM_MCP_TIMEOUT_MS || '80000', 10),
   instrucciones:
     'Consulta de ARCA a traves de Arcanum: padron y riesgo fiscal de un CUIT, comprobantes, numeracion, puntos de venta, '
-    + 'e-Ventanilla, certificados, estado de ARCA y Mis Comprobantes (emitidos y recibidos ya bajados). Todas las '
+    + 'e-Ventanilla, certificados, estado de ARCA, Mis Comprobantes (emitidos y recibidos ya bajados) y, si Factorum '
+    + 'esta conectado, las facturas recibidas que leyo y el veredicto de una factura (sin guardarla). Todas las '
     + 'herramientas son de solo lectura; vista_previa_comprobante valida un comprobante sin emitirlo.',
 });
 
@@ -296,6 +298,8 @@ async function route(req, res, url) {
 
   // Mis Comprobantes (via Fisherboy) y la conexion con Fisherboy: ver src/rutas/misComprobantes.js
   if (await rutasMc(req, res, url, seg, principal)) return;
+  // Facturas recibidas (via Factorum): ver src/rutas/factorum.js
+  if (await rutasFactorum(req, res, url, seg, principal)) return;
   if (await rutasMono(req, res, url, seg, principal)) return;
   if (await rutasCola(req, res, url, seg, principal)) return;
   if (await rutasCaea(req, res, url, seg, principal)) return;

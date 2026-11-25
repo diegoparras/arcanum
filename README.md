@@ -96,6 +96,7 @@ Panel limpio (tema claro/oscuro, sin frameworks), con todo lo que un contador ne
 - **Servicios**: el catálogo completo, con **guía de activación paso a paso** por servicio (qué asociar en el Administrador de Relaciones de Clave Fiscal). El superadmin puede editar/agregar servicios acá.
 - **Emitir**: formulario para sacar un comprobante y obtener el CAE.
 - **Comprobantes**: listado, descarga del **PDF con QR de ARCA**, export CSV para Libro IVA.
+- **Facturas recibidas** (si [Factorum](#factorum-facturas-recibidas) está conectado): verificar si una factura es legal, subir lotes, revisar y aprobar lo leído, y bajar el Excel o el CSV.
 - **Generador**: armás la consulta y te genera el **nodo de n8n listo para pegar** + snippets en **cURL / JavaScript / Python**. Incluye un explorador que **lee el WSDL en vivo** y te lista operaciones y campos.
 - **Webhooks** y **Usuarios** (con roles).
 
@@ -187,6 +188,10 @@ Además de la clave maestra (`API_KEY` del entorno), en **Usuarios → Claves de
 | `mis_comprobantes` | Emitidos y recibidos de Mis Comprobantes ya bajados: cantidades, neto (las NC restan), por tipo y los últimos 50 |
 | `topes_monotributo` | Facturado en 12 meses contra el tope de la categoría: porcentaje, alerta, margen y categoría sugerida |
 | `constatacion_recibidos` | Resultado guardado de constatar los recibidos (WSCDC + apócrifos) y los observados |
+| `facturas_recibidas` | Facturas recibidas leídas por Factorum (si está conectado): tipo, número, emisor, importes por alícuota, CAE, estado, hallazgos y constatación; hasta 50 |
+| `factura_recibida` | Una factura recibida por su id, con de dónde salió cada campo y las correcciones hechas a mano |
+| `resumen_facturas_recibidas` | Totales de las recibidas: neto, IVA por alícuota, otros tributos y total (las NC restan), por estado y por tipo |
+| `verificar_factura` | Veredicto de una factura en base64 (válida, inválida, apócrifa, con errores o no verificable) sin guardarla |
 
 Todas son de solo lectura: la emisión y el motor genérico `/api/ws/...` no se exponen por MCP. Para que un asistente facture, el flujo es: `vista_previa_comprobante`, la persona aprueba, y la emisión va por `POST /api/wsfev1/comprobantes` con una clave aparte de rol `operador` y el `idempotencyKey` que propone la vista previa. Cada llamada corta a los 80 s (`ARCANUM_MCP_TIMEOUT_MS`) con un error claro y las respuestas se recortan por debajo de 20.000 caracteres. Las respuestas son datos JSON, nunca texto dirigido al asistente.
 
@@ -214,6 +219,25 @@ La receta se edita en vivo (superadmin, menú **Fisherboy y Mis Comprobantes**) 
 
 - **Topes de Monotributo** (`GET /api/monotributo/:cuit`): suma 12 meses de emitidos (Mis Comprobantes + lo emitido por Arcanum que no esté ahí, sin contar dos veces), con las notas de crédito restando, contra el tope de la categoría del padrón. Semáforo 80% / 100%, categoría sugerida, aviso `tope_monotributo` y recordatorio de recategorización en enero y julio. Los topes se cargan en Arcanum con su vigencia: **verificá los vigentes** en arca.gob.ar.
 - **Constatación masiva** (`POST /api/constatacion` o el botón **Constatar recibidos**): cada recibido contra WSCDC y su emisor contra la base de apócrifos, hasta 500 por pedido.
+
+## Factorum (facturas recibidas)
+
+**Factorum** es el lector de facturas de la suite: lee PDF e imágenes (QR de ARCA, texto, OCR y, si hay un modelo configurado, IA), corre los controles (que neto más IVA más otros dé el total, que el QR coincida con el texto, CUIT válidos, duplicados) y constata cada comprobante con ARCA. Es un servicio aparte, en Go; Arcanum le hace de puerta con sus propios usuarios, roles y scope por CUIT:
+
+```
+  Arcanum (UI, API, MCP) ──token de servicio──► Factorum ──clave de API──► Arcanum
+  usuarios, roles, scope                        lee y controla              POST /api/constatacion
+                                                                            GET  /api/padron/a5/:cuit
+```
+
+1. **Verificar una factura** (`POST /api/factorum/verificar`, rol operador o más): ¿es legal? Devuelve el veredicto (`valida`, `invalida`, `apocrifa`, `con_errores` o `no_verificable`), los datos clave y los hallazgos. No deja nada guardado. Si no se indica `cuit_consultante` y el usuario tiene un único CUIT permitido, se constata con ese.
+2. **Lotes** (`POST /api/factorum/lotes`, rol operador o más): varias facturas o un ZIP, con el cliente del estudio, IA sí o no y constatar al terminar. Se procesan en segundo plano; la pestaña **Facturas recibidas** muestra el avance.
+3. **Revisión**: cada comprobante queda `ok`, `revisar`, `error` o `aprobado`. Desde la UI se corrigen campos y se aprueba (`PATCH /api/factorum/comprobantes/:id`; cada cambio queda registrado con el usuario de Arcanum), con el archivo original a un clic.
+4. **Excel y CSV** (`GET /api/factorum/export.xlsx` y `.csv`) con los mismos filtros, más `GET /api/factorum/resumen` con los totales por alícuota.
+
+Leer (lotes, comprobantes, resumen, exportar) lo puede cualquier rol; con **scope por CUIT**, cada usuario o clave ve solo los clientes que tiene permitidos (y si tiene uno solo, se filtra por ese). Los archivos de hasta 20 MB (60 MB por lote) pasan por Arcanum sin quedar en ningún registro.
+
+Conexión: `FACTORUM_URL` + `FACTORUM_TOKEN`, o desde el menú **Factorum (facturas recibidas)** (superadmin), donde el token se guarda cifrado y no vuelve nunca por la API. La pestaña aparece solo cuando Factorum responde. Para la vuelta, Factorum necesita una clave de Arcanum de rol `operador` acotada a los CUITs con los que constata: ver [DESPLIEGUE.md](DESPLIEGUE.md).
 
 ## PDF del comprobante
 
@@ -246,7 +270,7 @@ Sin la master key no se abren ni los certificados ni los backups: Arcanum muestr
 
 ## Vista previa de emisión
 
-`POST /api/wsfev1/comprobantes/vista-previa` recibe el mismo cuerpo que la emisión y **no emite nada**: valida importes, IVA, tipo, receptor (con su padrón si es CUIT), condición de IVA, fecha y RG 5866, sugiere la letra según emisor y receptor, y devuelve el número que le tocaría. Es la única excepción de `POST` permitida a las claves de rol `lectura`. En la UI es el botón **Vista previa** de Emitir.
+`POST /api/wsfev1/comprobantes/vista-previa` recibe el mismo cuerpo que la emisión y **no emite nada**: valida importes, IVA, tipo, receptor (con su padrón si es CUIT), condición de IVA, fecha y RG 5866, sugiere la letra según emisor y receptor, y devuelve el número que le tocaría. Junto con `POST /api/constatacion` (constatar una lista sin guardar nada), es una de las dos excepciones de `POST` permitidas a las claves de rol `lectura`. En la UI es el botón **Vista previa** de Emitir.
 
 ## Avisos proactivos
 
@@ -275,7 +299,7 @@ Las consultas de padrón se guardan en memoria una hora (`ARCANUM_PADRON_CACHE_S
 
 - **Firma local**: la clave privada se usa solo para firmar el TRA, en memoria, dentro del contenedor. No se transmite a ningún lado.
 - **Cifrado en reposo**: claves privadas cifradas con AES-256-GCM; la master key vive fuera de la base.
-- **Roles**: superadmin / admin / operador / lectura. Las operaciones sensibles (clientes, webhooks, usuarios, catálogo) exigen rol. El rol `lectura` (usuario o clave) solo puede hacer `GET`: la regla falla cerrada, para cualquier ruta nueva también.
+- **Roles**: superadmin / admin / operador / lectura. Las operaciones sensibles (clientes, webhooks, usuarios, catálogo) exigen rol. El rol `lectura` (usuario o clave) solo puede hacer `GET`, más dos `POST` que solo consultan (vista previa y constatación de una lista): la regla falla cerrada, para cualquier ruta nueva también.
 - **Scope por CUIT** opcional: un usuario puede quedar limitado a ciertos CUITs (cierra el acceso cruzado).
 - **Anti fuerza bruta** en el login, **anti-SSRF** en los webhooks, comparaciones en tiempo constante, imagen sin root, auditoría de peticiones (usuario + IP).
 - En producción: `ARCANUM_ENV=prod`, secretos propios y detrás de HTTPS.

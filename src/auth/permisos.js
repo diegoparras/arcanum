@@ -31,7 +31,12 @@ function scopedRequiresCuit(principal) {
 // nada que no sea GET/HEAD en la API REST. Asi no hay que acordarse de poner el chequeo
 // en cada ruta de escritura (emision, passthrough generico /api/ws, configuracion...).
 // Excepcion explicita (lista cerrada): POST que solo calculan y no escriben nada.
-const POST_SOLO_LECTURA = new Set(['/api/wsfev1/comprobantes/vista-previa']);
+// POST que solo consultan (no emiten ni guardan nada): los puede usar el rol lectura.
+//  - vista-previa: valida un comprobante sin emitirlo.
+//  - constatacion: WSCDC + apocrifos de una lista; devuelve el resultado y no lo guarda (la
+//    constatacion de los recibidos de Mis Comprobantes, que si guarda, es otra ruta y sigue
+//    exigiendo operador). Es lo que usa Factorum para verificar facturas.
+const POST_SOLO_LECTURA = new Set(['/api/wsfev1/comprobantes/vista-previa', '/api/constatacion']);
 
 function assertPuedeEscribir(principal, method, pathname = '') {
   if (principal.role !== 'lectura' || method === 'GET' || method === 'HEAD') return;

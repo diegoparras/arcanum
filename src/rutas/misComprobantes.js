@@ -80,7 +80,8 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       const b = await readJsonBody(req);
       const cuit = String(b.cuit || '').replace(/\D/g, '');
       if (cuit.length !== 11) throw err('Falta "cuit": quien recibio los comprobantes (con certificado y WSCDC)', 400);
-      puedeOperar(principal, cuit);
+      // Solo consulta y no guarda nada: alcanza con cualquier rol, siempre dentro de sus CUITs.
+      assertCuitAllowed(principal, cuit);
       req._cuit = cuit;
       req._op = 'constatacion';
       const items = typeof b.csv === 'string' ? cons().parsearListaCsv(b.csv, cuit) : b.items;

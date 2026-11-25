@@ -17,6 +17,10 @@
 //   topes_monotributo   -> facturado en 12 meses contra el tope de la categoria
 //   constatacion_recibidos -> resultado guardado de constatar los recibidos (WSCDC + APOC)
 //   cola_emision        -> comprobantes en la cola de contingencia y su estado
+//   facturas_recibidas  -> facturas recibidas leidas por Factorum (si esta configurado)
+//   factura_recibida    -> una de ellas, con hallazgos, origenes y correcciones
+//   resumen_facturas_recibidas -> totales por alicuota, estado y tipo
+//   verificar_factura   -> veredicto de una factura (Factorum, guardar=false: no persiste nada)
 //
 // Las respuestas son datos (JSON), no instrucciones para un asistente.
 
@@ -866,14 +870,209 @@ const colaTool = {
   },
 };
 
+// ---------- Factorum (facturas recibidas) ----------
+// Proxy de solo consulta a Factorum, el lector de facturas. Sin Factorum configurado, cada
+// herramienta devuelve un error claro (no se cae ni inventa datos).
+const IMPORTES_FACTORUM = ['neto_gravado', 'no_gravado', 'exento', 'iva_27', 'iva_21', 'iva_10_5', 'iva_5', 'iva_2_5', 'otros_tributos', 'total'];
+
+function num(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Comprobante de Factorum (campos de modelo.Comprobante, planos o en `comprobante`) -> datos clave. */
+function resumirCbteFactorum(c) {
+  const x = c && c.comprobante && typeof c.comprobante === 'object' ? { ...c, ...c.comprobante } : (c || {});
+  const importes = {};
+  for (const k of IMPORTES_FACTORUM) {
+    const v = num(x[k]);
+    if (v !== null && (v !== 0 || k === 'total')) importes[k] = v;
+  }
+  const hallazgos = Array.isArray(x.hallazgos) ? x.hallazgos : [];
+  const cons = x.constatacion && typeof x.constatacion === 'object' ? x.constatacion : null;
+  return {
+    id: x.id !== undefined ? x.id : null,
+    lote: x.lote_id !== undefined ? x.lote_id : null,
+    cliente: x.cliente_cuit || null,
+    archivo: x.archivo || null,
+    tipoComprobante: x.tipo ? Number(x.tipo) : null,
+    tipoNombre: TIPOS[x.tipo] || null,
+    letra: x.letra || null,
+    comprobante: x.punto_venta !== undefined && x.numero !== undefined ? formatearNumero(x.punto_venta, x.numero) : null,
+    fecha: x.fecha || null,
+    emisor: { cuit: x.cuit_emisor || null, nombre: x.razon_social_emisor || null },
+    receptor: x.doc_nro_receptor ? { documento: x.doc_nro_receptor, nombre: x.razon_social_receptor || null } : null,
+    moneda: x.moneda || null,
+    importes,
+    cae: x.cae || null,
+    vtoCae: x.vto_cae || null,
+    estado: x.estado || null,
+    confianza: num(x.confianza),
+    hallazgos: hallazgos.slice(0, 20).map((h) => ({ nivel: h.nivel, codigo: h.codigo, mensaje: h.mensaje, campo: h.campo || null })),
+    constatacion: cons ? { valido: cons.valido === undefined ? null : cons.valido, resultado: cons.resultado || null, apocrifo: cons.apoc ? !!cons.apoc.esApocrifo : null, observaciones: cons.observaciones || [] } : null,
+    duplicadoDe: x.duplicado_de || null,
+    revisadoPor: x.revisado_por || null,
+  };
+}
+
+function crearHerramientasFactorum({ factorum } = {}) {
+  const fa = () => factorum || require('../services/factorum');
+  const { clienteDelAlcance, consultanteDelAlcance, assertRecursoEnAlcance } = require('../rutas/factorum');
+  const FUENTE = 'Factorum (lector de facturas conectado a Arcanum)';
+  const fecha = (v, campo) => {
+    if (v && !/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw error(`"${campo}" debe tener la forma AAAA-MM-DD`);
+    return v || undefined;
+  };
+  const filtros = (args, ctx) => {
+    const cliente = clienteDelAlcance(ctx.principal, args.cliente);
+    if (cliente) ctx.cuit = cliente;
+    return {
+      cliente,
+      emisor: args.emisor ? cuit11(args.emisor, 'emisor') : undefined,
+      estado: args.estado || undefined,
+      desde: fecha(args.desde, 'desde'),
+      hasta: fecha(args.hasta, 'hasta'),
+      q: args.q || undefined,
+      lote: args.lote !== undefined && args.lote !== null && args.lote !== '' ? entero(args.lote, 'lote') : undefined,
+    };
+  };
+  const filtrosEsquema = {
+    cliente: { type: 'string', description: 'Opcional. CUIT del cliente del estudio al que pertenecen. Obligatorio si la clave esta limitada a varios CUITs.' },
+    emisor: { type: 'string', description: 'Opcional. CUIT del emisor (el proveedor).' },
+    estado: { type: 'string', enum: ['ok', 'revisar', 'error', 'aprobado'], description: 'Opcional. Estado en Factorum.' },
+    desde: { type: 'string', description: 'Opcional. Fecha de emision minima, AAAA-MM-DD.' },
+    hasta: { type: 'string', description: 'Opcional. Fecha de emision maxima, AAAA-MM-DD.' },
+    q: { type: 'string', description: 'Opcional. Busca en razon social, CUIT y numero.' },
+    lote: { type: 'integer', minimum: 1, description: 'Opcional. Id del lote.' },
+  };
+
+  const buscar = {
+    nombre: 'facturas_recibidas',
+    titulo: 'Facturas recibidas (Factorum)',
+    descripcion:
+      'Busca las facturas recibidas que leyo Factorum (el lector de facturas conectado a Arcanum: QR, texto, OCR e IA). '
+      + 'JSON con el total y hasta 50 comprobantes: tipo, numero, fecha, emisor, importes por alicuota, CAE, estado (ok, '
+      + 'revisar, error, aprobado), hallazgos de los controles y la constatacion con ARCA. Filtros por cliente, emisor, estado, '
+      + 'fechas, texto y lote. Si Factorum no esta configurado, devuelve un error. Solo lectura.',
+    esquema: {
+      type: 'object',
+      properties: { ...filtrosEsquema, limite: { type: 'integer', minimum: 1, maximum: 50, description: 'Opcional. Cuantos traer (hasta 50; por defecto 20).' } },
+      additionalProperties: false,
+    },
+    async ejecutar(args, ctx) {
+      const f = filtros(args, ctx);
+      const limite = args.limite ? Math.min(50, entero(args.limite, 'limite')) : 20;
+      const r = await fa().comprobantes({ ...f, limite });
+      const lista = Array.isArray(r.comprobantes) ? r.comprobantes : [];
+      return {
+        filtros: Object.fromEntries(Object.entries(f).filter(([, v]) => v !== undefined)),
+        total: r.total !== undefined ? r.total : lista.length,
+        cantidad: Math.min(lista.length, limite),
+        comprobantes: lista.slice(0, limite).map(resumirCbteFactorum),
+        fuente: FUENTE,
+      };
+    },
+  };
+
+  const una = {
+    nombre: 'factura_recibida',
+    titulo: 'Una factura recibida (Factorum)',
+    descripcion:
+      'Una factura recibida leida por Factorum, por su id: todos sus datos clave, los hallazgos de los controles, la '
+      + 'constatacion con ARCA, de donde salio cada campo y las correcciones hechas a mano (antes, despues, quien y cuando). '
+      + 'Si Factorum no esta configurado, devuelve un error. Solo lectura.',
+    esquema: {
+      type: 'object',
+      properties: { id: { type: 'integer', minimum: 1, description: 'Id del comprobante en Factorum (sale de facturas_recibidas).' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    async ejecutar(args, ctx) {
+      const id = entero(args.id, 'id');
+      const r = await fa().comprobante(id);
+      if (!r || !r.comprobante) throw error('No existe ese comprobante en Factorum');
+      assertRecursoEnAlcance(ctx.principal, r.comprobante.cliente_cuit);
+      if (r.comprobante.cliente_cuit) ctx.cuit = r.comprobante.cliente_cuit;
+      return {
+        ...resumirCbteFactorum(r.comprobante),
+        origenes: r.comprobante.origenes || {},
+        correcciones: (r.correcciones || []).slice(0, 50),
+        fuente: FUENTE,
+      };
+    },
+  };
+
+  const resumen = {
+    nombre: 'resumen_facturas_recibidas',
+    titulo: 'Resumen de facturas recibidas (Factorum)',
+    descripcion:
+      'Totales de las facturas recibidas que leyo Factorum: cantidad, neto gravado, IVA por alicuota, otros tributos y '
+      + 'total (las notas de credito restan), mas la cantidad por estado y por tipo. Mismos filtros que facturas_recibidas. '
+      + 'Sirve para el libro IVA compras de un cliente en un periodo. Si Factorum no esta configurado, devuelve un error. '
+      + 'Solo lectura.',
+    esquema: { type: 'object', properties: filtrosEsquema, additionalProperties: false },
+    async ejecutar(args, ctx) {
+      const f = filtros(args, ctx);
+      const r = await fa().resumen(f);
+      return {
+        filtros: Object.fromEntries(Object.entries(f).filter(([, v]) => v !== undefined)),
+        resumen: r.resumen || {},
+        fuente: FUENTE,
+      };
+    },
+  };
+
+  const verificar = {
+    nombre: 'verificar_factura',
+    titulo: 'Verificar una factura (Factorum)',
+    descripcion:
+      'Dice si una factura es legal: Factorum la lee (QR, texto, OCR), corre los controles, la constata con ARCA (WSCDC) y '
+      + 'busca al emisor en la base de apocrifos. JSON con el veredicto (valida, invalida, apocrifa, con_errores o '
+      + 'no_verificable), el motivo, los datos clave de cada comprobante del archivo y sus hallazgos. No guarda nada: ni el '
+      + 'archivo ni el resultado quedan en Factorum. Archivo en base64 (PDF, JPG, PNG o WEBP; por MCP, hasta 1,4 MB). Si '
+      + 'Factorum no esta configurado, devuelve un error. Solo lectura.',
+    esquema: {
+      type: 'object',
+      properties: {
+        nombre: { type: 'string', description: 'Nombre del archivo, con su extension (ej. factura.pdf).' },
+        contenido_base64: { type: 'string', description: 'El archivo en base64.' },
+        cuit_consultante: { type: 'string', description: 'Opcional. CUIT con certificado en Arcanum con el que se constata (quien recibio la factura). Si falta y la clave tiene un unico CUIT, se usa ese.' },
+      },
+      required: ['nombre', 'contenido_base64'],
+      additionalProperties: false,
+    },
+    async ejecutar(args, ctx) {
+      if (!args.nombre || !args.contenido_base64) throw error('Faltan "nombre" y "contenido_base64"');
+      const cuitConsultante = consultanteDelAlcance(ctx.principal, args.cuit_consultante);
+      if (cuitConsultante) ctx.cuit = cuitConsultante;
+      const r = await fa().verificar({ nombre: String(args.nombre), contenidoBase64: String(args.contenido_base64), cuitConsultante });
+      const res = r.resultado || {};
+      return {
+        veredicto: r.veredicto || null,
+        mensaje: r.mensaje || null,
+        archivo: { nombre: res.archivo || String(args.nombre), sha256: res.sha256 || null, paginas: res.paginas || null },
+        comprobantes: (Array.isArray(res.comprobantes) ? res.comprobantes : []).slice(0, 20).map(resumirCbteFactorum),
+        constatacion: (Array.isArray(r.constatacion) ? r.constatacion : []).slice(0, 20),
+        guardado: false,
+        fuente: FUENTE,
+      };
+    },
+  };
+
+  return [buscar, una, resumen, verificar];
+}
+
 const HERRAMIENTAS = [
   padronTool, comprobanteTool, ultimoTool, puntosTool, estadoTool,
   riesgoTool, recientesTool, ventanillaTool, certTool, vistaPreviaTool,
   misComprobantesTool, topesMonotributoTool, constatacionTool, colaTool,
+  ...crearHerramientasFactorum(),
 ];
 
 module.exports = {
   HERRAMIENTAS,
+  crearHerramientasFactorum,
   // Funciones puras expuestas para tests.
-  _internos: { parseTipo, parseComprobante, formatearNumero, fechaIso, cuit11, resumirPadron, estadoLeida, resumirMc, TIPOS },
+  _internos: { parseTipo, parseComprobante, formatearNumero, fechaIso, cuit11, resumirPadron, estadoLeida, resumirMc, resumirCbteFactorum, TIPOS },
 };

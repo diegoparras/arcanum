@@ -137,7 +137,16 @@ test('constatacion: lista por JSON o CSV con scope, y constatar recibidos', asyn
   });
   assert.deepStrictEqual(llamadas, [['lista', '30711111118', 1], ['csv', '30711111118'], ['lista', '30711111118', 2], ['recibidos', '30711111118']]);
   await conServidor(LECTURA, { mc: mcFalso(), fisherboy: fbFalso(), constatacion }, async (base) => {
+    // Constatar los recibidos guarda el resultado: sigue siendo de operador.
     assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/20263630743/constatar')).status, 403);
+    // Constatar una lista solo consulta: lectura puede (es lo que usa Factorum).
+    assert.strictEqual((await pedir(base, 'POST', '/api/constatacion', { cuit: '20263630743', items: [{}] })).status, 200);
+  });
+  // Lectura acotada a un CUIT: no puede constatar con otro.
+  const LECTURA_ACOTADA = { username: 'fac', role: 'lectura', cuitAllow: ['30711111118'] };
+  await conServidor(LECTURA_ACOTADA, { mc: mcFalso(), fisherboy: fbFalso(), constatacion }, async (base) => {
+    assert.strictEqual((await pedir(base, 'POST', '/api/constatacion', { cuit: '20263630743', items: [{}] })).status, 403);
+    assert.strictEqual((await pedir(base, 'POST', '/api/constatacion', { cuit: '30711111118', items: [{}] })).status, 200);
   });
 });
 

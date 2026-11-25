@@ -3,6 +3,35 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.0] - 2026-11-25
+
+### Nuevo
+- **Facturas recibidas con Factorum.** Arcanum se conecta con Factorum, el lector de facturas
+  de la suite (QR, texto, OCR e IA opcional), igual que con Fisherboy: `FACTORUM_URL` y
+  `FACTORUM_TOKEN`, o desde el menu **Factorum (facturas recibidas)** (superadmin), con el token
+  cifrado y que nunca vuelve por la API.
+- **Pestana Facturas recibidas** (aparece cuando Factorum responde): **verificar una factura**
+  con su veredicto en color (valida, invalida, apocrifa, con errores o no verificable), los
+  datos clave y los hallazgos, sin guardarla; **subir lotes** (varios archivos o un ZIP) con el
+  cliente, IA y constatar; avance de cada lote; tabla de comprobantes con filtros y totales;
+  panel de **revision** para corregir campos y aprobar, con el archivo original a un clic; y
+  descarga en **Excel** y **CSV**.
+- **API** `/api/factorum/...`: `salud`, `config`, `verificar`, `lotes`, `comprobantes` (ver,
+  corregir y aprobar, archivo original), `resumen` y `export.xlsx` / `export.csv`. Leer lo
+  puede cualquier rol; verificar, subir y corregir, operador o mas. Respeta el **scope por
+  CUIT**: cada usuario o clave ve solo sus clientes, y verificar usa su unico CUIT como
+  consultante si no se indica otro.
+- **MCP**: `facturas_recibidas`, `factura_recibida`, `resumen_facturas_recibidas` y
+  `verificar_factura` (18 en total, todas de solo lectura; verificar no guarda nada). Sin
+  Factorum configurado devuelven un error claro.
+- `docker-compose.factorum.yml` para levantar Factorum (con su Postgres y Ollama opcional, perfil
+  `ia`) junto a Arcanum. En DESPLIEGUE.md, como darle a Factorum su clave de Arcanum: rol
+  `lectura` acotado a los CUITs que constatan.
+- `POST /api/constatacion` (constatar una lista, sin guardar nada) ahora se permite al rol
+  `lectura`, como la vista previa: solo consulta WSCDC y apocrifos. Respeta los CUITs permitidos
+  de la clave. Constatar los recibidos de Mis Comprobantes, que guarda el resultado, sigue
+  exigiendo operador.
+
 ## [2.0.9] - 2026-11-25
 
 ### Corregido

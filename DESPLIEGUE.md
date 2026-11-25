@@ -124,6 +124,100 @@ vivo. Si un paso de la receta no coincide con la pagina real, tomá el control, 
 a mano y despues ajustá la receta desde el menu. Si ARCA rechaza la clave, Arcanum bloquea la
 credencial y no reintenta: revisala y volvé a cargarla.
 
+## Facturas recibidas: conectar Factorum
+
+Factorum lee las facturas recibidas (QR, texto, OCR e IA opcional), corre los controles y las
+constata con ARCA **a traves de Arcanum**. La conexion va en los dos sentidos:
+
+- **Arcanum -> Factorum**: con `FACTORUM_URL` y `FACTORUM_TOKEN` (el `FACTORUM_API_KEY` de
+  Factorum). Es lo que usan la pestana **Facturas recibidas**, `/api/factorum/...` y las
+  herramientas MCP.
+- **Factorum -> Arcanum**: Factorum llama a `POST /api/constatacion` (WSCDC + apocrifos) y a
+  `GET /api/padron/a5/:cuit?cuit=` con una **clave de API de Arcanum** (`ARCANUM_API_KEY` en
+  Factorum). En Arcanum no hay que habilitar nada nuevo: solo crear esa clave.
+
+### 1. La clave de Arcanum para Factorum
+
+En Arcanum, **Usuarios -> Claves de API -> Nueva**:
+
+- **Rol `lectura`**. Alcanza: `POST /api/constatacion` es una de las excepciones de `POST` del rol
+  lectura (como la vista previa), porque solo consulta WSCDC y apocrifos y no guarda nada. Con
+  lectura, la clave no puede emitir ni modificar nada aunque se filtre.
+- **CUITs permitidos**: solo los que constatan (los que tienen certificado con WSCDC y reciben las
+  facturas). Con otro CUIT, Arcanum responde `403`.
+- Opcional: vencimiento y limite por minuto (un lote grande constata de a muchos; 120 por minuto
+  alcanza para la mayoria).
+
+Nunca le pases a Factorum la `ARCANUM_API_KEY` maestra de Arcanum (es rol admin, sin limite de
+CUITs).
+
+### 2. Levantar Factorum
+
+**Compose**: sumá el archivo de Factorum (trae su propio Postgres):
+
+```bash
+openssl rand -hex 24   # FACTORUM_TOKEN (Arcanum <-> Factorum)
+openssl rand -hex 32   # FACTORUM_MASTER_KEY (obligatoria si los archivos van a R2)
+```
+
+En el `.env`:
+
+```
+FACTORUM_TOKEN=<el de arriba>
+FACTORUM_ARCANUM_API_KEY=<la clave de lectura del paso 1>
+ARCANUM_CUIT_CONSULTANTE=<CUIT por defecto para constatar, si no se indica otro>
+# opcional, IA (compatible con OpenAI, incluido Ollama):
+FACTORUM_LLM_API_BASE_URL=http://ollama:11434/v1
+FACTORUM_LLM_MODEL=qwen2.5vl:7b
+# opcional, archivos en R2 / S3 (si no, quedan en el volumen de Factorum):
+FACTORUM_MASTER_KEY=...
+FACTORUM_R2_ENDPOINT=...
+FACTORUM_R2_BUCKET=...
+FACTORUM_R2_ACCESS_KEY=...
+FACTORUM_R2_SECRET_KEY=...
+```
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.factorum.yml up -d
+# con IA local (Ollama) en el mismo compose:
+docker compose -f docker-compose.yml -f docker-compose.factorum.yml --profile ia up -d
+docker compose exec ollama ollama pull qwen2.5vl:7b
+```
+
+**EasyPanel**: en el mismo proyecto, un Postgres para Factorum y el servicio Factorum (imagen
+`ghcr.io/diegoparras/factorum:latest`, puerto interno `8095`, volumen en `/data`) con:
+
+```
+FACTORUM_DATABASE_URL=postgres://USUARIO:PASSWORD@<postgres-de-factorum>:5432/BASE
+FACTORUM_API_KEY=<FACTORUM_TOKEN>
+ARCANUM_URL=http://<servicio-arcanum>:8094
+ARCANUM_API_KEY=<la clave de lectura del paso 1>
+ARCANUM_CUIT_CONSULTANTE=<CUIT por defecto>
+# opcional, IA:
+LLM_API_BASE_URL=...
+LLM_API_KEY=...
+LLM_MODEL=...
+# opcional, R2:
+FACTORUM_MASTER_KEY=...
+FACTORUM_R2_ENDPOINT=...
+FACTORUM_R2_BUCKET=...
+FACTORUM_R2_ACCESS_KEY=...
+FACTORUM_R2_SECRET_KEY=...
+```
+
+### 3. Conectar Arcanum
+
+`FACTORUM_URL=http://<servicio-factorum>:8095` y `FACTORUM_TOKEN=<el mismo>`, o cargalos desde el
+menu **Factorum (facturas recibidas)** (superadmin; el token se guarda cifrado y tiene el ojito
+para verlo mientras lo tipeas). Con **Probar** tiene que decir "Factorum 0.x conectado" y, si la
+clave del paso 1 esta bien, "constata con Arcanum". La pestana **Facturas recibidas** aparece sola
+cuando Factorum responde.
+
+**Primera prueba**: en **Facturas recibidas -> Verificar una factura**, subí una factura real
+recibida. Tiene que volver `VALIDA` (o `NO VERIFICABLE` si al CUIT consultante le falta WSCDC). Si
+dice que ARCA no respondio, revisá en Arcanum el uso de la clave de Factorum (boton **Uso**): un
+`403` es una clave de rol `lectura` o un CUIT que no esta en su lista.
+
 ## Prueba de emision en homologacion (antes de facturar en produccion)
 
 Saca un CAE real **de prueba** contra los servidores de homologacion de ARCA y verifica
