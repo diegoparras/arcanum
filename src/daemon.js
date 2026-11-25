@@ -263,8 +263,15 @@ function rangoDiario(ahora) {
   return { desde, hasta: hoy, hoy };
 }
 
+/** Hora (argentina) de la corrida diaria de Mis Comprobantes y si los daemons corren. */
+function horaMcDiaria(env = process.env) {
+  const n = Number(env.ARCANUM_MC_HORA);
+  const hora = env.ARCANUM_MC_HORA !== undefined && env.ARCANUM_MC_HORA !== '' && Number.isInteger(n) && n >= 0 && n <= 23 ? n : 6;
+  return { hora, activa: env.ARCANUM_DAEMONS !== '0' };
+}
+
 async function sincronizarMisComprobantes(ahora = new Date()) {
-  const hora = parseInt(process.env.ARCANUM_MC_HORA || '6', 10);
+  const { hora } = horaMcDiaria();
   const { rows } = await db.query("SELECT value FROM settings WHERE key = 'mc_ultima_diaria'");
   if (!tocaDiaria(ahora, hora, rows[0] && rows[0].value)) return;
   const { desde, hasta, hoy } = rangoDiario(ahora);
@@ -319,11 +326,11 @@ function start() {
   // Mis Comprobantes: se fija cada 10 minutos si ya toca la corrida diaria.
   setTimeout(() => sincronizarMisComprobantes().catch((e) => console.error('[arcanum][mis-comprobantes]', e.message)), 3 * 60 * 1000);
   every(10 * 60 * 1000, sincronizarMisComprobantes);
-  console.log(`[arcanum] daemons activos (monitor 5m, vencimientos 12h, e-Ventanilla ${ventanillaMin > 0 ? `${ventanillaMin}m` : 'apagado'}, Mis Comprobantes diario ${process.env.ARCANUM_MC_HORA || '6'} h)`);
+  console.log(`[arcanum] daemons activos (monitor 5m, vencimientos 12h, e-Ventanilla ${ventanillaMin > 0 ? `${ventanillaMin}m` : 'apagado'}, Mis Comprobantes diario ${horaMcDiaria().hora} h)`);
 }
 
 function stop() {
   timers.forEach(clearInterval);
 }
 
-module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, backupDiario, sinSolapar, tocaDiaria, rangoDiario };
+module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, backupDiario, sinSolapar, tocaDiaria, rangoDiario, horaMcDiaria };

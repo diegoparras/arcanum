@@ -82,6 +82,7 @@ test('GET credencial nunca trae la clave y solo admin la carga', async () => {
     const r = await (await pedir(base, 'GET', '/api/mis-comprobantes/20263630743/credencial')).json();
     assert.strictEqual(r.credencial.cargada, true);
     assert.ok(!('clave' in r.credencial) && !('clave_cifrada' in r.credencial));
+    assert.ok(Number.isInteger(r.diaria.hora) && typeof r.diaria.activa === 'boolean');
     const put = await pedir(base, 'PUT', '/api/mis-comprobantes/20263630743/credencial', { cuitLogin: '20263630743', clave: 'secreta' });
     assert.strictEqual(put.status, 200);
     assert.ok(!(await put.text()).includes('secreta'));

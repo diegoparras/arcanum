@@ -151,7 +151,7 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       return json(res, 200, { ok: true, corridas: await servicio().corridas(cuit, q.get('limite')) });
     }
     if (seg[3] === 'credencial') {
-      if (req.method === 'GET') return json(res, 200, { ok: true, credencial: await servicio().estadoCredencial(cuit) });
+      if (req.method === 'GET') return json(res, 200, { ok: true, credencial: await servicio().estadoCredencial(cuit), diaria: require('../daemon').horaMcDiaria() });
       requireRole(principal, 'superadmin', 'admin');
       if (req.method === 'PUT') {
         const b = await readJsonBody(req);

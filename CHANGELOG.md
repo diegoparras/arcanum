@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.0.2] - 2026-11-25
+
+### Cambiado
+- **La casilla de sincronizacion diaria dice a que hora corre** (por ejemplo "todos los dias
+  a las 6:00"), tomando la hora real del servidor (`ARCANUM_MC_HORA`, hora argentina). Si el
+  servidor tiene la sincronizacion automatica apagada, la pantalla lo avisa.
+
+### Corregido
+- **Un valor invalido en `ARCANUM_MC_HORA` ya no apaga la corrida diaria.** Antes, algo como
+  `ARCANUM_MC_HORA=abc` o `24` hacia que la sincronizacion de Mis Comprobantes no corriera
+  nunca; ahora se usa la hora por defecto (6:00).
+
 ## [2.0.1] - 2026-11-25
 
 ### Corregido

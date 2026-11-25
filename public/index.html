@@ -608,13 +608,15 @@ async function vMis(){
   if(admin)api('/api/fisherboy/salud').then(r=>{$('#mc_fbsalud').textContent=r.fisherboy.ok?`Fisherboy ${r.fisherboy.version||''} conectado`:`Fisherboy: ${r.fisherboy.error||'no responde'}`;}).catch(()=>{});
 }
 async function mcCredencial(admin){
-  try{const {credencial:c}=await api(`/api/mis-comprobantes/${MC.cuit}/credencial`);
+  try{const {credencial:c,diaria:dd}=await api(`/api/mis-comprobantes/${MC.cuit}/credencial`);
+    const hd=dd&&Number.isInteger(dd.hora)?` a las ${dd.hora}:00`:'';
+    const off=dd&&dd.activa===false?'<p class="hint">La sincronización automática está apagada en este servidor: solo corre con “Sincronizar ahora”.</p>':'';
     const estado=c.rechazada?`<span class="tag no">ARCA RECHAZÓ LA CLAVE</span> <span class="hint">${esc(c.rechazoMotivo||'')}. No se reintenta para no bloquear la cuenta: cargá la clave de nuevo.</span>`:c.cargada?`<span class="tag ok">CLAVE CARGADA</span> <span class="hint">${c.actualizada?'el '+new Date(c.actualizada).toLocaleString('es-AR'):''}${c.actualizadaPor?' por '+esc(c.actualizadaPor):''}</span>`:'<span class="tag warn">SIN CLAVE</span>';
     $('#mc_cred').innerHTML=`${estado}
       ${admin?`<div class="f2"><div><label>CUIT con el que se entra a ARCA</label><input id="mc_login" class="mono" value="${esc(c.cuitLogin||MC.cuit)}"></div>
       <div><label>Clave fiscal ${c.cargada?'(dejala vacía para no cambiarla)':''}</label>
       <div class="pwwrap"><input id="mc_clave" type="password" autocomplete="new-password" placeholder="${c.cargada?'Sin cambios':'Clave fiscal'}"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar la clave" onclick="togglePw('mc_clave',this)">${I_EYE}</button></div></div></div>
-      <label class="chk" style="margin-top:10px"><input type="checkbox" id="mc_sync" ${c.sincronizar?'checked':''}> Sincronizar todos los días (mes anterior y mes en curso)</label>
+      <label class="chk" style="margin-top:10px"><input type="checkbox" id="mc_sync" ${c.sincronizar?'checked':''}> Sincronizar todos los días${hd} (mes anterior y mes en curso)</label>${off}
       <div class="row" style="margin-top:10px"><button class="primary" onclick="mcGuardarClave()">Guardar</button>
       ${c.cargada?'<button onclick="mcBorrarClave()">Borrar clave</button>':''}</div>
       <p class="hint">Se guarda cifrada. Nunca se vuelve a mostrar ni queda en los registros.</p>`:'<p class="hint">Solo un administrador puede cargar o cambiar la clave fiscal.</p>'}`;
