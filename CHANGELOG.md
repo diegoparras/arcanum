@@ -3,6 +3,20 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.7] - 2026-11-24
+
+### Corregido
+- **Facturar en produccion ya conecta con ARCA.** El servidor de wsfev1
+  (`servicios1.afip.gov.ar`) negocia una clave Diffie-Hellman de 1024 bits que Node 24
+  rechaza por defecto (`ERR_SSL_DH_KEY_TOO_SMALL`), asi que la vista previa y la emision
+  fallaban con "fetch failed". Ahora solo las conexiones a ARCA (`*.afip.gov.ar`,
+  `*.afip.gob.ar`, `*.arca.gob.ar`) aceptan esa clave (`SECLEVEL=1`, con TLS 1.2 como
+  minimo y certificado verificado). Webhooks, login con Lockatus y cualquier otro destino
+  siguen con la seguridad por defecto. Si pusiste `NODE_OPTIONS=--tls-cipher-list=...`
+  en el servicio como parche, sacala: ya no hace falta y relajaba todas las conexiones.
+- Un fallo de conexion con ARCA dice la causa real (por ejemplo `ECONNREFUSED` o
+  `ERR_SSL_DH_KEY_TOO_SMALL`) en lugar de solo "fetch failed".
+
 ## [0.10.6] - 2026-11-20
 
 ### Seguridad

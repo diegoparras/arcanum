@@ -15,6 +15,7 @@ const { config } = require('../config');
 const { getAccessTicket } = require('../auth/wsaa');
 const { normalizeCuit } = require('../auth/tenants');
 const { SoapError } = require('../soap/client');
+const { fetchArca, causaDeFallo } = require('../soap/tlsArca');
 
 const WSAA_SERVICE = 'veconsumerws';
 const NS = {
@@ -61,7 +62,7 @@ async function postSoap(entorno, soap, binary = false) {
   const t = setTimeout(() => ctrl.abort(), config.soapTimeoutMs);
   let res;
   try {
-    res = await fetch(endpoint(entorno), {
+    res = await fetchArca(endpoint(entorno), {
       method: 'POST',
       headers: { 'Content-Type': 'application/soap+xml; charset=UTF-8' },
       body: soap,
@@ -69,7 +70,7 @@ async function postSoap(entorno, soap, binary = false) {
     });
   } catch (e) {
     if (e.name === 'AbortError') throw new SoapError('Timeout llamando a e-Ventanilla', 504);
-    throw new SoapError('No se pudo conectar con e-Ventanilla: ' + e.message, 502);
+    throw new SoapError('No se pudo conectar con e-Ventanilla: ' + causaDeFallo(e), 502);
   } finally {
     clearTimeout(t);
   }

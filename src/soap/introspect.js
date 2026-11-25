@@ -7,6 +7,7 @@
 const { XMLParser } = require('fast-xml-parser');
 const catalog = require('../catalog');
 const { config } = require('../config');
+const { fetchArca } = require('./tlsArca');
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', removeNSPrefix: true });
 const cache = new Map();
@@ -22,7 +23,7 @@ async function fetchWsdl(url) {
   const t = setTimeout(() => ctrl.abort(), 20000);
   let txt;
   try {
-    const r = await fetch(wsdlUrl, { signal: ctrl.signal });
+    const r = await fetchArca(wsdlUrl, { signal: ctrl.signal });
     txt = await r.text();
   } finally {
     clearTimeout(t);

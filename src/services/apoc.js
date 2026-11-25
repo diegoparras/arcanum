@@ -14,6 +14,7 @@
 const { config } = require('../config');
 const { getAccessTicket } = require('../auth/wsaa');
 const { SoapError } = require('../soap/client');
+const { fetchArca, causaDeFallo } = require('../soap/tlsArca');
 const { normalizeCuit } = require('../auth/tenants');
 
 const SERVICE = 'wsapoc';
@@ -96,7 +97,7 @@ async function consultar(cuitRepresentada, cuitConsulta, entorno) {
   const timer = setTimeout(() => ctrl.abort(), config.soapTimeoutMs);
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetchArca(url, {
       method: 'POST',
       headers: {
         'Content-Type': `application/soap+xml; charset=UTF-8; action="${NS}${OP}"`,
@@ -106,7 +107,7 @@ async function consultar(cuitRepresentada, cuitConsulta, entorno) {
     });
   } catch (e) {
     if (e.name === 'AbortError') throw new SoapError(`Timeout (${config.soapTimeoutMs}ms) llamando a WSAPOC`, 504);
-    throw new SoapError(`No se pudo conectar con WSAPOC: ${e.message}`, 502);
+    throw new SoapError(`No se pudo conectar con WSAPOC: ${causaDeFallo(e)}`, 502);
   } finally {
     clearTimeout(timer);
   }

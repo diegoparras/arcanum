@@ -1,6 +1,6 @@
 {
   "name": "arcanum",
-  "version": "0.10.6",
+  "version": "0.10.7",
   "description": "Gateway REST self-hosted para los Web Services SOAP de ARCA (ex-AFIP). Firma WSAA 100% local, sin terceros. Pensado para conectarse a n8n.",
   "license": "Apache-2.0",
   "type": "commonjs",
@@ -20,7 +20,8 @@
     "nodemailer": "^6.9.16",
     "pdfkit": "^0.15.0",
     "pg": "^8.13.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "undici": "^7.30.2"
   },
   "devDependencies": {
     "eslint": "^9.15.0"

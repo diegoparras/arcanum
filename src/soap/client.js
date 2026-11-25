@@ -6,6 +6,7 @@
 
 const { XMLParser } = require('fast-xml-parser');
 const { config } = require('../config');
+const { fetchArca, causaDeFallo } = require('./tlsArca');
 
 const parser = new XMLParser({
   ignoreAttributes: true,
@@ -40,7 +41,7 @@ async function post(url, soapAction, envelope, opts = {}) {
     : { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: soapAction };
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetchArca(url, {
       method: 'POST',
       headers,
       body: envelope,
@@ -50,7 +51,7 @@ async function post(url, soapAction, envelope, opts = {}) {
     if (e.name === 'AbortError') {
       throw new SoapError(`Timeout (${config.soapTimeoutMs}ms) llamando a ARCA`, 504, { tipo: 'timeout' });
     }
-    throw new SoapError(`No se pudo conectar con ARCA: ${e.message}`, 502, { tipo: 'conexion' });
+    throw new SoapError(`No se pudo conectar con ARCA: ${causaDeFallo(e)}`, 502, { tipo: 'conexion' });
   } finally {
     clearTimeout(timer);
   }
