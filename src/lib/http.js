@@ -27,13 +27,14 @@ function sendError(res, err) {
   sendJson(res, status, payload);
 }
 
-function readJsonBody(req) {
+/** Body JSON con tope (2 MB por defecto; `max` lo sube para rutas que reciben archivos). */
+function readJsonBody(req, { max = MAX_BODY } = {}) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > max) {
         reject(Object.assign(new Error('Body demasiado grande'), { httpStatus: 413 }));
         req.destroy();
         return;
