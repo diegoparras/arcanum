@@ -121,6 +121,11 @@
   .nov-sec{margin:8px 0 2px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
   .nov-list{margin:2px 0 6px;padding-left:18px;font-size:13.5px;line-height:1.5}
   .nov-list li{margin:3px 0}.nov-list code{font-family:var(--mono);font-size:12px}
+  /* Facturas recibidas (Factorum): veredicto con borde de color y barra de progreso del lote. */
+  .fa-ver{border-left:4px solid var(--muted)} .fa-ver.ok{border-left-color:var(--ok)} .fa-ver.no{border-left-color:var(--bad)} .fa-ver.warn{border-left-color:var(--warn)}
+  .fa-ver .tag{font-size:12px;padding:3px 9px}
+  .fa-prog{height:6px;border-radius:999px;background:var(--chip);overflow:hidden;margin-bottom:4px}
+  .fa-prog div{height:100%;background:var(--accent)}
   .linkbtn{background:none;border:none;padding:0;color:var(--accent);cursor:pointer;font:inherit;text-decoration:underline}
   /* Responsive: el menú nunca se sale de pantalla; en angosto la navegacion es un cajon
      que se abre encima del contenido (topbar = rayitas + logo + kebab). */
@@ -208,6 +213,7 @@ const NAV_ICON={
   contingencia:NI('<path d="M12 4 3 20h18z"/><path d="M12 10v4M12 17h.01"/>'),
   clientes:NI('<circle cx="9" cy="8" r="3.5"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6 6 0 0 1 3 5.5"/>'),
   mis:NI('<path d="M7 18a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 18 9.5a4 4 0 0 1 0 8.5"/><path d="M12 11v9M9 17l3 3 3-3"/>'),
+  recibidas:NI('<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="m9.5 14 2 2 3.5-4"/>'),
   servicios:NI('<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>'),
   generador:NI('<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>'),
   webhooks:NI('<path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/>'),
@@ -216,14 +222,15 @@ const NAV_ICON={
 const NAV=[
   [null,[['panel','Panel']]],
   ['Facturar',[['emitir','Emitir'],['facturador','Facturador'],['comprobantes','Comprobantes'],['contingencia','Contingencia']]],
-  ['ARCA',[['clientes','Clientes'],['mis','Mis Comprobantes'],['servicios','Servicios'],['generador','Generador']]],
+  ['ARCA',[['clientes','Clientes'],['mis','Mis Comprobantes'],['recibidas','Facturas recibidas'],['servicios','Servicios'],['generador','Generador']]],
   ['Administración',[['webhooks','Webhooks'],['usuarios','Usuarios']]],
 ];
 const VIEWS=NAV.flatMap(g=>g[1]);
 function renderNav(cur){
   const admin=['superadmin','admin'].includes(ME.role);
   $('#nav').innerHTML=NAV.map(([grupo,items])=>{
-    const vis=items.filter(v=>v[0]!=='usuarios'||admin);
+    // "Facturas recibidas" solo si Factorum responde (ver faChequearSalud).
+    const vis=items.filter(v=>(v[0]!=='usuarios'||admin)&&(v[0]!=='recibidas'||(FA.salud&&FA.salud.ok)||cur==='recibidas'));
     if(!vis.length)return '';
     return (grupo?`<div class="nav-g">${grupo}</div>`:'')+vis.map(v=>`<button type="button" class="nav-it${v[0]===cur?' active':''}" onclick="go('${v[0]}')" title="${v[1]}" aria-label="${v[1]}"${v[0]===cur?' aria-current="page"':''}>${NAV_ICON[v[0]]}<span>${v[1]}</span></button>`).join('');
   }).join('');
@@ -250,7 +257,8 @@ function cerrarNavMovil(){document.documentElement.removeAttribute('data-nav-mov
 function medirTopbar(){const h=document.querySelector('#appView header');if(h&&h.offsetHeight)document.documentElement.style.setProperty('--top-h',h.offsetHeight+'px');}
 addEventListener('resize',()=>{medirTopbar();if(!navMovil())cerrarNavMovil();else syncNavBtn();});
 addEventListener('keydown',e=>{if(e.key==='Escape'&&document.documentElement.getAttribute('data-nav-movil')==='abierto')cerrarNavMovil();});
-function go(v){if(navMovil())cerrarNavMovil();if(typeof mcPararTimers==='function')mcPararTimers();renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();if(v==='panel'||!['clientes','servicios','emitir','facturador','comprobantes','mis','contingencia','generador','webhooks','usuarios'].includes(v))setTimeout(()=>{if(typeof avisoMasterKey==='function')avisoMasterKey();},600);}
+let VISTA='panel';
+function go(v){if(navMovil())cerrarNavMovil();if(typeof mcPararTimers==='function')mcPararTimers();if(typeof faPararTimers==='function')faPararTimers();VISTA=v;renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,recibidas:vRecibidas,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();if(v==='panel'||!['clientes','servicios','emitir','facturador','comprobantes','mis','recibidas','contingencia','generador','webhooks','usuarios'].includes(v))setTimeout(()=>{if(typeof avisoMasterKey==='function')avisoMasterKey();},600);}
 
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; }catch(e){ showLogin(); return; }
@@ -258,6 +266,7 @@ async function boot(){
   $('#loginView').classList.add('hidden');$('#appView').classList.remove('hidden');
   medirTopbar();syncNavBtn();
   go((location.hash||'#panel').slice(1));
+  faChequearSalud();
   setTimeout(avisarNovedades,400);
 }
 
@@ -778,6 +787,204 @@ async function ajGuardarReceta(){try{const r=JSON.parse($('#aj_receta').value);a
 async function ajRestaurarReceta(){if(!confirm('¿Volver a la receta de fábrica?'))return;try{const {receta}=await api('/api/mis-comprobantes/receta',{method:'DELETE'});$('#aj_receta').value=JSON.stringify(receta,null,2);toast('Receta restaurada');}catch(e){toast(e.message,true);}}
 async function ajGuardarCats(){try{const c=JSON.parse($('#aj_cats').value);await api('/api/monotributo/categorias',{method:'PUT',body:JSON.stringify(c)});toast('Topes guardados');}catch(e){toast(e.message||'JSON inválido',true);}}
 
+/* ---------- FACTURAS RECIBIDAS (via Factorum) ---------- */
+// La pestaña aparece solo si Factorum responde (GET /api/factorum/salud). Todo pasa por Arcanum:
+// sus roles y su scope por CUIT; los archivos nunca se guardan en el navegador.
+const FA={salud:null,timer:null,filtros:{},tenants:[]};
+const FA_MAX_ARCHIVO=20*1024*1024, FA_MAX_LOTE=60*1024*1024;
+const FA_VEREDICTO={valida:['ok','VÁLIDA','ARCA confirma que el comprobante existe con esos datos.'],invalida:['no','INVÁLIDA','ARCA rechaza el comprobante.'],apocrifa:['no','APÓCRIFA','El emisor está en la base de apócrifos de ARCA.'],con_errores:['warn','CON ERRORES','Hay errores en la factura aunque ARCA la apruebe.'],no_verificable:['idle','NO VERIFICABLE','No se pudo constatar con ARCA.']};
+const FA_ESTADO={ok:['ok','OK'],revisar:['warn','Revisar'],error:['no','Error'],aprobado:['ok','Aprobado']};
+const FA_CAMPOS=[['tipo','Tipo (código ARCA)'],['letra','Letra'],['punto_venta','Punto de venta'],['numero','Número'],['fecha','Fecha (AAAA-MM-DD)'],['cuit_emisor','CUIT emisor'],['razon_social_emisor','Razón social del emisor'],['condicion_iva_emisor','Condición de IVA del emisor'],['doc_nro_receptor','Documento del receptor'],['razon_social_receptor','Receptor'],['moneda','Moneda'],['cotizacion','Cotización'],['neto_gravado','Neto gravado'],['no_gravado','No gravado'],['exento','Exento'],['iva_21','IVA 21%'],['iva_10_5','IVA 10,5%'],['iva_27','IVA 27%'],['iva_5','IVA 5%'],['iva_2_5','IVA 2,5%'],['otros_tributos','Otros tributos'],['total','Total'],['cae','CAE'],['vto_cae','Vencimiento del CAE']];
+const FA_ENTEROS=['tipo','punto_venta','numero'];
+const escA=s=>esc(s==null?'':s).replace(/"/g,'&quot;');
+const faPesos=n=>n==null||n===''?'':Number(n).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+function faPararTimers(){clearTimeout(FA.timer);FA.timer=null;}
+async function faChequearSalud(){
+  try{const r=await api('/api/factorum/salud');FA.salud=r.factorum;}catch{FA.salud={ok:false};}
+  if(ME)renderNav(VISTA);
+  return FA.salud;
+}
+function faSaludTexto(s){
+  if(!s)return '<span class="dot idle"></span>Consultando Factorum…';
+  if(!s.ok)return `<span class="dot bad"></span>Factorum: ${esc(s.error||'no responde')}`;
+  const partes=[`Factorum ${esc(s.version||'')} conectado`,s.ocr?'OCR':'sin OCR',s.ia&&s.ia.habilitada?`IA ${esc(s.ia.modelo||'')}${s.ia.local?' (local)':''}`:'sin IA',s.arcanum?'constata con Arcanum':'sin constatación (falta la clave de Arcanum en Factorum)'];
+  return `<span class="dot ok"></span>${partes.join(' · ')}`;
+}
+function faArchivoB64(f){return new Promise((ok,mal)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).replace(/^data:[^,]*,/,''));r.onerror=()=>mal(new Error('No se pudo leer '+f.name));r.readAsDataURL(f);});}
+function faOpcionesCuit(vacio){return `<option value="">${vacio}</option>`+FA.tenants.map(t=>`<option value="${escA(t.cuit)}">${esc(t.cuit)}${t.nombre?' — '+esc(t.nombre):''}</option>`).join('');}
+async function vRecibidas(){
+  faPararTimers();
+  const v=$('#view');
+  const opera=['superadmin','admin','operador'].includes(ME.role);
+  try{FA.tenants=(await api('/api/tenants')).tenants||[];}catch{FA.tenants=[];}
+  const s=await faChequearSalud();
+  if(!s||!s.ok){
+    v.innerHTML=`<h2>Facturas recibidas</h2><div class="card"><p>${faSaludTexto(s)}</p><p class="hint">Esta sección usa Factorum, el lector de facturas. ${ME.role==='superadmin'?'Cargá su URL y su token en el menú, <button class="linkbtn" type="button" onclick="ajustesFactorum()">Factorum (facturas recibidas)</button>.':'Pedile a un superadmin que lo conecte.'}</p></div>`;
+    return;
+  }
+  const uno=FA.tenants.length===1?FA.tenants[0].cuit:'';
+  v.innerHTML=`<h2>Facturas recibidas</h2>
+   <p class="hint">Facturas de proveedores leídas por Factorum: QR, texto, OCR y, si está habilitada, IA. Corre los controles, las constata con ARCA y busca al emisor en la base de apócrifos. <span id="fa_salud">${faSaludTexto(s)}</span></p>
+   <div class="f2">
+    <div class="card"><h3 style="text-transform:none">Verificar una factura</h3>
+      <p class="hint">¿Es legal? Se lee y se constata, pero no queda guardada.</p>
+      <label>Archivo (PDF, JPG, PNG o WEBP)</label><input id="fa_vfile" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*">
+      <label>Constatar con el certificado de</label><select id="fa_vcons">${faOpcionesCuit(uno?'':'El que tenga configurado Factorum')}</select>
+      <label class="chk" style="margin-top:10px"><input type="checkbox" id="fa_via" ${s.ia&&s.ia.habilitada?'':'disabled'}> Usar IA si hace falta</label>
+      <div class="row" style="margin-top:10px"><button class="primary" ${opera?'':'disabled'} onclick="faVerificar()">Verificar</button>${opera?'':'<span class="hint">Verificar requiere rol operador.</span>'}</div>
+      <div id="fa_ver" style="margin-top:12px"></div></div>
+    <div class="card"><h3 style="text-transform:none">Subir un lote</h3>
+      <p class="hint">Varias facturas o un ZIP. Se procesan en segundo plano y quedan para revisar.</p>
+      <label>Archivos (PDF, JPG, PNG, WEBP o ZIP)</label><input id="fa_lfiles" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.zip,application/pdf,application/zip,image/*">
+      <div class="f2"><div><label>Cliente</label><select id="fa_lcli">${faOpcionesCuit(uno?'':'Sin cliente')}</select></div>
+      <div><label>Nombre del lote</label><input id="fa_lnom" placeholder="Ej. Noviembre"></div></div>
+      <label class="chk" style="margin-top:10px"><input type="checkbox" id="fa_lia" ${s.ia&&s.ia.habilitada?'':'disabled'}> Usar IA si hace falta</label>
+      <label class="chk"><input type="checkbox" id="fa_lcons" ${s.arcanum?'checked':'disabled'}> Constatar con ARCA al terminar</label>
+      <div class="row" style="margin-top:10px"><button class="primary" ${opera?'':'disabled'} onclick="faSubirLote()">Subir</button><span class="hint" id="fa_lest"></span></div></div>
+   </div>
+   <div class="row"><h2>Lotes</h2><button class="ghost" style="margin:30px 0 12px auto" onclick="faLotes()">Actualizar</button></div>
+   <div class="card" id="fa_lotes" style="overflow-x:auto"><p class="hint">Cargando…</p></div>
+   <h2>Comprobantes</h2>
+   <div class="card"><div class="row">
+     <select id="fa_fest" style="width:auto"><option value="">Todos los estados</option><option value="revisar">Para revisar</option><option value="error">Con error</option><option value="ok">OK</option><option value="aprobado">Aprobados</option></select>
+     <select id="fa_fcli" style="width:auto">${faOpcionesCuit(uno?'':'Todos los clientes')}</select>
+     <input id="fa_fdesde" type="date" style="width:auto" title="Desde"><input id="fa_fhasta" type="date" style="width:auto" title="Hasta">
+     <input id="fa_fq" style="width:200px" placeholder="Razón social, CUIT o número">
+     <input id="fa_flote" class="mono" style="width:90px" placeholder="Lote">
+     <button onclick="faCargar()">Filtrar</button>
+     <span style="margin-left:auto" class="row"><button onclick="faExportar('xlsx')">Descargar Excel</button><button onclick="faExportar('csv')">Descargar CSV</button></span></div>
+     <div id="fa_resumen" class="hint" style="margin-top:10px"></div>
+     <div id="fa_tabla" style="margin-top:10px;overflow-x:auto"><p class="hint">Cargando…</p></div></div>`;
+  if(uno){$('#fa_vcons').value=uno;$('#fa_lcli').value=uno;$('#fa_fcli').value=uno;}
+  faLotes();faCargar();
+}
+function faVeredictoHtml(r){
+  const [cls,tit,def]=FA_VEREDICTO[r.veredicto]||['idle',String(r.veredicto||'?').toUpperCase(),''];
+  const cbtes=(r.resultado&&r.resultado.comprobantes)||[];
+  const filas=cbtes.map(rc=>{const c=rc.comprobante||rc;const hs=rc.hallazgos||[];
+    return `<table style="margin-top:8px">
+      <tr><th>Comprobante</th><td class="mono">${NOMBRE_TIPO[c.tipo]?esc(NOMBRE_TIPO[c.tipo]):esc(('Tipo '+(c.tipo||'?'))+(c.letra?' '+c.letra:''))} ${String(c.punto_venta||0).padStart(4,'0')}-${String(c.numero||0).padStart(8,'0')}</td></tr>
+      <tr><th>Fecha</th><td class="mono">${esc(c.fecha||'')}</td></tr>
+      <tr><th>Emisor</th><td>${esc(c.razon_social_emisor||'')} <span class="mono hint">${esc(c.cuit_emisor||'')}</span></td></tr>
+      <tr><th>Total</th><td class="mono">$${faPesos(c.total)}</td></tr>
+      <tr><th>CAE</th><td class="mono">${esc(c.cae||'')}${c.vto_cae?` <span class="hint">vence ${esc(c.vto_cae)}</span>`:''}</td></tr></table>
+      ${faHallazgosHtml(hs)}`;}).join('');
+  return `<div class="card fa-ver ${cls}"><span class="tag ${cls==='idle'?'':cls}">${tit}</span>
+    <p style="margin:8px 0 0">${esc(r.mensaje||def)}</p>${filas||'<p class="hint">No se encontró ningún comprobante en el archivo.</p>'}</div>`;
+}
+function faHallazgosHtml(hs){
+  if(!hs||!hs.length)return '<p class="hint" style="margin:8px 0 0">Sin hallazgos: los controles cierran.</p>';
+  const nv={error:'no',aviso:'warn',info:''};
+  return `<ul class="nov-list" style="margin-top:8px">${hs.map(h=>`<li><span class="tag ${nv[h.nivel]||''}">${esc(String(h.nivel||'').toUpperCase())}</span> ${esc(h.mensaje||h.codigo||'')}${h.campo?` <span class="hint mono">${esc(h.campo)}</span>`:''}</li>`).join('')}</ul>`;
+}
+async function faVerificar(){
+  const f=$('#fa_vfile').files[0];
+  if(!f){toast('Elegí un archivo',true);return;}
+  if(f.size>FA_MAX_ARCHIVO){toast('El archivo supera 20 MB',true);return;}
+  const box=$('#fa_ver');box.innerHTML='<p class="hint">Leyendo la factura y constatando con ARCA… puede tardar un minuto.</p>';
+  try{const body={nombre:f.name,contenido_base64:await faArchivoB64(f)};
+    const c=$('#fa_vcons').value;if(c)body.cuit_consultante=c;
+    if($('#fa_via').checked)body.ia=true;
+    const r=await api('/api/factorum/verificar',{method:'POST',body:JSON.stringify(body)});
+    box.innerHTML=faVeredictoHtml(r);
+  }catch(e){box.innerHTML=`<div class="card fa-ver no"><span class="tag no">ERROR</span> ${esc(e.message)}</div>`;}
+}
+async function faSubirLote(){
+  const fs=[...$('#fa_lfiles').files];
+  if(!fs.length){toast('Elegí uno o más archivos',true);return;}
+  const total=fs.reduce((a,f)=>a+f.size,0);
+  if(fs.some(f=>f.size>FA_MAX_ARCHIVO)){toast('Hay un archivo de más de 20 MB',true);return;}
+  if(total>FA_MAX_LOTE){toast('El lote supera 60 MB: partilo en varios',true);return;}
+  $('#fa_lest').textContent='Subiendo…';
+  try{const archivos=[];for(const f of fs)archivos.push({nombre:f.name,contenido_base64:await faArchivoB64(f)});
+    const body={archivos,ia:$('#fa_lia').checked,constatar:$('#fa_lcons').checked};
+    const c=$('#fa_lcli').value;if(c)body.cliente_cuit=c;
+    const n=$('#fa_lnom').value.trim();if(n)body.nombre=n;
+    const r=await api('/api/factorum/lotes',{method:'POST',body:JSON.stringify(body)});
+    $('#fa_lest').textContent='';$('#fa_lfiles').value='';toast(`Lote ${r.lote&&r.lote.id?'#'+r.lote.id+' ':''}en proceso`);faLotes();
+  }catch(e){$('#fa_lest').textContent='';toast(e.message,true);}
+}
+async function faLotes(){
+  faPararTimers();
+  const box=$('#fa_lotes');if(!box)return;
+  try{const {lotes}=await api('/api/factorum/lotes?limite=50');
+    box.innerHTML=lotes&&lotes.length?`<table><tr><th>#</th><th>Nombre</th><th>Cliente</th><th>Origen</th><th>Creado</th><th>Progreso</th><th>Comprobantes</th><th></th></tr>${lotes.map(l=>{
+      const pct=l.documentos?Math.round((l.procesados||0)/l.documentos*100):0;const cb=l.comprobantes||{};
+      return `<tr><td class="mono">${esc(l.id)}</td><td>${esc(l.nombre||'')}</td><td class="mono">${esc(l.cliente_cuit||'')}</td><td class="hint">${esc(l.origen||'')}</td>
+       <td class="hint">${l.creado?new Date(l.creado).toLocaleString('es-AR'):''}</td>
+       <td style="min-width:150px"><div class="fa-prog"><div style="width:${pct}%"></div></div><span class="hint mono">${esc(l.procesados||0)}/${esc(l.documentos||0)}${l.con_error?` · ${esc(l.con_error)} con error`:''}</span> <span class="tag ${l.estado==='terminado'?'ok':'warn'}">${l.estado==='terminado'?'Terminado':'Procesando'}</span></td>
+       <td class="mono hint">${esc(cb.ok||0)} ok · ${esc(cb.revisar||0)} revisar · ${esc(cb.error||0)} error · ${esc(cb.aprobado||0)} aprobados</td>
+       <td><button class="ghost" onclick="faVerLote(${Number(l.id)})">Ver</button></td></tr>`;}).join('')}</table>`:'<p class="hint">Todavía no se subió ningún lote.</p>';
+    if(lotes&&lotes.some(l=>l.estado!=='terminado'))FA.timer=setTimeout(()=>{if($('#fa_lotes')){faLotes();faCargar();}},4000);
+  }catch(e){box.innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+function faVerLote(id){$('#fa_flote').value=id;$('#fa_fest').value='';faCargar();$('#fa_tabla').scrollIntoView({behavior:'smooth',block:'start'});}
+function faFiltros(){const q=new URLSearchParams();
+  const m={estado:'#fa_fest',cliente:'#fa_fcli',desde:'#fa_fdesde',hasta:'#fa_fhasta',q:'#fa_fq',lote:'#fa_flote'};
+  for(const [k,s] of Object.entries(m)){const el=$(s);const val=el?el.value.trim():'';if(val)q.set(k,k==='lote'?val.replace(/\D/g,''):val);}
+  return q;}
+async function faCargar(){
+  const box=$('#fa_tabla');if(!box)return;
+  const q=faFiltros();
+  try{const r=await api('/api/factorum/comprobantes?'+q.toString()+'&limite=200');const l=r.comprobantes||[];
+    box.innerHTML=l.length?`<table><tr><th>Fecha</th><th>Comprobante</th><th>Emisor</th><th>Cliente</th><th>Total</th><th>Estado</th><th>Constatación</th><th></th></tr>${l.map(c=>{const e=FA_ESTADO[c.estado]||['',c.estado||''];const k=c.constatacion;
+      const cons=!k?'<span class="hint">sin constatar</span>':k.apoc&&k.apoc.esApocrifo?'<span class="tag no">APÓCRIFO</span>':k.valido?'<span class="tag ok">OK</span>':'<span class="tag no">NO CONSTA</span>';
+      return `<tr><td class="mono">${esc(c.fecha||'')}</td><td class="mono">${esc(NOMBRE_TIPO[c.tipo]||c.tipo||'')} ${String(c.punto_venta||0).padStart(4,'0')}-${String(c.numero||0).padStart(8,'0')}${c.duplicado_de?' <span class="tag warn">duplicado</span>':''}</td>
+       <td>${esc(c.razon_social_emisor||'')} <span class="hint mono">${esc(c.cuit_emisor||'')}</span></td><td class="mono hint">${esc(c.cliente_cuit||'')}</td>
+       <td class="mono">$${faPesos(c.total)}</td><td><span class="tag ${e[0]}">${esc(e[1])}</span></td><td>${cons}</td>
+       <td><button class="ghost" onclick="faRevisar(${Number(c.id)})">Revisar</button></td></tr>`;}).join('')}</table>${r.total>l.length?`<p class="hint">Se muestran ${l.length} de ${esc(r.total)}. Afiná los filtros o descargá el Excel.</p>`:''}`:'<p class="hint">No hay comprobantes con estos filtros.</p>';
+  }catch(e){box.innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+  try{const {resumen:s}=await api('/api/factorum/resumen?'+q.toString());
+    $('#fa_resumen').innerHTML=s?`<b class="mono">${esc(s.cantidad||0)}</b> ${Number(s.cantidad)===1?'comprobante':'comprobantes'} · neto gravado <b class="mono">$${faPesos(s.neto_gravado)}</b> · IVA 21% <b class="mono">$${faPesos(s.iva_21)}</b> · IVA 10,5% <b class="mono">$${faPesos(s.iva_10_5)}</b> · otros tributos <b class="mono">$${faPesos(s.otros_tributos)}</b> · total <b class="mono">$${faPesos(s.total)}</b> <span>(las notas de crédito restan)</span>`:'';
+  }catch{$('#fa_resumen').innerHTML='';}
+}
+async function faExportar(fmt){
+  try{const r=await fetch(`/api/factorum/export.${fmt}?${faFiltros().toString()}`,{credentials:'include'});
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||('HTTP '+r.status));}
+    const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`facturas-recibidas.${fmt}`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
+  catch(e){toast(e.message,true);}
+}
+async function faRevisar(id){
+  let r;try{r=await api('/api/factorum/comprobantes/'+id);}catch(e){toast(e.message,true);return;}
+  const c=r.comprobante||{};const opera=['superadmin','admin','operador'].includes(ME.role);const e=FA_ESTADO[c.estado]||['',c.estado||''];
+  const org=c.origenes||{};const k=c.constatacion;
+  const corr=(r.correcciones||[]).map(x=>`<li><span class="mono">${esc(x.campo||'')}</span>: ${esc(x.antes==null?'':x.antes)} → ${esc(x.despues==null?'':x.despues)} <span class="hint">${esc(x.usuario||x.quien||'')}${(x.fecha||x.cuando)?' · '+new Date(x.fecha||x.cuando).toLocaleString('es-AR'):''}</span></li>`).join('');
+  modal(`<button class="modal-x" type="button" onclick="closeModal()" aria-label="Cerrar">&times;</button>
+   <h3 class="modal-tit">Comprobante #${esc(c.id)} <span class="tag ${e[0]}">${esc(e[1])}</span></h3>
+   <p class="hint">${esc(c.archivo||'')}${c.documento_id?` · <a href="/api/factorum/comprobantes/${Number(c.id)}/archivo" target="_blank" rel="noopener">Ver el archivo original</a>`:''}${c.revisado_por?` · revisado por ${esc(c.revisado_por)}`:''}</p>
+   ${k?`<p>${k.apoc&&k.apoc.esApocrifo?'<span class="tag no">EMISOR APÓCRIFO</span>':k.valido?'<span class="tag ok">ARCA LO CONFIRMA</span>':'<span class="tag no">ARCA NO LO CONFIRMA</span>'} ${esc((k.observaciones||[]).join('; '))}</p>`:''}
+   ${faHallazgosHtml(c.hallazgos)}
+   <div class="f2">${FA_CAMPOS.map(([n,t])=>`<div><label>${esc(t)}${org[n]?` <span class="hint">(${esc(org[n])})</span>`:''}</label><input id="fa_c_${n}" class="mono" data-orig="${escA(c[n])}" value="${escA(c[n])}" ${opera?'':'disabled'}></div>`).join('')}</div>
+   ${corr?`<h3 style="text-transform:none;margin-top:18px">Correcciones</h3><ul class="nov-list">${corr}</ul>`:''}
+   ${opera?`<div class="row" style="margin-top:14px;justify-content:flex-end"><button onclick="faGuardar(${Number(c.id)},false)">Guardar cambios</button><button class="primary" onclick="faGuardar(${Number(c.id)},true)">Guardar y aprobar</button></div>`:'<p class="hint">Solo lectura: corregir y aprobar requiere rol operador.</p>'}`);
+}
+async function faGuardar(id,aprobar){
+  const campos={};
+  for(const [n] of FA_CAMPOS){const el=$('#fa_c_'+n);if(el&&el.value!==el.dataset.orig){const val=el.value.trim();campos[n]=FA_ENTEROS.includes(n)&&/^\d+$/.test(val)?Number(val):val;}}
+  if(!aprobar&&!Object.keys(campos).length){toast('No cambiaste nada');return;}
+  try{await api('/api/factorum/comprobantes/'+id,{method:'PATCH',body:JSON.stringify({campos,aprobar})});
+    toast(aprobar?'Comprobante aprobado':'Cambios guardados');closeModal();faCargar();}
+  catch(e){toast(e.message,true);}
+}
+
+/* Ajustes de superadmin: conexion con Factorum */
+async function ajustesFactorum(){
+  $('#appmenu').classList.remove('open');
+  let fa={url:'',tokenCargado:false};
+  try{fa=(await api('/api/factorum/config')).factorum;}catch{}
+  modal(`<button class="modal-x" type="button" onclick="closeModal()" aria-label="Cerrar">&times;</button><h3 style="text-transform:none">Factorum (facturas recibidas)</h3>
+   <p class="hint">El lector de facturas. Arcanum le habla por la red interna; el token se guarda cifrado y no se vuelve a mostrar.</p>
+   <label>URL de Factorum</label><input id="aj_faurl" class="mono" value="${escA(fa.url||'')}" placeholder="http://factorum:8095">
+   <label>Token de Factorum (FACTORUM_API_KEY) ${fa.tokenCargado?'— cargado, vacío para no cambiarlo':''}</label>
+   <div class="pwwrap"><input id="aj_fatok" type="password" autocomplete="new-password"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar el token" onclick="togglePw('aj_fatok',this)">${I_EYE}</button></div>
+   <div class="row" style="margin-top:10px"><button class="primary" onclick="ajGuardarFa()">Guardar conexión</button><button onclick="ajProbarFa()">Probar</button></div>
+   <p class="hint" id="aj_fasalud" style="margin-top:10px">${faSaludTexto(null)}</p>`);
+  ajProbarFa();
+}
+async function ajProbarFa(){const s=await faChequearSalud();const el=$('#aj_fasalud');if(el)el.innerHTML=faSaludTexto(s);}
+async function ajGuardarFa(){const b={url:$('#aj_faurl').value.trim()};const t=$('#aj_fatok').value;if(t)b.token=t;
+  try{await api('/api/factorum/config',{method:'PUT',body:JSON.stringify(b)});$('#aj_fatok').value='';toast('Conexión guardada');ajProbarFa();}catch(e){toast(e.message,true);}}
+
 /* ---------- CONTINGENCIA (cola de emision) ---------- */
 const COLA_ESTADO={pendiente:['warn','En espera'],procesando:['warn','Emitiendo'],emitido:['ok','Emitido'],rechazado:['no','Rechazado'],requiere_humano:['no','Necesita tu decisión'],cancelado:['','Cancelado']};
 async function vContingencia(){
@@ -1201,7 +1408,7 @@ async function renderMenu(){
          <option value="prod"${cfg.entorno==='prod'?' selected':''}>Producción</option>
        </select></div>
      <div class="hint" style="padding:2px 12px 6px">Cambia los endpoints de ARCA para toda la instancia.</div></div>`:''}
-   ${ME.role==='superadmin'?`<button class="menu-item" onclick="ajustesMc()">${I_GEAR}<span>Fisherboy y Mis Comprobantes</span></button><button class="menu-item" onclick="verBackups()">${I_GEAR}<span>Backups y master key</span></button>`:''}
+   ${ME.role==='superadmin'?`<button class="menu-item" onclick="ajustesMc()">${I_GEAR}<span>Fisherboy y Mis Comprobantes</span></button><button class="menu-item" onclick="ajustesFactorum()">${I_GEAR}<span>Factorum (facturas recibidas)</span></button><button class="menu-item" onclick="verBackups()">${I_GEAR}<span>Backups y master key</span></button>`:''}
    <button class="menu-item" onclick="novedadesTodas()">${I_NEWS}<span>Novedades</span></button>
    <button class="menu-item" onclick="acercaDe()">${I_INFO}<span>Acerca de Arcanum</span></button>
    <div class="menu-sep"></div>
