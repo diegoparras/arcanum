@@ -446,3 +446,18 @@ test('si la receta termina sin descargar, la corrida guarda el registro de Fishe
   assert.match(f.error, /sin descargar/);
   assert.strictEqual(f.log.length, 2);
 });
+
+test('la receta corre sin IA por defecto (RPA puro); ARCANUM_MC_IA=1 la habilita como respaldo', async () => {
+  const correr = async (opts) => {
+    const fb = fisherboyFalso([TERMINADO]);
+    const s = mc.crear({ repo: repoFalso(), fisherboy: fb, vault, webhooks: webhooks(), esperaMs: 1, ...opts });
+    const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+    await s.seguir(c.id);
+    return fb.iniciados[0].ia;
+  };
+  assert.strictEqual(await correr({}), false);
+  assert.strictEqual(await correr({ ia: true }), true);
+  assert.strictEqual(mc.iaPorEntorno({}), false);
+  assert.strictEqual(mc.iaPorEntorno({ ARCANUM_MC_IA: '1' }), true);
+  assert.strictEqual(mc.iaPorEntorno({ ARCANUM_MC_IA: '0' }), false);
+});

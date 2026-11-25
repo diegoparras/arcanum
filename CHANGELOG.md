@@ -3,6 +3,15 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.0.8] - 2026-11-25
+
+### Cambiado
+- **Mis Comprobantes corre como RPA puro, sin IA generativa.** La receta tiene todos sus
+  pasos verificados sobre la pagina real de ARCA, asi que la IA de respaldo de Fisherboy queda
+  apagada: si un paso falla, la corrida termina enseguida con un error claro, no se manda la
+  pagina de ARCA a ningun modelo y no hay costo por intento. Se puede volver a habilitar con
+  `ARCANUM_MC_IA=1`.
+
 ## [2.0.7] - 2026-11-25
 
 ### Corregido

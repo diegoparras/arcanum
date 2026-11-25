@@ -226,6 +226,16 @@ function progresoDe(log, pasos, variables = {}) {
   return { paso, total, descripcion, ia, error: fallo ? String(ref.error || '').slice(0, 200) : null };
 }
 
+/**
+ * La receta es RPA: pasos fijos verificados sobre la pagina real. La IA de Fisherboy (que toma
+ * un paso fallido y le manda la pagina a un modelo) queda apagada salvo ARCANUM_MC_IA=1: sin
+ * ella un paso roto falla enseguida y con un error claro, no se manda la pagina de ARCA a un
+ * modelo y no hay costo por intento.
+ */
+function iaPorEntorno(env = process.env) {
+  return env.ARCANUM_MC_IA === '1';
+}
+
 function plano(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 }
@@ -236,7 +246,7 @@ function loginRechazado(st) {
 }
 
 // --- el servicio --------------------------------------------------------------
-function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () => new Date(), sinAvanceMs = SIN_AVANCE_MS } = {}) {
+function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () => new Date(), sinAvanceMs = SIN_AVANCE_MS, ia = iaPorEntorno() } = {}) {
   const lanzados = new Set();
 
   async function receta() {
@@ -341,7 +351,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       variables,
       secretos,
       dominios: DOMINIOS,
-      ia: true,
+      ia,
     });
     await repo.actualizarCorrida(id, { token_fb: token, estado: 'corriendo', latido_at: ahora() });
     try {
@@ -489,4 +499,4 @@ function servicio() {
   return porDefecto;
 }
 
-module.exports = { crear, servicio, tramos, cuitDe, progresoDe, ESTADOS_VIVOS, RECETA_DEFAULT };
+module.exports = { crear, servicio, tramos, cuitDe, progresoDe, iaPorEntorno, ESTADOS_VIVOS, RECETA_DEFAULT };
