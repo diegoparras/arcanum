@@ -29,10 +29,14 @@ async function resumen() {
        FROM comprobantes WHERE entorno = $1`,
       [env],
     ),
-    // Serie de emisiones ultimos 14 dias.
+    // Serie de emisiones de los ultimos 14 dias (hoy incluido), con TODOS los dias: los que no
+    // tuvieron emisiones van en 0. Sin esto el grafico recibia solo los dias con datos y un unico
+    // dia ocupaba todo el ancho. Las fechas salen de Postgres (su zona horaria), como created_at.
     db.query(
-      `SELECT created_at::date AS dia, count(*) AS n FROM comprobantes
-       WHERE entorno = $1 AND created_at > now() - interval '14 days' GROUP BY dia ORDER BY dia`,
+      `SELECT to_char(d.dia, 'YYYY-MM-DD') AS dia, count(c.id) AS n
+       FROM generate_series(current_date - 13, current_date, interval '1 day') AS d(dia)
+       LEFT JOIN comprobantes c ON c.entorno = $1 AND c.created_at::date = d.dia::date
+       GROUP BY d.dia ORDER BY d.dia`,
       [env],
     ),
     db.query(`SELECT count(*) AS n FROM access_tickets WHERE entorno = $1 AND expiration_time > now()`, [env]),

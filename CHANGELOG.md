@@ -3,6 +3,14 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.9] - 2026-11-24
+
+### Corregido
+- **El grafico "Emisiones (14 dias)" del Panel muestra los 14 dias.** Antes solo llegaban
+  los dias con emisiones, asi que con un unico dia la barra ocupaba todo el ancho y se veia
+  como una franja de color. Ahora hay una barra por dia (los dias sin emisiones quedan en
+  cero sobre la linea de base), con las fechas de inicio y fin y el maximo por dia.
+
 ## [0.10.8] - 2026-11-24
 
 ### Seguridad

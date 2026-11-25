@@ -103,8 +103,9 @@
   .pasos{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px;display:none}
   .pasos.open{display:block}.pasos ol{margin:0;padding-left:20px}.pasos li{margin:5px 0}
   .rel{font-family:var(--mono);background:var(--chip);padding:2px 6px;border-radius:6px}
-  .bars{display:flex;align-items:flex-end;gap:5px;height:90px;margin-top:8px}
-  .bars .b{flex:1;background:var(--accent);border-radius:4px 4px 0 0;min-height:3px;opacity:.85}
+  .bars{display:flex;align-items:flex-end;gap:5px;height:90px;margin-top:8px;border-bottom:1px solid var(--line)}
+  .bars .b{flex:1;background:var(--accent);border-radius:4px 4px 0 0;opacity:.85}
+  .bars-eje{display:flex;justify-content:space-between;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--muted)}
   .muted{color:var(--muted)} .hint{color:var(--muted);font-size:13px}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0c0e13;color:#f3f5f9;padding:11px 18px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:80vw;box-shadow:var(--shadow)}
   .toast.show{opacity:1}.toast.bad{background:var(--bad)}
@@ -239,8 +240,14 @@ async function novedadesTodas(){
 async function vPanel(){
   const v=$('#view');v.innerHTML='<p class="hint">Cargando métricas…</p>';
   const {metricas:m}=await api('/api/metrics');
-  const max=Math.max(1,...m.emisiones.serie.map(s=>s.n));
-  const bars=m.emisiones.serie.map(s=>`<div class="b" title="${s.dia}: ${s.n}" style="height:${Math.round(s.n/max*100)}%"></div>`).join('')||'<span class="hint">sin emisiones aún</span>';
+  // Una barra por dia (el server manda los 14, con 0 los dias sin emisiones). Un dia en 0 no
+  // dibuja barra: queda la linea de base, asi un unico dia con datos no llena todo el grafico.
+  const serie=m.emisiones.serie||[];
+  const max=Math.max(1,...serie.map(s=>s.n));
+  const ddmm=d=>String(d).slice(0,10).split('-').reverse().slice(0,2).join('/');
+  const bars=serie.map(s=>`<div class="b" title="${ddmm(s.dia)}: ${s.n} ${s.n===1?'emisión':'emisiones'}" style="height:${s.n?Math.max(4,Math.round(s.n/max*100)):0}%"></div>`).join('');
+  const sinEmisiones=!serie.some(s=>s.n);
+  const grafico=serie.length?`<div class="bars">${bars}</div><div class="bars-eje"><span>${ddmm(serie[0].dia)}</span><span>${sinEmisiones?'Sin emisiones en estos 14 días':`Máximo: ${max} por día`}</span><span>${ddmm(serie[serie.length-1].dia)}</span></div>`:'<span class="hint">Sin datos de emisiones.</span>';
   const arca=m.arca.map(a=>`<tr><td>${a.servicio}</td><td><span class="dot ${a.ok?'ok':'bad'}"></span>${a.ok?'OK':'caído'}</td><td class="mono">${a.uptime24h??'—'}%</td><td class="mono">${a.latencia??'—'} ms</td></tr>`).join('')||'<tr><td colspan="4" class="hint">El monitor corre cada 5 min; esperá el primer chequeo.</td></tr>';
   v.innerHTML=`
    <div class="grid">
@@ -250,7 +257,7 @@ async function vPanel(){
      <div class="card stat"><div class="label">Certs por vencer</div><div class="val">${m.certificados.porVencer}</div></div>
      <div class="card stat"><div class="label">Peticiones 24h</div><div class="val">${m.peticiones24h.total}</div><div class="hint">${m.peticiones24h.errores} errores · ${m.peticiones24h.latenciaMedia}ms</div></div>
    </div>
-   <h2>Emisiones (14 días)</h2><div class="card"><div class="bars">${bars}</div></div>
+   <h2>Emisiones (14 días)</h2><div class="card">${grafico}</div>
    <h2>Estado de ARCA</h2><div class="card"><table><thead><tr><th>Servicio</th><th>Estado</th><th>Uptime 24h</th><th>Latencia</th></tr></thead><tbody>${arca}</tbody></table></div>`;
 }
 
