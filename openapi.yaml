@@ -16,6 +16,7 @@ security:
 tags:
   - name: MCP
   - name: Mis Comprobantes
+  - name: Facturas recibidas
   - name: Monotributo
   - name: Contingencia
   - name: Claves
@@ -558,6 +559,86 @@ paths:
     post: { tags: [Mis Comprobantes], summary: Pausa la receta o la IA y pasa el navegador a una persona, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
   /api/mis-comprobantes/corridas/{id}/devolver:
     post: { tags: [Mis Comprobantes], summary: Devuelve el control a la receta o la IA, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
+
+  /api/factorum/config:
+    get: { tags: [Facturas recibidas], summary: URL de Factorum y si hay token cargado (superadmin; el token nunca vuelve), responses: { '200': { description: "factorum: { url, tokenCargado }" } } }
+    put: { tags: [Facturas recibidas], summary: Guarda URL y token de Factorum (token cifrado; superadmin), requestBody: { content: { application/json: { schema: { type: object, properties: { url: { type: string }, token: { type: string } } } } } }, responses: { '200': { description: ok } } }
+  /api/factorum/salud:
+    get: { tags: [Facturas recibidas], summary: Si Factorum responde (version, OCR, IA, si constata con Arcanum), responses: { '200': { description: "factorum: { ok, version, ocr, ia, arcanum }" } } }
+  /api/factorum/verificar:
+    post:
+      tags: [Facturas recibidas]
+      summary: Veredicto de una factura (valida, invalida, apocrifa, con_errores, no_verificable) sin guardarla (operador+)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [nombre, contenido_base64], properties: { nombre: { type: string }, contenido_base64: { type: string, description: "hasta 20 MB" }, cuit_consultante: { type: string, description: "si falta y el usuario tiene un unico CUIT permitido, se usa ese" }, ia: { type: boolean } } } } } }
+      responses: { '200': { description: "{ veredicto, mensaje, resultado, constatacion }" }, '403': { description: rol o CUIT no permitido }, '503': { description: Factorum no configurado o caido } }
+  /api/factorum/lotes:
+    get: { tags: [Facturas recibidas], summary: Lotes subidos (con scope por CUIT, solo los de sus clientes), responses: { '200': { description: "{ lotes, total }" } } }
+    post:
+      tags: [Facturas recibidas]
+      summary: Sube un lote de facturas o un ZIP; se procesa en segundo plano (operador+)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [archivos], properties: { archivos: { type: array, items: { type: object, properties: { nombre: { type: string }, contenido_base64: { type: string } } } }, cliente_cuit: { type: string }, nombre: { type: string }, ia: { type: boolean }, constatar: { type: boolean } } } } } }
+      responses: { '202': { description: "lote creado" }, '413': { description: "mas de 20 MB por archivo o 60 MB por lote" } }
+  /api/factorum/lotes/{id}:
+    get: { tags: [Facturas recibidas], summary: Un lote y su avance, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: lote } } }
+  /api/factorum/comprobantes:
+    get:
+      tags: [Facturas recibidas]
+      summary: Comprobantes leidos por Factorum
+      parameters:
+        - { name: estado, in: query, schema: { type: string, enum: [ok, revisar, error, aprobado] } }
+        - { name: cliente, in: query, description: "CUIT del cliente; con scope por CUIT, obligatorio si hay varios permitidos", schema: { type: string } }
+        - { name: emisor, in: query, schema: { type: string } }
+        - { name: lote, in: query, schema: { type: integer } }
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, description: razon social, CUIT o numero, schema: { type: string } }
+        - { name: limite, in: query, schema: { type: integer, maximum: 500 } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses: { '200': { description: "{ comprobantes, total }" } }
+  /api/factorum/comprobantes/{id}:
+    get: { tags: [Facturas recibidas], summary: Un comprobante con sus correcciones, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: "{ comprobante, correcciones }" } } }
+    patch: { tags: [Facturas recibidas], summary: Corrige campos y opcionalmente aprueba (operador+; el usuario lo pone Arcanum), parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], requestBody: { content: { application/json: { schema: { type: object, properties: { campos: { type: object }, aprobar: { type: boolean } } } } } }, responses: { '200': { description: comprobante } } }
+  /api/factorum/comprobantes/{id}/archivo:
+    get: { tags: [Facturas recibidas], summary: Archivo original (PDF o imagen), parameters: [ { name: id, in: path, required: true, schema: { type: integer } }, { name: descargar, in: query, schema: { type: string, enum: ['1'] } } ], responses: { '200': { description: archivo } } }
+  /api/factorum/resumen:
+    get:
+      tags: [Facturas recibidas]
+      summary: Totales por alicuota, tipo y estado (las notas de credito restan)
+      parameters:
+        - { name: estado, in: query, schema: { type: string, enum: [ok, revisar, error, aprobado] } }
+        - { name: cliente, in: query, description: "CUIT del cliente; con scope por CUIT, obligatorio si hay varios permitidos", schema: { type: string } }
+        - { name: emisor, in: query, schema: { type: string } }
+        - { name: lote, in: query, schema: { type: integer } }
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, description: razon social, CUIT o numero, schema: { type: string } }
+      responses: { '200': { description: "resumen: { cantidad, neto_gravado, iva_21, iva_10_5, otros_tributos, total, por_estado, por_tipo }" } }
+  /api/factorum/export.xlsx:
+    get:
+      tags: [Facturas recibidas]
+      summary: Excel con una fila por comprobante y una hoja Resumen
+      parameters:
+        - { name: estado, in: query, schema: { type: string, enum: [ok, revisar, error, aprobado] } }
+        - { name: cliente, in: query, description: "CUIT del cliente; con scope por CUIT, obligatorio si hay varios permitidos", schema: { type: string } }
+        - { name: emisor, in: query, schema: { type: string } }
+        - { name: lote, in: query, schema: { type: integer } }
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, description: razon social, CUIT o numero, schema: { type: string } }
+      responses: { '200': { description: xlsx } }
+  /api/factorum/export.csv:
+    get:
+      tags: [Facturas recibidas]
+      summary: CSV separado por punto y coma, UTF-8 con BOM y coma decimal
+      parameters:
+        - { name: estado, in: query, schema: { type: string, enum: [ok, revisar, error, aprobado] } }
+        - { name: cliente, in: query, description: "CUIT del cliente; con scope por CUIT, obligatorio si hay varios permitidos", schema: { type: string } }
+        - { name: emisor, in: query, schema: { type: string } }
+        - { name: lote, in: query, schema: { type: integer } }
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, description: razon social, CUIT o numero, schema: { type: string } }
+      responses: { '200': { description: CSV } }
 
   /api/monotributo/categorias:
     get: { tags: [Monotributo], summary: Topes por categoria cargados en Arcanum (con su vigencia), responses: { '200': { description: "categorias: { vigencia, fuente, topes }" } } }

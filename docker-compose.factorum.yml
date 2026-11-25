@@ -1,0 +1,81 @@
+# Factorum junto a Arcanum (facturas recibidas). Se suma al compose principal:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.factorum.yml up -d
+#
+# Con IA local (Ollama, perfil "ia"):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.factorum.yml --profile ia up -d
+#   docker compose exec ollama ollama pull qwen2.5vl:7b
+#
+# Factorum lee las facturas (QR, texto, OCR y, si hay modelo, IA), corre los controles y las
+# constata llamando a Arcanum (POST /api/constatacion y GET /api/padron/a5/:cuit) con
+# ARCANUM_API_KEY: una clave de Arcanum de rol operador, limitada a los CUITs que constatan
+# (ver DESPLIEGUE.md). Arcanum le habla por la red interna con FACTORUM_TOKEN (= FACTORUM_API_KEY).
+# Para la IA vale cualquier proveedor compatible con OpenAI: LLM_API_BASE_URL / LLM_API_KEY /
+# LLM_MODEL. Sin IA anda igual (QR, texto y OCR).
+services:
+  factorum-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${FACTORUM_POSTGRES_USER:-factorum}
+      POSTGRES_PASSWORD: ${FACTORUM_POSTGRES_PASSWORD:-factorum}
+      POSTGRES_DB: ${FACTORUM_POSTGRES_DB:-factorum}
+    volumes:
+      - factorum-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FACTORUM_POSTGRES_USER:-factorum}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  factorum:
+    image: ghcr.io/diegoparras/factorum:latest
+    restart: unless-stopped
+    depends_on:
+      factorum-db:
+        condition: service_healthy
+    expose:
+      - "8095"
+    environment:
+      FACTORUM_PUERTO: 8095
+      FACTORUM_DATABASE_URL: postgres://${FACTORUM_POSTGRES_USER:-factorum}:${FACTORUM_POSTGRES_PASSWORD:-factorum}@factorum-db:5432/${FACTORUM_POSTGRES_DB:-factorum}
+      FACTORUM_API_KEY: ${FACTORUM_TOKEN:?definí FACTORUM_TOKEN (openssl rand -hex 24)}
+      FACTORUM_MASTER_KEY: ${FACTORUM_MASTER_KEY:-}        # obligatoria con R2 (openssl rand -hex 32)
+      ARCANUM_URL: http://arcanum:8094
+      ARCANUM_API_KEY: ${FACTORUM_ARCANUM_API_KEY:-}       # clave de Arcanum (rol operador, acotada a CUITs)
+      ARCANUM_CUIT_CONSULTANTE: ${ARCANUM_CUIT_CONSULTANTE:-}
+      LLM_API_BASE_URL: ${FACTORUM_LLM_API_BASE_URL:-}     # ej. http://ollama:11434/v1 con el perfil "ia"
+      LLM_API_KEY: ${FACTORUM_LLM_API_KEY:-}
+      LLM_MODEL: ${FACTORUM_LLM_MODEL:-}                   # ej. qwen2.5vl:7b
+      # Archivos en R2 (o cualquier S3). Sin R2 quedan cifrados en el volumen /data.
+      FACTORUM_R2_ENDPOINT: ${FACTORUM_R2_ENDPOINT:-}
+      FACTORUM_R2_BUCKET: ${FACTORUM_R2_BUCKET:-}
+      FACTORUM_R2_ACCESS_KEY: ${FACTORUM_R2_ACCESS_KEY:-}
+      FACTORUM_R2_SECRET_KEY: ${FACTORUM_R2_SECRET_KEY:-}
+      FACTORUM_R2_REGION: ${FACTORUM_R2_REGION:-auto}
+      FACTORUM_R2_PREFIJO: ${FACTORUM_R2_PREFIJO:-factorum/}
+    volumes:
+      - factorum-data:/data
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    profiles: ["ia"]
+    expose:
+      - "11434"
+    volumes:
+      - factorum-ollama:/root/.ollama
+
+  arcanum:
+    depends_on:
+      factorum:
+        condition: service_started
+    environment:
+      FACTORUM_URL: http://factorum:8095
+      FACTORUM_TOKEN: ${FACTORUM_TOKEN}
+
+volumes:
+  factorum-pg:
+  factorum-data:
+  factorum-ollama:
