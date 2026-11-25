@@ -371,3 +371,39 @@ test('el paso que abre Mis Comprobantes no puede tomar el link al video de YouTu
   assert.ok(!/^text=/.test(p.sel), p.sel);
   assert.match(p.sel, /youtu/);
 });
+
+// --- sincronizacion incremental: la primera trae 12 meses, las siguientes arrancan donde quedo ---
+function conCobertura(cubierto) {
+  const repo = repoFalso();
+  repo.cubierto = async () => cubierto;
+  return repo;
+}
+const HOY = () => new Date('2026-11-25T15:00:00Z'); // 12:00 en Argentina
+
+test('primera sincronizacion: los ultimos 12 meses completos hasta hoy', async () => {
+  const s = mc.crear({ repo: conCobertura({ emitido: null, recibido: null }), fisherboy: fisherboyFalso([TERMINADO]), vault, webhooks: webhooks(), ahora: HOY });
+  assert.deepStrictEqual(await s.rangoSugerido('20263630743', 'ambos'),
+    { desde: '2025-11-01', hasta: '2026-11-25', primera: true, cubierto: { emitido: null, recibido: null } });
+});
+
+test('siguientes: desde lo ultimo bajado menos 30 dias de solape (ARCA informa tarde algunos)', async () => {
+  const s = mc.crear({ repo: conCobertura({ emitido: '2026-11-20', recibido: '2026-11-10' }), fisherboy: fisherboyFalso([TERMINADO]), vault, webhooks: webhooks(), ahora: HOY });
+  const ambos = await s.rangoSugerido('20263630743', 'ambos');
+  assert.deepStrictEqual([ambos.desde, ambos.hasta, ambos.primera], ['2026-10-11', '2026-11-25', false], 'toma el tipo mas atrasado');
+  assert.strictEqual((await s.rangoSugerido('20263630743', 'emitidos')).desde, '2026-10-21');
+  assert.strictEqual((await s.rangoSugerido('20263630743', 'recibidos')).desde, '2026-10-11');
+});
+
+test('si un tipo nunca se bajo, "ambos" vuelve a ser primera sincronizacion', async () => {
+  const s = mc.crear({ repo: conCobertura({ emitido: '2026-11-20', recibido: null }), fisherboy: fisherboyFalso([TERMINADO]), vault, webhooks: webhooks(), ahora: HOY });
+  const r = await s.rangoSugerido('20263630743', 'ambos');
+  assert.deepStrictEqual([r.desde, r.primera], ['2025-11-01', true]);
+  assert.strictEqual((await s.rangoSugerido('20263630743', 'emitidos')).primera, false);
+});
+
+test('sincronizar sin rango usa el sugerido (lo que usa la diaria)', async () => {
+  const repo = conCobertura({ emitido: '2026-11-20', recibido: '2026-11-20' });
+  const s = mc.crear({ repo, fisherboy: fisherboyFalso([TERMINADO]), vault, webhooks: webhooks(), ahora: HOY });
+  const c = await s.sincronizar('20263630743', { tipo: 'ambos', origen: 'diaria' });
+  assert.deepStrictEqual([c.desde, c.hasta], ['2026-10-21', '2026-11-25']);
+});

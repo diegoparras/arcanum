@@ -22,6 +22,12 @@ const TIMEOUT_SESION_MS = 25 * 60 * 1000;
 // mando), la sesion esta trabada: se corta con el paso donde quedo en vez de esperar los 25 min.
 const SIN_AVANCE_MS = (Number(process.env.ARCANUM_MC_SIN_AVANCE_MIN) > 0 ? Number(process.env.ARCANUM_MC_SIN_AVANCE_MIN) : 5) * 60 * 1000;
 const TRAMO_DIAS = Number(process.env.ARCANUM_MC_TRAMO_DIAS) || 365;
+// Sincronizacion incremental: la primera trae los ultimos 12 meses completos (lo que necesitan
+// los topes de Monotributo); las siguientes arrancan en lo ultimo bajado menos un solape, porque
+// ARCA muestra algunos comprobantes dias despues de su fecha (CAEA, servicios con fecha atras).
+// Repetir dias no duplica: el guardado es sin duplicados.
+const MESES_PRIMERA = 12;
+const SOLAPE_DIAS = Number(process.env.ARCANUM_MC_SOLAPE_DIAS) >= 0 && process.env.ARCANUM_MC_SOLAPE_DIAS !== undefined && process.env.ARCANUM_MC_SOLAPE_DIAS !== '' ? Number(process.env.ARCANUM_MC_SOLAPE_DIAS) : 30;
 
 function err(message, httpStatus) {
   return Object.assign(new Error(message), { httpStatus });
@@ -38,6 +44,8 @@ function dia(s) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) throw err(`Fecha invalida: ${s} (use AAAA-MM-DD)`, 400);
   return new Date(`${s}T00:00:00Z`);
 }
+/** Fecha de hoy en Argentina (UTC-3), AAAA-MM-DD. */
+function hoyAr(d) { return iso(new Date(d.getTime() - 3 * 3600000)); }
 function ddmmaaaa(s) { const [a, m, d] = s.split('-'); return `${d}/${m}/${a}`; }
 
 /** Parte [desde, hasta] en tramos de a lo sumo `maxDias` dias (ARCA limita el rango). */
@@ -81,6 +89,19 @@ function repoSql() {
     },
     async borrarCredencial(cuit) {
       await db.query('DELETE FROM mc_credenciales WHERE cuit = $1', [cuit]);
+    },
+    /** Hasta que fecha se bajo cada tipo, segun las corridas que terminaron bien. */
+    async cubierto(cuit) {
+      const { rows } = await db.query(
+        `SELECT tipo, to_char(MAX(hasta), 'YYYY-MM-DD') AS hasta FROM mc_corridas
+          WHERE cuit = $1 AND estado = 'terminado' GROUP BY tipo`, [cuit]);
+      const out = { emitido: null, recibido: null };
+      const mayor = (a, b) => (!a || (b && b > a) ? b : a);
+      for (const r of rows) {
+        if (r.tipo === 'emitidos' || r.tipo === 'ambos') out.emitido = mayor(out.emitido, r.hasta);
+        if (r.tipo === 'recibidos' || r.tipo === 'ambos') out.recibido = mayor(out.recibido, r.hasta);
+      }
+      return out;
     },
     async conSincronizacion() {
       const { rows } = await db.query('SELECT cuit FROM mc_credenciales WHERE sincronizar = true AND rechazada_at IS NULL ORDER BY cuit');
@@ -262,9 +283,37 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     return estadoCredencial(c);
   }
 
+  /**
+   * Rango de la proxima sincronizacion de `tipo` para el CUIT: si alguno de los tipos pedidos
+   * nunca se bajo, es la primera (12 meses completos); si no, arranca en lo ultimo bajado del
+   * tipo mas atrasado menos SOLAPE_DIAS. Siempre hasta hoy (Argentina).
+   */
+  async function rangoSugerido(cuit, tipo = 'ambos') {
+    const c = cuitDe(cuit);
+    if (!['emitidos', 'recibidos', 'ambos'].includes(tipo)) throw err('tipo: emitidos | recibidos | ambos', 400);
+    const cubierto = await repo.cubierto(c);
+    const hasta = hoyAr(ahora());
+    const tipos = tipo === 'ambos' ? ['emitido', 'recibido'] : [TIPOS[tipo]];
+    const fechas = tipos.map((t) => cubierto[t]);
+    if (fechas.some((f) => !f)) {
+      const h = dia(hasta);
+      const desde = iso(new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - MESES_PRIMERA, 1)));
+      return { desde, hasta, primera: true, cubierto };
+    }
+    const base = fechas.sort()[0];
+    let desde = iso(new Date(dia(base).getTime() - SOLAPE_DIAS * 86400000));
+    if (desde > hasta) desde = hasta;
+    return { desde, hasta, primera: false, cubierto };
+  }
+
   async function sincronizar(cuit, { tipo = 'ambos', desde, hasta, origen = 'manual', usuario } = {}) {
     const c = cuitDe(cuit);
     if (!['emitidos', 'recibidos', 'ambos'].includes(tipo)) throw err('tipo: emitidos | recibidos | ambos', 400);
+    if (!desde || !hasta) {
+      const r = await rangoSugerido(c, tipo);
+      desde = desde || r.desde;
+      hasta = hasta || r.hasta;
+    }
     tramos(desde, hasta); // valida fechas
     const cred = await repo.credencial(c);
     if (!cred || !cred.clave_cifrada) throw err('Este CUIT no tiene clave fiscal cargada en Mis Comprobantes', 400);
@@ -412,7 +461,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     receta, guardarReceta, restaurarReceta,
     estadoCredencial, guardarCredencial,
     borrarCredencial: async (cuit) => repo.borrarCredencial(cuitDe(cuit)),
-    sincronizar, seguir, lanzar, responderOk,
+    sincronizar, seguir, lanzar, responderOk, rangoSugerido,
     /** Al arrancar: las corridas que seguian vivas perdieron su seguimiento (estaba en memoria). */
     marcarHuerfanas: async () => repo.marcarHuerfanas('Arcanum se reinicio durante la corrida: volve a sincronizar'),
     corrida: async (id) => repo.corrida(Number(id)),

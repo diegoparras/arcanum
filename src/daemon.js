@@ -6,8 +6,8 @@
 //  - vencimientos: avisa por webhook cuando un certificado o una clave de API esta por vencer.
 //  - e-Ventanilla: avisa por webhook cuando llega una comunicacion nueva de ARCA.
 //  - Mis Comprobantes: una vez por dia (ARCANUM_MC_HORA, hora argentina) baja emitidos y
-//    recibidos del mes anterior y el actual de los CUIT con sincronizacion diaria, y revisa
-//    los topes de Monotributo.
+//    recibidos de los CUIT con sincronizacion diaria desde la ultima vez que se bajaron (la
+//    primera vez, los ultimos 12 meses), y revisa los topes de Monotributo.
 
 const db = require('./db');
 const { config } = require('./config');
@@ -274,13 +274,14 @@ async function sincronizarMisComprobantes(ahora = new Date()) {
   const { hora } = horaMcDiaria();
   const { rows } = await db.query("SELECT value FROM settings WHERE key = 'mc_ultima_diaria'");
   if (!tocaDiaria(ahora, hora, rows[0] && rows[0].value)) return;
-  const { desde, hasta, hoy } = rangoDiario(ahora);
+  const { hoy } = rangoDiario(ahora);
   await db.query(
     "INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('mc_ultima_diaria',$1,'daemon',now()) ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=now()", [hoy]);
   const mc = require('./services/misComprobantes').servicio();
   for (const cuit of await mc.conSincronizacion()) {
     try {
-      const corrida = await mc.sincronizar(cuit, { tipo: 'ambos', desde, hasta, origen: 'diaria', usuario: 'daemon' });
+      // Sin rango: arranca desde lo ultimo que se bajo de ese CUIT (incremental).
+      const corrida = await mc.sincronizar(cuit, { tipo: 'ambos', origen: 'diaria', usuario: 'daemon' });
       await mc.seguir(corrida.id); // de a un CUIT por vez: Fisherboy admite 2 sesiones
     } catch (e) {
       console.error(`[arcanum][mis-comprobantes] ${maskCuit(cuit)}: ${e.message}`);

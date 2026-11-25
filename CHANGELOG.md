@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.0.5] - 2026-11-25
+
+### Cambiado
+- **Mis Comprobantes sincroniza de forma incremental.** La primera vez baja los ultimos 12
+  meses (o desde la fecha que elijas, para traer mas historia) y lo guarda en la base. Las
+  siguientes, manuales o la diaria, arrancan en lo ultimo que se bajo de cada tipo, con 30
+  dias de solape (`ARCANUM_MC_SOLAPE_DIAS`) para tomar lo que ARCA muestra tarde; lo repetido
+  no se duplica. Si un dia la diaria falla, la siguiente retoma desde donde quedo.
+- La tarjeta **Sincronizar** propone ese rango y dice hasta que fecha esta bajado cada tipo.
+
 ## [2.0.4] - 2026-11-25
 
 ### Corregido

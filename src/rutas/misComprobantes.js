@@ -12,6 +12,7 @@
 //   GET      /api/mis-comprobantes/:cuit                comprobantes bajados (cualquier rol, con scope)
 //   GET      /api/mis-comprobantes/:cuit/export.csv
 //   GET      /api/mis-comprobantes/:cuit/corridas
+//   GET      /api/mis-comprobantes/:cuit/rango?tipo=      proxima sincronizacion (incremental)
 //   GET/PUT/DELETE /api/mis-comprobantes/:cuit/credencial   (PUT/DELETE admin+)
 //   POST     /api/mis-comprobantes/:cuit/sincronizar    admin+ u operador con ese CUIT -> 202
 //   POST     /api/mis-comprobantes/:cuit/constatar      constata los recibidos pendientes (WSCDC + APOC)
@@ -172,6 +173,9 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       puedeOperar(principal, cuit);
       const b = await readJsonBody(req);
       return json(res, 200, { ok: true, constatacion: await cons().constatarRecibidos(cuit, { limite: b.limite }) });
+    }
+    if (req.method === 'GET' && seg[3] === 'rango') {
+      return json(res, 200, { ok: true, rango: await servicio().rangoSugerido(cuit, q.get('tipo') || 'ambos') });
     }
     if (req.method === 'POST' && seg[3] === 'sincronizar') {
       puedeOperar(principal, cuit);

@@ -577,9 +577,10 @@ async function vMis(){
    <div class="f2" style="margin-top:14px">
     <div class="card"><h3 style="text-transform:none">Credencial de ARCA</h3><div id="mc_cred" class="hint">Cargando…</div></div>
     <div class="card"><h3 style="text-transform:none">Sincronizar</h3>
-      <div class="f3"><div><label>Qué</label><select id="mc_tipo"><option value="ambos">Emitidos y recibidos</option><option value="emitidos">Emitidos</option><option value="recibidos">Recibidos</option></select></div>
+      <div class="f3"><div><label>Qué</label><select id="mc_tipo" onchange="mcRango()"><option value="ambos">Emitidos y recibidos</option><option value="emitidos">Emitidos</option><option value="recibidos">Recibidos</option></select></div>
       <div><label>Desde</label><input id="mc_desde" type="date" value="${isoHoy(d1)}"></div>
       <div><label>Hasta</label><input id="mc_hasta" type="date" value="${isoHoy()}"></div></div>
+      <p class="hint" id="mc_rango" style="margin:10px 0 0"></p>
       <div class="row" style="margin-top:14px"><button class="primary" ${opera?'':'disabled'} onclick="mcSincronizar()">Sincronizar ahora</button>
       <span class="hint" id="mc_fbsalud"></span></div></div>
    </div>
@@ -605,7 +606,7 @@ async function vMis(){
      <div id="mc_const"></div>
      <div id="mc_tabla" style="margin-top:10px;overflow-x:auto"><p class="hint">Cargando…</p></div></div>`;
   if(!/^\d{11}$/.test(MC.cuit)){['mc_cred','mc_mono','mc_corridas','mc_tabla'].forEach(id=>$('#'+id).innerHTML='<p class="hint">Elegí un CUIT.</p>');return;}
-  mcCredencial(admin);mcMonotributo();mcCorridas(true);mcCargarTabla();
+  mcCredencial(admin);mcMonotributo();mcCorridas(true);mcCargarTabla();mcRango();
   if(admin)api('/api/fisherboy/salud').then(r=>{$('#mc_fbsalud').textContent=r.fisherboy.ok?`Fisherboy ${r.fisherboy.version||''} conectado`:`Fisherboy: ${r.fisherboy.error||'no responde'}`;}).catch(()=>{});
 }
 async function mcCredencial(admin){
@@ -617,7 +618,7 @@ async function mcCredencial(admin){
       ${admin?`<div class="f2"><div><label>CUIT con el que se entra a ARCA</label><input id="mc_login" class="mono" value="${esc(c.cuitLogin||MC.cuit)}"></div>
       <div><label>Clave fiscal ${c.cargada?'(dejala vacía para no cambiarla)':''}</label>
       <div class="pwwrap"><input id="mc_clave" type="password" autocomplete="new-password" placeholder="${c.cargada?'Sin cambios':'Clave fiscal'}"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar la clave" onclick="togglePw('mc_clave',this)">${I_EYE}</button></div></div></div>
-      <label class="chk" style="margin-top:10px"><input type="checkbox" id="mc_sync" ${c.sincronizar?'checked':''}> Sincronizar todos los días${hd} (mes anterior y mes en curso)</label>${off}
+      <label class="chk" style="margin-top:10px"><input type="checkbox" id="mc_sync" ${c.sincronizar?'checked':''}> Sincronizar todos los días${hd} (desde lo último bajado)</label>${off}
       <div class="row" style="margin-top:10px"><button class="primary" onclick="mcGuardarClave()">Guardar</button>
       ${c.cargada?'<button onclick="mcBorrarClave()">Borrar clave</button>':''}</div>
       <p class="hint">Se guarda cifrada. Nunca se vuelve a mostrar ni queda en los registros.</p>`:'<p class="hint">Solo un administrador puede cargar o cambiar la clave fiscal.</p>'}`;
@@ -637,6 +638,17 @@ async function mcSincronizar(){
   try{const {corrida}=await api(`/api/mis-comprobantes/${MC.cuit}/sincronizar`,{method:'POST',body:JSON.stringify({tipo:$('#mc_tipo').value,desde:$('#mc_desde').value,hasta:$('#mc_hasta').value})});
     toast('Sincronización iniciada');mcSeguir(corrida.id);mcCorridas(false);}
   catch(e){toast(e.message,true);}
+}
+/** Propone el rango de la próxima sincronización: la primera trae 12 meses; después, desde lo último bajado. */
+async function mcRango(){
+  if(!/^\d{11}$/.test(MC.cuit)||!$('#mc_rango'))return;
+  try{const {rango:r}=await api(`/api/mis-comprobantes/${MC.cuit}/rango?tipo=${$('#mc_tipo').value}`);
+    $('#mc_desde').value=r.desde;$('#mc_hasta').value=r.hasta;
+    const f=d=>d?d.split('-').reverse().join('/'):'nunca';
+    $('#mc_rango').textContent=r.primera
+      ?`Primera sincronización: trae los últimos 12 meses. Si querés más historia, cambiá «Desde» (ARCA consulta de a 365 días y Arcanum divide el período solo).`
+      :`Ya bajado: emitidos hasta ${f(r.cubierto.emitido)}, recibidos hasta ${f(r.cubierto.recibido)}. Arranca un poco antes de lo último bajado para tomar lo que ARCA muestra tarde; no se duplica nada.`;
+  }catch{}
 }
 async function mcCorridas(retomar){
   try{const {corridas}=await api(`/api/mis-comprobantes/${MC.cuit}/corridas`);
@@ -667,7 +679,7 @@ function mcSeguir(id){
       $('#mc_devolver').classList.toggle('hidden',!humano);
       const av=$('#mc_vivo_avance'),ta=mcAvance(c);av.textContent=ta;av.classList.toggle('hidden',!ta);av.title=c.progreso&&c.progreso.error?`Error del paso: ${c.progreso.error}`:'';
       $('#mc_vivo_motivo').textContent=pideOk?`Fisherboy frenó antes de tocar «${(c.progreso&&c.progreso.ok&&c.progreso.ok.texto)||'un botón'}» porque podría no deshacerse${c.progreso&&c.progreso.ok&&c.progreso.ok.motivo?` (${c.progreso.ok.motivo})`:''}. Mirá la pantalla y decidí: «Sí, dale» lo toca, «No» lo cancela.`:c.estado==='esperando_humano'?'ARCA pide a una persona (captcha o segundo factor). Resolvelo en la pantalla y después tocá "Devolver a la receta".':c.estado==='error'?(c.error||''):c.estado==='terminado'?`Listo: ${c.cantidad} comprobantes.`:'';
-      if(!MC_VIVOS.includes(c.estado)){mcPararTimers();mcCorridas(false);mcCargarTabla();mcMonotributo();}
+      if(!MC_VIVOS.includes(c.estado)){mcPararTimers();mcCorridas(false);mcCargarTabla();mcMonotributo();mcRango();}
     }catch{}
   };
   const foto=async()=>{

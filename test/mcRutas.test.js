@@ -154,3 +154,13 @@ test('el OK que pide Fisherboy se responde desde Arcanum (si y no)', async () =>
     assert.deepStrictEqual(mc.llamadas, [['ok', 7, true], ['ok', 7, false]]);
   });
 });
+
+test('rango sugerido: respeta el cuit_allow y devuelve la proxima sincronizacion', async () => {
+  const mc = mcFalso();
+  mc.rangoSugerido = async (cuit, tipo) => ({ desde: '2026-10-26', hasta: '2026-11-25', primera: false, cuit, tipo });
+  await conServidor(OPERADOR, { mc, fisherboy: fbFalso() }, async (base) => {
+    assert.strictEqual((await pedir(base, 'GET', '/api/mis-comprobantes/20263630743/rango')).status, 403);
+    const r = await (await pedir(base, 'GET', '/api/mis-comprobantes/30711111118/rango?tipo=emitidos')).json();
+    assert.deepStrictEqual([r.rango.desde, r.rango.tipo], ['2026-10-26', 'emitidos']);
+  });
+});
