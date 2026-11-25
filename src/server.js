@@ -9,6 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const { config } = require('./config');
+const { conVersionEnEstaticos } = require('./lib/estaticos');
 const { sendJson, sendError, readJsonBody, readTextBody } = require('./lib/http');
 const db = require('./db');
 const catalog = require('./catalog');
@@ -843,7 +844,7 @@ function serveOpenapi(res) {
 function serveDashboard(res) {
   const p = path.join(__dirname, '..', 'public', 'index.html');
   try {
-    const html = fs.readFileSync(p, 'utf8');
+    const html = conVersionEnEstaticos(fs.readFileSync(p, 'utf8'), config.version);
     // El HTML lleva todo el JS/CSS inline: nunca servir una version cacheada vieja
     // (evita quedar con un bundle stale tras un update -> UI rara/lenta).
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, must-revalidate' });

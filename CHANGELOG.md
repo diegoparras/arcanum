@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [0.10.10] - 2026-11-25
+
+### Cambiado
+- **Menu de secciones al costado.** Las 11 secciones dejan la barra de arriba y pasan a un
+  panel lateral agrupado (Facturar, ARCA, Administracion), cada una con su icono. El boton
+  de rayitas, arriba a la izquierda, lo achica a una barra de solo iconos (el nombre aparece
+  al pasar el mouse) y lo vuelve a extender; Arcanum recuerda como lo dejaste. En el celular
+  el panel se abre encima del contenido y se cierra al elegir una seccion. La barra de
+  arriba queda con el logo, la seccion actual y el menu de la derecha.
+
+### Corregido
+- Despues de actualizar Arcanum, el navegador podia seguir usando la hoja de estilos vieja
+  hasta 24 horas. Ahora la direccion del CSS lleva la version, asi cada version nueva se
+  baja sola.
+
 ## [0.10.9] - 2026-11-24
 
 ### Corregido

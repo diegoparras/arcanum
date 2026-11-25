@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Arcanum — Gateway ARCA</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2327408b'/%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z'/%3E%3Crect x='21' y='41' width='22' height='6' rx='1' fill='%23fff'/%3E%3C/svg%3E">
-<script>(function(){try{var t=localStorage.arcanumTheme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<script>(function(){try{var t=localStorage.arcanumTheme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('arcanum.nav')==='min')document.documentElement.setAttribute('data-nav','min');}catch(e){}})();</script>
 <!-- Fuentes vendorizadas (sin CDN, por CSP y privacidad) -->
 <style>
   @font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;
@@ -50,11 +50,9 @@
   .bar{display:flex;align-items:center;gap:16px;padding:13px 0}
   .logo{width:32px;height:32px;border-radius:9px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-family:var(--mono)}
   .bar h1{font-size:16px;margin:0;font-weight:650}
-  nav{display:flex;gap:4px;margin-left:8px;flex-wrap:wrap}
-  nav button{background:none;border:none;color:var(--muted);padding:7px 11px;border-radius:8px;cursor:pointer;font-size:14px}
-  nav button.active{background:var(--chip);color:var(--ink);font-weight:560}
-  nav button:hover{background:var(--accent-2);color:var(--on-accent)}
-  nav button.active:hover{background:var(--accent-2);color:var(--on-accent)}
+  /* Navegacion lateral: componente .sidenav del CSS canonico (escriba-ui.css). Aca solo el topbar. */
+  .topbar{padding:0 16px}
+  .navbtn{margin-left:-4px}
   .right{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:13px;color:var(--muted)}
   .env{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:999px;background:var(--chip);color:var(--accent-ink)}
   button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
@@ -119,15 +117,12 @@
   .nov-list{margin:2px 0 6px;padding-left:18px;font-size:13.5px;line-height:1.5}
   .nov-list li{margin:3px 0}.nov-list code{font-family:var(--mono);font-size:12px}
   .linkbtn{background:none;border:none;padding:0;color:var(--accent);cursor:pointer;font:inherit;text-decoration:underline}
-  /* Responsive: el menú nunca se sale de pantalla; en angosto la nav pasa a una
-     tira scrolleable abajo (topbar = logo + kebab), sin desbordar. */
+  /* Responsive: el menú nunca se sale de pantalla; en angosto la navegacion es un cajon
+     que se abre encima del contenido (topbar = rayitas + logo + kebab). */
   .menu{max-width:calc(100vw - 24px)}
   @media(max-width:760px){
     .wrap{padding:0 14px}
-    .bar{flex-wrap:wrap;gap:10px 12px}
-    nav{order:3;width:100%;margin-left:0;flex-wrap:nowrap;overflow-x:auto;gap:2px;scrollbar-width:none}
-    nav::-webkit-scrollbar{display:none}
-    nav button{white-space:nowrap;flex:0 0 auto}
+    .topbar{padding:0 12px;gap:10px}
   }
 </style>
 </head>
@@ -146,15 +141,20 @@
 </div>
 
 <div id="appView" class="hidden">
-<header><div class="wrap bar">
+<header><div class="bar topbar">
+  <button class="iconbtn navbtn" id="navBtn" type="button" onclick="toggleNav()" aria-label="Mostrar u ocultar el menú de secciones" aria-controls="sidenav" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
   <div class="logo"><svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg></div><h1>Arcanum</h1>
-  <nav id="nav"></nav>
+  <span class="crumb" id="crumb"></span>
   <div class="right" style="position:relative">
     <button class="iconbtn" id="menuBtn" onclick="toggleMenu()" aria-label="Menú"><svg viewBox="0 0 20 20" aria-hidden="true" style="fill:currentColor;stroke:none"><circle cx="10" cy="4" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="10" cy="16" r="1.7"/></svg></button>
     <div class="menu" id="appmenu"></div>
   </div>
 </div></header>
-<main class="wrap"><div id="view"></div></main>
+<div class="esc-shell">
+  <aside class="sidenav" id="sidenav"><nav id="nav" aria-label="Secciones"></nav></aside>
+  <div class="scrim" onclick="cerrarNavMovil()"></div>
+  <main class="wrap"><div id="view"></div></main>
+</div>
 </div>
 
 <div class="modal" id="modal"><div class="card" id="modalBody"></div></div>
@@ -192,17 +192,65 @@ async function doLogin(){
 }
 async function logout(){ await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); showLogin(); }
 
-const VIEWS=[['panel','Panel'],['clientes','Clientes'],['servicios','Servicios'],['emitir','Emitir'],['facturador','Facturador'],['comprobantes','Comprobantes'],['mis','Mis Comprobantes'],['contingencia','Contingencia'],['generador','Generador'],['webhooks','Webhooks'],['usuarios','Usuarios']];
+/* ---------- NAVEGACION: panel lateral agrupado, se achica a iconos ---------- */
+const NI=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const NAV_ICON={
+  panel:NI('<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
+  emitir:NI('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/>'),
+  facturador:NI('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
+  comprobantes:NI('<path d="M15 3H9a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7z"/><path d="M15 3v4h4"/><path d="M5 7v12a2 2 0 0 0 2 2h8"/>'),
+  contingencia:NI('<path d="M12 4 3 20h18z"/><path d="M12 10v4M12 17h.01"/>'),
+  clientes:NI('<circle cx="9" cy="8" r="3.5"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6 6 0 0 1 3 5.5"/>'),
+  mis:NI('<path d="M7 18a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 18 9.5a4 4 0 0 1 0 8.5"/><path d="M12 11v9M9 17l3 3 3-3"/>'),
+  servicios:NI('<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>'),
+  generador:NI('<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>'),
+  webhooks:NI('<path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/>'),
+  usuarios:NI('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+};
+const NAV=[
+  [null,[['panel','Panel']]],
+  ['Facturar',[['emitir','Emitir'],['facturador','Facturador'],['comprobantes','Comprobantes'],['contingencia','Contingencia']]],
+  ['ARCA',[['clientes','Clientes'],['mis','Mis Comprobantes'],['servicios','Servicios'],['generador','Generador']]],
+  ['Administración',[['webhooks','Webhooks'],['usuarios','Usuarios']]],
+];
+const VIEWS=NAV.flatMap(g=>g[1]);
 function renderNav(cur){
-  $('#nav').innerHTML=VIEWS.filter(v=>v[0]!=='usuarios'||['superadmin','admin'].includes(ME.role))
-    .map(v=>`<button class="${v[0]===cur?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('');
+  const admin=['superadmin','admin'].includes(ME.role);
+  $('#nav').innerHTML=NAV.map(([grupo,items])=>{
+    const vis=items.filter(v=>v[0]!=='usuarios'||admin);
+    if(!vis.length)return '';
+    return (grupo?`<div class="nav-g">${grupo}</div>`:'')+vis.map(v=>`<button type="button" class="nav-it${v[0]===cur?' active':''}" onclick="go('${v[0]}')" title="${v[1]}" aria-label="${v[1]}"${v[0]===cur?' aria-current="page"':''}>${NAV_ICON[v[0]]}<span>${v[1]}</span></button>`).join('');
+  }).join('');
+  const actual=VIEWS.find(v=>v[0]===cur);
+  $('#crumb').textContent=actual?'/ '+actual[1]:'';
 }
-function go(v){if(typeof mcPararTimers==='function')mcPararTimers();renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();if(v==='panel'||!['clientes','servicios','emitir','facturador','comprobantes','mis','contingencia','generador','webhooks','usuarios'].includes(v))setTimeout(()=>{if(typeof avisoMasterKey==='function')avisoMasterKey();},600);}
+const navMovil=()=>matchMedia('(max-width:760px)').matches;
+function syncNavBtn(){
+  const abierto=navMovil()?document.documentElement.getAttribute('data-nav-movil')==='abierto':document.documentElement.getAttribute('data-nav')!=='min';
+  $('#navBtn').setAttribute('aria-expanded',String(abierto));
+}
+function toggleNav(){
+  const h=document.documentElement;
+  if(navMovil()){
+    if(h.getAttribute('data-nav-movil')==='abierto')h.removeAttribute('data-nav-movil');else h.setAttribute('data-nav-movil','abierto');
+  }else{
+    const min=h.getAttribute('data-nav')!=='min';
+    if(min)h.setAttribute('data-nav','min');else h.removeAttribute('data-nav');
+    try{localStorage.setItem('arcanum.nav',min?'min':'full');}catch(e){}
+  }
+  syncNavBtn();
+}
+function cerrarNavMovil(){document.documentElement.removeAttribute('data-nav-movil');syncNavBtn();}
+function medirTopbar(){const h=document.querySelector('#appView header');if(h&&h.offsetHeight)document.documentElement.style.setProperty('--top-h',h.offsetHeight+'px');}
+addEventListener('resize',()=>{medirTopbar();if(!navMovil())cerrarNavMovil();else syncNavBtn();});
+addEventListener('keydown',e=>{if(e.key==='Escape'&&document.documentElement.getAttribute('data-nav-movil')==='abierto')cerrarNavMovil();});
+function go(v){if(navMovil())cerrarNavMovil();if(typeof mcPararTimers==='function')mcPararTimers();renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();if(v==='panel'||!['clientes','servicios','emitir','facturador','comprobantes','mis','contingencia','generador','webhooks','usuarios'].includes(v))setTimeout(()=>{if(typeof avisoMasterKey==='function')avisoMasterKey();},600);}
 
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; }catch(e){ showLogin(); return; }
   try{ const h=await fetch('/api/health').then(r=>r.json()); ENV=h.env; }catch{}
   $('#loginView').classList.add('hidden');$('#appView').classList.remove('hidden');
+  medirTopbar();syncNavBtn();
   go((location.hash||'#panel').slice(1));
   setTimeout(avisarNovedades,400);
 }

@@ -197,3 +197,42 @@ button.icon-btn:hover { background: var(--card-2); border-color: var(--hairline)
 .hero h1 { font-size: clamp(30px, 5vw, 52px); line-height: 1.06; margin: 0 0 14px; font-weight: 600; letter-spacing: -.03em; }
 .hero .sub { color: var(--muted); font-size: clamp(15px, 2vw, 19px); max-width: 620px; margin: 0 auto; line-height: 1.45; }
 .pie { text-align: center; color: var(--muted); font-size: 12px; margin-top: 38px; line-height: 1.6; }
+
+/* ---- Navegacion lateral (apps con muchas secciones) ------------------------- */
+/* Panel agrupado a la izquierda que se achica a una barra de iconos con el boton de rayitas
+   del topbar (estado en localStorage "<app>.nav" = "min" | "full", aplicado como
+   html[data-nav="min"] desde el <head> para que no parpadee). En angosto (<=760px) es un
+   cajon que se abre encima: html[data-nav-movil="abierto"]. Referencia: Arcanum. */
+:root { --nav-w: 232px; --nav-w-min: 60px; --top-h: 59px; }
+.esc-shell { display: flex; align-items: flex-start; }
+.esc-shell > main { flex: 1; min-width: 0; }
+.crumb { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidenav { position: sticky; top: var(--top-h); height: calc(100vh - var(--top-h)); width: var(--nav-w); flex: 0 0 auto;
+  border-right: 1px solid var(--border); background: var(--panel); overflow-y: auto; overflow-x: hidden;
+  padding: 10px 8px 16px; transition: width .18s ease; }
+.nav-g { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+  padding: 14px 10px 4px; white-space: nowrap; }
+.nav-it { display: flex; align-items: center; gap: 12px; width: 100%; background: none; border: none; color: var(--muted);
+  padding: 8px 10px; margin: 1px 0; border-radius: 8px; cursor: pointer; font: inherit; font-size: 14px;
+  text-align: left; white-space: nowrap; }
+.nav-it svg { width: 18px; height: 18px; flex: 0 0 18px; fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round; }
+.nav-it:hover { background: var(--card); color: var(--text); }
+.nav-it.active { background: var(--card); color: var(--accent-texto, var(--accent)); font-weight: 560; }
+.nav-it:focus-visible { outline: none; box-shadow: var(--ring); }
+:root[data-nav="min"] .sidenav { width: var(--nav-w-min); }
+:root[data-nav="min"] .nav-it { justify-content: center; padding: 9px 0; }
+:root[data-nav="min"] .nav-it span { display: none; }
+:root[data-nav="min"] .nav-g { font-size: 0; padding: 0; margin: 10px 8px; border-top: 1px solid var(--border); }
+.scrim { display: none; }
+@media (max-width: 760px) {
+  .sidenav, :root[data-nav="min"] .sidenav { position: fixed; left: 0; top: var(--top-h); bottom: 0; height: auto;
+    width: min(270px, 84vw); z-index: 30; transform: translateX(-100%); transition: transform .2s ease; box-shadow: var(--shadow); }
+  :root[data-nav="min"] .nav-it { justify-content: flex-start; padding: 8px 10px; }
+  :root[data-nav="min"] .nav-it span { display: inline; }
+  :root[data-nav="min"] .nav-g { font-size: 11px; padding: 14px 10px 4px; margin: 0; border-top: none; }
+  :root[data-nav-movil="abierto"] .sidenav { transform: none; }
+  :root[data-nav-movil="abierto"] .scrim { display: block; position: fixed; inset: var(--top-h) 0 0 0;
+    background: rgba(0, 0, 0, .35); z-index: 25; }
+}
+@media (prefers-reduced-motion: reduce) { .sidenav { transition: none; } }
