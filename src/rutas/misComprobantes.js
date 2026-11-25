@@ -127,6 +127,10 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       }
       if (req.method === 'POST' && seg[4] === 'tomar-control') return json(res, 200, { ok: true, ...(await fb().tomarControl(c.token_fb)) });
       if (req.method === 'POST' && seg[4] === 'devolver') return json(res, 200, { ok: true, ...(await fb().devolver(c.token_fb)) });
+      if (req.method === 'POST' && (seg[4] === 'ok' || seg[4] === 'no')) {
+        await servicio().responderOk(c.id, seg[4] === 'ok');
+        return json(res, 200, { ok: true });
+      }
       return false;
     }
 

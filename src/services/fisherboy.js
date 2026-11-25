@@ -90,6 +90,8 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
     evento: (token, cmd) => json('POST', `/api/agent/${t(token)}/event`, cmd || {}),
     tomarControl: (token) => json('POST', `/api/agent/${t(token)}/takeover`, {}),
     devolver: (token) => json('POST', `/api/agent/${t(token)}/resume`, {}),
+    ok: (token) => json('POST', `/api/agent/${t(token)}/ok`, {}),
+    no: (token) => json('POST', `/api/agent/${t(token)}/no`, {}),
     cerrar: (token) => json('DELETE', `/api/agent/${t(token)}`),
     async frame(token, desde = 0) {
       const r = await pedir(await cfg(), 'GET', `/api/agent/${t(token)}/frame?desde=${Number(desde) || 0}`,

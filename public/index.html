@@ -558,8 +558,8 @@ async function emitir(){
 
 /* ---------- MIS COMPROBANTES (via Fisherboy) ---------- */
 const MC={cuit:'',corrida:null,seq:0,url:null,timer:null,frameTimer:null};
-const MC_VIVOS=['iniciando','corriendo','esperando_humano','humano'];
-const MC_ESTADO={iniciando:'Iniciando',corriendo:'Operando ARCA',esperando_humano:'Necesita una persona',humano:'En tus manos',terminado:'Terminada',error:'Con error'};
+const MC_VIVOS=['iniciando','corriendo','esperando_humano','humano','esperando_ok'];
+const MC_ESTADO={iniciando:'Iniciando',corriendo:'Operando ARCA',esperando_humano:'Necesita una persona',esperando_ok:'Pide tu OK',humano:'En tus manos',terminado:'Terminada',error:'Con error'};
 function isoHoy(d=new Date()){return d.toISOString().slice(0,10);}
 function mcPararTimers(){clearInterval(MC.timer);clearInterval(MC.frameTimer);MC.timer=MC.frameTimer=null;}
 async function vMis(){
@@ -585,7 +585,7 @@ async function vMis(){
    </div>
    <div class="card hidden" id="mc_vivo" style="margin-top:14px">
      <div class="row"><h3 style="margin:0;text-transform:none">Navegador en vivo</h3><span class="tag" id="mc_vivo_estado"></span>
-       <span style="margin-left:auto" class="row"><button id="mc_tomar" onclick="mcControl('tomar-control')">Tomar el control</button>
+       <span style="margin-left:auto" class="row"><button id="mc_no" class="hidden" onclick="mcOk(false)">No</button><button id="mc_si" class="primary hidden" onclick="mcOk(true)">Sí, dale</button><button id="mc_tomar" onclick="mcControl('tomar-control')">Tomar el control</button>
        <button id="mc_devolver" class="primary" onclick="mcControl('devolver')">Devolver a la receta</button></span></div>
      <p class="mc-avance hidden" id="mc_vivo_avance"></p><p class="hint" id="mc_vivo_motivo" style="margin:8px 0"></p>
      <div id="mc_pantalla" tabindex="0" style="position:relative;margin-top:8px;border:1px solid var(--line);border-radius:10px;overflow:hidden;outline:none;background:var(--bg)">
@@ -661,10 +661,12 @@ function mcSeguir(id){
     try{const {corrida:c}=await api(`/api/mis-comprobantes/corridas/${id}`);
       const t=$('#mc_vivo_estado');t.textContent=MC_ESTADO[c.estado]||c.estado;t.className='tag '+(c.estado==='terminado'?'ok':c.estado==='error'?'no':'warn');
       const humano=c.estado==='humano'||c.estado==='esperando_humano';
-      $('#mc_tomar').classList.toggle('hidden',humano||!MC_VIVOS.includes(c.estado));
+      const pideOk=c.estado==='esperando_ok';
+      $('#mc_tomar').classList.toggle('hidden',humano||pideOk||!MC_VIVOS.includes(c.estado));
+      $('#mc_si').classList.toggle('hidden',!pideOk);$('#mc_no').classList.toggle('hidden',!pideOk);
       $('#mc_devolver').classList.toggle('hidden',!humano);
       const av=$('#mc_vivo_avance'),ta=mcAvance(c);av.textContent=ta;av.classList.toggle('hidden',!ta);av.title=c.progreso&&c.progreso.error?`Error del paso: ${c.progreso.error}`:'';
-      $('#mc_vivo_motivo').textContent=c.estado==='esperando_humano'?'ARCA pide a una persona (captcha o segundo factor). Resolvelo en la pantalla y después tocá "Devolver a la receta".':c.estado==='error'?(c.error||''):c.estado==='terminado'?`Listo: ${c.cantidad} comprobantes.`:'';
+      $('#mc_vivo_motivo').textContent=pideOk?`Fisherboy frenó antes de tocar «${(c.progreso&&c.progreso.ok&&c.progreso.ok.texto)||'un botón'}» porque podría no deshacerse${c.progreso&&c.progreso.ok&&c.progreso.ok.motivo?` (${c.progreso.ok.motivo})`:''}. Mirá la pantalla y decidí: «Sí, dale» lo toca, «No» lo cancela.`:c.estado==='esperando_humano'?'ARCA pide a una persona (captcha o segundo factor). Resolvelo en la pantalla y después tocá "Devolver a la receta".':c.estado==='error'?(c.error||''):c.estado==='terminado'?`Listo: ${c.cantidad} comprobantes.`:'';
       if(!MC_VIVOS.includes(c.estado)){mcPararTimers();mcCorridas(false);mcCargarTabla();mcMonotributo();}
     }catch{}
   };
@@ -684,6 +686,9 @@ function mcSeguir(id){
 async function mcEvento(cmd){
   if(!MC.corrida||$('#mc_devolver').classList.contains('hidden'))return;
   try{await api(`/api/mis-comprobantes/corridas/${MC.corrida}/evento`,{method:'POST',body:JSON.stringify(cmd)});}catch{}
+}
+async function mcOk(si){
+  try{await api(`/api/mis-comprobantes/corridas/${MC.corrida}/${si?'ok':'no'}`,{method:'POST'});toast(si?'Listo, sigue':'Cancelado');}catch(e){toast(e.message,true);}
 }
 async function mcControl(accion){
   try{await api(`/api/mis-comprobantes/corridas/${MC.corrida}/${accion}`,{method:'POST'});toast(accion==='devolver'?'Control devuelto':'Tenés el control');}catch(e){toast(e.message,true);}

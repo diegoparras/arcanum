@@ -311,3 +311,63 @@ test('mientras una persona tiene el control no se corta por falta de avance', as
   await s.seguir(c.id);
   assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
 });
+
+// --- el OK que pide Fisherboy antes de lo que "no se deshace" (estado esperando_ok) ------
+function conOk(estados) {
+  const fb = fisherboyFalso(estados);
+  fb.oks = []; fb.nos = [];
+  fb.ok = async (t) => { fb.oks.push(t); return { ok: true }; };
+  fb.no = async (t) => { fb.nos.push(t); return { ok: true }; };
+  return fb;
+}
+
+test('esperando_ok para Buscar se aprueba solo: es una consulta, no cambia nada en ARCA', async () => {
+  const repo = repoFalso();
+  const pide = { estado: 'esperando_ok', ok_pedido: { texto: 'BUSCAR', motivo: '' }, log: [OK(1)] };
+  const fb = conOk([pide, { ...TERMINADO, log: [OK(1)] }]);
+  const { s, w } = servicio(repo, fb);
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.deepStrictEqual(fb.oks, ['tok-1']);
+  assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
+  assert.ok(!w.eventos.some(([e]) => e === 'mis_comprobantes_fallo'), 'no molesta a nadie');
+});
+
+test('esperando_ok para otra cosa espera a una persona, avisa una vez y no se corta por falta de avance', async () => {
+  const repo = repoFalso();
+  const pide = { estado: 'esperando_ok', ok_pedido: { texto: 'Confirmar', motivo: 'la IA quiere confirmar' }, log: [OK(1)] };
+  const estados = Array(15).fill(pide).concat([{ ...TERMINADO, log: [OK(1)] }]);
+  const fb = conOk(estados);
+  fb.estado = async () => { await new Promise((r) => setTimeout(r, 3)); return estados.shift() || TERMINADO; };
+  const w = webhooks();
+  const s = mc.crear({ repo, fisherboy: fb, vault, webhooks: w, esperaMs: 1, sinAvanceMs: 20 });
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  const vistos = [];
+  const orig = repo.actualizarCorrida;
+  repo.actualizarCorrida = async (id, campos) => { if (campos.estado) vistos.push(campos.estado); if (campos.progreso && campos.progreso.ok) vistos.push(campos.progreso.ok.texto); return orig(id, campos); };
+  await s.seguir(c.id);
+  assert.deepStrictEqual(fb.oks, [], 'no aprueba solo');
+  assert.ok(vistos.includes('esperando_ok') && vistos.includes('Confirmar'), 'la corrida muestra que pide OK y para que');
+  assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
+  const avisos = w.eventos.filter(([e, p]) => e === 'mis_comprobantes_fallo' && p.necesitaHumano);
+  assert.strictEqual(avisos.length, 1);
+});
+
+test('responderOk reenvia si/no a Fisherboy solo si la corrida esta esperando el OK', async () => {
+  const repo = repoFalso();
+  const fb = conOk([TERMINADO]);
+  const { s } = servicio(repo, fb);
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  Object.assign(repo.corridas[c.id], { estado: 'esperando_ok', token_fb: 'tok-9' });
+  await s.responderOk(c.id, true);
+  await s.responderOk(c.id, false);
+  assert.deepStrictEqual([fb.oks, fb.nos], [['tok-9'], ['tok-9']]);
+  repo.corridas[c.id].estado = 'corriendo';
+  await assert.rejects(() => s.responderOk(c.id, true), /no esta esperando/i);
+});
+
+test('el paso que abre Mis Comprobantes no puede tomar el link al video de YouTube', () => {
+  const p = RECETA_DEFAULT.pasos.find((x) => /Abrir el servicio/.test(x.objetivo || ''));
+  assert.ok(!/^text=/.test(p.sel), p.sel);
+  assert.match(p.sel, /youtu/);
+});

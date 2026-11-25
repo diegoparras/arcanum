@@ -11,10 +11,10 @@
 // La clave fiscal vive cifrada con el vault. Se descifra solo para armar `secretos` del pedido
 // a Fisherboy y nunca se registra, ni se devuelve por la API.
 
-const { RECETA_DEFAULT, DOMINIOS } = require('./misComprobantes.receta');
+const { RECETA_DEFAULT, DOMINIOS, OK_AUTOMATICO } = require('./misComprobantes.receta');
 const { desdeArchivo } = require('./mcParser');
 
-const ESTADOS_VIVOS = ['iniciando', 'corriendo', 'esperando_humano', 'humano'];
+const ESTADOS_VIVOS = ['iniciando', 'corriendo', 'esperando_humano', 'humano', 'esperando_ok'];
 const TIPOS = { emitidos: 'emitido', recibidos: 'recibido' };
 const BOTON = { emitido: 'Emitidos', recibido: 'Recibidos' };
 const TIMEOUT_SESION_MS = 25 * 60 * 1000;
@@ -205,6 +205,10 @@ function progresoDe(log, pasos, variables = {}) {
   return { paso, total, descripcion, ia, error: fallo ? String(ref.error || '').slice(0, 200) : null };
 }
 
+function plano(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
 function loginRechazado(st) {
   if ((st.log || []).some((l) => l && l.verifica_login && l.ok === false)) return true;
   return /clave|contrase|usuario/i.test(String(st.alerta || ''));
@@ -296,16 +300,28 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       let st;
       let lineas = -1;
       let avance = Date.now();
+      let okDado = false;
       for (;;) {
         st = await fisherboy.estado(token);
         if (['terminado', 'error', 'cerrado'].includes(st.estado)) break;
         const n = Array.isArray(st.log) ? st.log.length : 0;
-        const conPersona = st.estado === 'humano' || st.estado === 'esperando_humano';
+        const pideOk = st.estado === 'esperando_ok';
+        const pedido = pideOk ? { texto: String((st.ok_pedido && st.ok_pedido.texto) || '').slice(0, 120), motivo: String((st.ok_pedido && st.ok_pedido.motivo) || '').slice(0, 300) } : null;
+        const okSolo = pideOk && OK_AUTOMATICO.includes(plano(pedido.texto));
+        const conPersona = st.estado === 'humano' || st.estado === 'esperando_humano' || (pideOk && !okSolo);
         if (n !== lineas || conPersona) { lineas = n; avance = Date.now(); }
-        const progreso = { ...progresoDe(st.log, r.pasos, variables), tipo, desde: tramo.desde, hasta: tramo.hasta, avance: new Date(avance).toISOString() };
-        if (['corriendo', 'esperando_humano', 'humano'].includes(st.estado)) {
+        const progreso = { ...progresoDe(st.log, r.pasos, variables), tipo, desde: tramo.desde, hasta: tramo.hasta, avance: new Date(avance).toISOString(), ok: pedido };
+        if (['corriendo', 'esperando_humano', 'humano', 'esperando_ok'].includes(st.estado)) {
           await repo.actualizarCorrida(id, { estado: st.estado, latido_at: ahora(), progreso });
         }
+        if (okSolo && !okDado) {
+          okDado = true;
+          await Promise.resolve(fisherboy.ok(token)).catch(() => {}); // 409 = ya no lo esperaba
+        } else if (pideOk && !okSolo && !avisado.ok) {
+          avisado.ok = true;
+          await webhooks.emitir('mis_comprobantes_fallo', { cuit: corrida.cuit, corrida: id, necesitaHumano: true, motivo: `Fisherboy pide un OK para tocar "${pedido.texto}"` }).catch(() => {});
+        }
+        if (!pideOk) okDado = false;
         if (Date.now() - avance > sinAvanceMs) {
           const min = Math.max(1, Math.round(sinAvanceMs / 60000));
           const e = err(`Sin avance hace ${min} min en el paso ${progreso.paso} de ${progreso.total} (${progreso.descripcion})${progreso.error ? `: ${progreso.error}` : ''}. Se corto la sesion para no dejarla abierta.`, 504);
@@ -374,6 +390,14 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     }
   }
 
+  /** La persona responde el OK que pidio Fisherboy (si = true). */
+  async function responderOk(id, si) {
+    const fila = await repo.corrida(Number(id));
+    if (!fila) throw err(`No existe la corrida ${id}`, 404);
+    if (fila.estado !== 'esperando_ok' || !fila.token_fb) throw err('La corrida no esta esperando un OK', 409);
+    return si ? fisherboy.ok(fila.token_fb) : fisherboy.no(fila.token_fb);
+  }
+
   async function exportarCsv(cuit, filtros) {
     const filas = await repo.listar(cuitDe(cuit), { ...filtros, limite: 5000 });
     const cols = ['tipo', 'fecha', 'cbte_tipo', 'punto_venta', 'numero_desde', 'numero_hasta', 'cae', 'doc_tipo', 'doc_nro', 'contraparte', 'moneda', 'tipo_cambio', 'neto_gravado', 'no_gravado', 'exento', 'iva', 'total'];
@@ -388,7 +412,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     receta, guardarReceta, restaurarReceta,
     estadoCredencial, guardarCredencial,
     borrarCredencial: async (cuit) => repo.borrarCredencial(cuitDe(cuit)),
-    sincronizar, seguir, lanzar,
+    sincronizar, seguir, lanzar, responderOk,
     /** Al arrancar: las corridas que seguian vivas perdieron su seguimiento (estaba en memoria). */
     marcarHuerfanas: async () => repo.marcarHuerfanas('Arcanum se reinicio durante la corrida: volve a sincronizar'),
     corrida: async (id) => repo.corrida(Number(id)),

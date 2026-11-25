@@ -3,6 +3,20 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.0.4] - 2026-11-25
+
+### Corregido
+- **Mis Comprobantes ya no se queda esperando un OK que nadie ve.** Fisherboy frena antes de
+  tocar un boton que podria no deshacerse (todo boton de envio, como "Buscar") y pide un OK.
+  Arcanum no conocia ese estado: la corrida parecia "Operando ARCA" sin avanzar hasta
+  cortarse. Ahora los botones que solo consultan (Buscar, Consultar, Filtrar) se aprueban
+  solos, y para cualquier otro la vista en vivo muestra "Pide tu OK" con el boton en
+  cuestion y las opciones **Si, dale** / **No**, avisa por webhook y no corta la corrida
+  mientras espera.
+- **El paso que abre Mis Comprobantes no toma mas el link al video de YouTube** que el
+  portal de ARCA tiene con el mismo nombre (Fisherboy lo bloqueaba y habia que recurrir a
+  la IA).
+
 ## [2.0.3] - 2026-11-25
 
 ### Agregado

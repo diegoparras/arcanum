@@ -28,7 +28,10 @@ const RECETA_DEFAULT = {
     { do: 'click', sel: "[id='F1:btnIngresar']", objetivo: 'Apretar Ingresar en el login de ARCA' },
     { do: 'human_if', sel: CAPTCHA, motivo: 'ARCA pide resolver un captcha para ingresar' },
     { do: 'wait_url', contains: 'portal', timeout_s: 30, verifica_login: true },
-    { do: 'click', sel: 'text=Mis Comprobantes', timeout_s: 20, objetivo: "Abrir el servicio 'Mis Comprobantes' del portal de ARCA (esta en Mis servicios o se encuentra con el buscador)" },
+    // No `text=`: el portal tambien tiene un link a un video de YouTube que dice "Mis Comprobantes"
+    // y Fisherboy lo bloquea (dominio no permitido). Si este selector no encuentra la tarjeta, la IA
+    // usa el buscador del portal.
+    { do: 'click', sel: 'a:has-text("Mis Comprobantes"):not([href*="youtu"])', timeout_s: 20, objetivo: "Abrir el servicio 'Mis Comprobantes' del portal de ARCA (esta en Mis servicios o se encuentra con el buscador)" },
     { do: 'switch_tab', timeout_s: 30 },
     { do: 'click', sel: 'text={{var:cuit}}', timeout_s: 8, optional: true },
     { do: 'click', sel: '#btn{{var:tipo_boton}}', timeout_s: 20, objetivo: "Entrar a la seccion '{{var:tipo_boton}}' de Mis Comprobantes" },
@@ -42,4 +45,9 @@ const RECETA_DEFAULT = {
 
 const DOMINIOS = ['afip.gob.ar', 'arca.gob.ar'];
 
-module.exports = { RECETA_DEFAULT, DOMINIOS };
+// Fisherboy frena antes de tocar un boton que "no se deshace" (todo submit, por ejemplo) y pide
+// un OK. Estos textos son consultas que no cambian nada en ARCA: Arcanum da el OK solo, asi la
+// sincronizacion diaria no queda esperando a nadie. Cualquier otro texto lo decide una persona.
+const OK_AUTOMATICO = ['buscar', 'consultar', 'filtrar'];
+
+module.exports = { RECETA_DEFAULT, DOMINIOS, OK_AUTOMATICO };

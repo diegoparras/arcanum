@@ -140,3 +140,17 @@ test('constatacion: lista por JSON o CSV con scope, y constatar recibidos', asyn
     assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/20263630743/constatar')).status, 403);
   });
 });
+
+test('el OK que pide Fisherboy se responde desde Arcanum (si y no)', async () => {
+  const mc = mcFalso();
+  mc.responderOk = async (id, si) => { mc.llamadas.push(['ok', id, si]); return { ok: true }; };
+  await conServidor(OPERADOR, { mc, fisherboy: fbFalso() }, async (base) => {
+    // El operador solo opera su CUIT: la corrida 7 es de otro.
+    assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/corridas/7/ok')).status, 403);
+  });
+  await conServidor(ADMIN, { mc, fisherboy: fbFalso() }, async (base) => {
+    assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/corridas/7/ok')).status, 200);
+    assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/corridas/7/no')).status, 200);
+    assert.deepStrictEqual(mc.llamadas, [['ok', 7, true], ['ok', 7, false]]);
+  });
+});
