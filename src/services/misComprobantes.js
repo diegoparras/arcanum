@@ -395,7 +395,11 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
         throw e;
       }
       const archivos = st.archivos || [];
-      if (!archivos.length) throw err('La receta termino sin descargar nada de Mis Comprobantes', 502);
+      if (!archivos.length) {
+        const e = err('La receta termino sin descargar nada de Mis Comprobantes', 502);
+        e.logFb = (st.log || []).slice(-40);
+        throw e;
+      }
       let n = 0;
       for (const a of archivos) {
         const filas = desdeArchivo(await fisherboy.archivo(token, a.n), a.nombre, tipo);

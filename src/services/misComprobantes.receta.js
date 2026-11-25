@@ -43,7 +43,13 @@ const RECETA_DEFAULT = {
     { do: 'press', sel: '#fechaEmision', key: 'End' },
     { do: 'click', sel: '#buscarComprobantes', objetivo: 'Apretar Buscar para consultar los comprobantes' },
     { do: 'wait_for', sel: '#tablaDataTables', timeout_s: 60, objetivo: 'Esperar a que aparezca la tabla de resultados' },
-    { do: 'download', sel: '.buttons-csv', timeout_s: 60, objetivo: 'Exportar los resultados como CSV' },
+    // El boton de ARCA es <button title="Exportar como CSV"> (sin la clase .buttons-csv de
+    // DataTables). Hace location.href a descargarComprobantes.do, que devuelve un ZIP con el CSV
+    // en la misma pestana. El primer pedido puede responder 503 mientras ARCA lo arma: un intento
+    // opcional, una espera y el intento que vale. Si salen los dos, el guardado no duplica.
+    { do: 'download', sel: 'button[title="Exportar como CSV"]', timeout_s: 30, optional: true },
+    { do: 'wait', s: 5 },
+    { do: 'download', sel: 'button[title="Exportar como CSV"]', timeout_s: 60, objetivo: 'Exportar los resultados como CSV' },
   ],
 };
 

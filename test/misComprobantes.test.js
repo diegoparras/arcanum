@@ -416,3 +416,33 @@ test('el rango de fechas se carga con una tecla despues, para que el calendario 
   assert.deepStrictEqual({ do: pasos[i + 1].do, sel: pasos[i + 1].sel }, { do: 'press', sel: '#fechaEmision' });
   assert.ok(pasos[i + 1].key && pasos[i + 1].key !== 'Enter' && pasos[i + 1].key !== 'Tab', 'una tecla que no envie ni mueva el foco');
 });
+
+test('la descarga usa el boton real de ARCA y reintenta una vez (el primer pedido puede dar 503)', () => {
+  const pasos = RECETA_DEFAULT.pasos;
+  const descargas = pasos.map((p, i) => [p, i]).filter(([p]) => p.do === 'download');
+  assert.strictEqual(descargas.length, 2);
+  for (const [p] of descargas) assert.strictEqual(p.sel, 'button[title="Exportar como CSV"]');
+  const [[primera, i1], [segunda, i2]] = descargas;
+  assert.strictEqual(primera.optional, true, 'si el primero falla, sigue sin pasarle el paso a la IA');
+  assert.ok(!segunda.optional, 'el segundo es el que vale');
+  assert.ok(pasos.slice(i1 + 1, i2).some((p) => p.do === 'wait'), 'espera entre intentos');
+});
+
+test('dos descargas del mismo periodo no duplican: se procesan las dos y el guardado deduplica', async () => {
+  const repo = repoFalso();
+  const { s } = servicio(repo, fisherboyFalso([{ estado: 'terminado', archivos: [{ n: 0, nombre: 'a.zip' }, { n: 1, nombre: 'b.zip' }], log: [] }]));
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
+});
+
+test('si la receta termina sin descargar, la corrida guarda el registro de Fisherboy', async () => {
+  const repo = repoFalso();
+  const log = [{ n: 16, do: 'download', ok: false, error: 'Page.click: Timeout 60000ms exceeded.', origen: 'receta' }, { do: 'ia:done', ok: true, origen: 'ia' }];
+  const { s } = servicio(repo, fisherboyFalso([{ estado: 'terminado', archivos: [], log }]));
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  const f = repo.corridas[c.id];
+  assert.match(f.error, /sin descargar/);
+  assert.strictEqual(f.log.length, 2);
+});

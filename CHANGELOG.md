@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.0.7] - 2026-11-25
+
+### Corregido
+- **Mis Comprobantes no encontraba el boton para exportar.** La receta buscaba la clase
+  `.buttons-csv`, que el boton de ARCA no tiene; ahora lo busca por su titulo
+  ("Exportar como CSV"), verificado sobre la pagina real.
+- **La descarga reintenta una vez.** ARCA arma el ZIP en su servidor y el primer pedido puede
+  responder 503; la receta hace un intento, espera 5 segundos y vuelve a pedirlo. Si salen
+  los dos archivos, el guardado no duplica comprobantes.
+- Cuando la receta termina sin descargar nada, la corrida ahora guarda el registro de
+  Fisherboy para poder ver que paso.
+
 ## [2.0.6] - 2026-11-25
 
 ### Corregido
