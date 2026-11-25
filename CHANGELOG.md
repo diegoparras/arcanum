@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.0.1] - 2026-11-25
+
+### Corregido
+- **El menu de la derecha (los tres puntitos) se salia de la pantalla** y aparecia una barra de
+  scroll horizontal. Ahora se abre hacia la izquierda, alineado con el boton.
+- **Mis Comprobantes solo aparece si Fisherboy esta configurado.** Sin la URL y el token de
+  Fisherboy, la seccion no se muestra en el panel lateral (no podia bajar nada). Aparece sola
+  cuando se cargan `FISHERBOY_URL` y `FISHERBOY_TOKEN`, o cuando un superadmin guarda la
+  conexion desde el menu **Fisherboy y Mis Comprobantes**.
+
 ## [2.0.0] - 2026-11-25
 
 ### Cambiado

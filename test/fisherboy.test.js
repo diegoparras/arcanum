@@ -83,3 +83,13 @@ test('archivo devuelve bytes y el token del path se escapa', async () => {
     assert.strictEqual(f.pedidos[0].url, '/api/agent/to%2Fk/files/0');
   } finally { f.srv.close(); }
 });
+
+test('configurado: solo con URL y token, sin tocar la red', async () => {
+  const con = (cfg) => crearCliente({ leerConfig: async () => cfg }).configurado();
+  assert.strictEqual(await con({ url: 'http://fisherboy:8000', token: 'abc' }), true);
+  assert.strictEqual(await con({ url: 'http://fisherboy:8000', token: '' }), false);
+  assert.strictEqual(await con({ url: '', token: 'abc' }), false);
+  assert.strictEqual(await con(null), false);
+  const roto = crearCliente({ leerConfig: async () => { throw new Error('sin base'); } });
+  assert.strictEqual(await roto.configurado(), false);
+});

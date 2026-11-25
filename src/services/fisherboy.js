@@ -101,6 +101,11 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
       if (r.status >= 400) throw err(`Fisherboy no entrego el archivo ${n} (${r.status})`, 502);
       return r.body;
     },
+    /** Hay URL y token cargados (no prueba la conexion). La UI lo usa para mostrar o no
+     *  lo que depende de Fisherboy. Ante cualquier error responde false. */
+    async configurado() {
+      try { const c = await leerConfig(); return !!(c && c.url && c.token); } catch { return false; }
+    },
     async salud() {
       const r = await pedir(await cfg(), 'GET', '/healthz');
       return { ok: r.status === 200, ...(r.status === 200 ? JSON.parse(r.body.toString('utf8')) : {}) };

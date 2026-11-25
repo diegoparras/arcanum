@@ -288,7 +288,10 @@ async function route(req, res, url) {
 
   // GET /api/auth/me  -> quien soy
   if (req.method === 'GET' && url.pathname === '/api/auth/me') {
-    return sendJson(res, 200, { ok: true, usuario: principal });
+    // funciones: que partes opcionales estan disponibles, para que la UI no muestre secciones
+    // que no pueden andar (Mis Comprobantes sin Fisherboy configurado).
+    const misComprobantes = await require('./services/fisherboy').configurado();
+    return sendJson(res, 200, { ok: true, usuario: principal, funciones: { misComprobantes } });
   }
 
   // Mis Comprobantes (via Fisherboy) y la conexion con Fisherboy: ver src/rutas/misComprobantes.js

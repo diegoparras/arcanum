@@ -153,7 +153,7 @@
   <span class="crumb" id="crumb"></span>
   <div class="right" style="position:relative">
     <button class="iconbtn" id="menuBtn" onclick="toggleMenu()" aria-label="Menú"><svg viewBox="0 0 20 20" aria-hidden="true" style="fill:currentColor;stroke:none"><circle cx="10" cy="4" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="10" cy="16" r="1.7"/></svg></button>
-    <div class="menu" id="appmenu"></div>
+    <div class="menu menu-right" id="appmenu"></div>
   </div>
 </div></header>
 <div class="esc-shell">
@@ -168,7 +168,7 @@
 
 <script>
 const $=(s,e=document)=>e.querySelector(s);
-let ME=null, ENV='—';
+let ME=null, ENV='—', FUNC={};
 async function api(path,opts={}){
   const r=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(opts.headers||{})},...opts});
   const ct=r.headers.get('content-type')||'';
@@ -220,10 +220,12 @@ const NAV=[
   ['Administración',[['webhooks','Webhooks'],['usuarios','Usuarios']]],
 ];
 const VIEWS=NAV.flatMap(g=>g[1]);
+// Secciones que dependen de algo opcional: Mis Comprobantes necesita Fisherboy configurado.
+function disponible(v){return v!=='mis'||!!FUNC.misComprobantes;}
 function renderNav(cur){
   const admin=['superadmin','admin'].includes(ME.role);
   $('#nav').innerHTML=NAV.map(([grupo,items])=>{
-    const vis=items.filter(v=>v[0]!=='usuarios'||admin);
+    const vis=items.filter(v=>disponible(v[0])&&(v[0]!=='usuarios'||admin));
     if(!vis.length)return '';
     return (grupo?`<div class="nav-g">${grupo}</div>`:'')+vis.map(v=>`<button type="button" class="nav-it${v[0]===cur?' active':''}" onclick="go('${v[0]}')" title="${v[1]}" aria-label="${v[1]}"${v[0]===cur?' aria-current="page"':''}>${NAV_ICON[v[0]]}<span>${v[1]}</span></button>`).join('');
   }).join('');
@@ -250,10 +252,10 @@ function cerrarNavMovil(){document.documentElement.removeAttribute('data-nav-mov
 function medirTopbar(){const h=document.querySelector('#appView header');if(h&&h.offsetHeight)document.documentElement.style.setProperty('--top-h',h.offsetHeight+'px');}
 addEventListener('resize',()=>{medirTopbar();if(!navMovil())cerrarNavMovil();else syncNavBtn();});
 addEventListener('keydown',e=>{if(e.key==='Escape'&&document.documentElement.getAttribute('data-nav-movil')==='abierto')cerrarNavMovil();});
-function go(v){if(navMovil())cerrarNavMovil();if(typeof mcPararTimers==='function')mcPararTimers();renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();if(v==='panel'||!['clientes','servicios','emitir','facturador','comprobantes','mis','contingencia','generador','webhooks','usuarios'].includes(v))setTimeout(()=>{if(typeof avisoMasterKey==='function')avisoMasterKey();},600);}
+function go(v){if(!disponible(v))v='panel';if(navMovil())cerrarNavMovil();if(typeof mcPararTimers==='function')mcPararTimers();renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();if(v==='panel'||!['clientes','servicios','emitir','facturador','comprobantes','mis','contingencia','generador','webhooks','usuarios'].includes(v))setTimeout(()=>{if(typeof avisoMasterKey==='function')avisoMasterKey();},600);}
 
 async function boot(){
-  try{ const me=await api('/api/auth/me'); ME=me.usuario; }catch(e){ showLogin(); return; }
+  try{ const me=await api('/api/auth/me'); ME=me.usuario; FUNC=me.funciones||{}; }catch(e){ showLogin(); return; }
   try{ const h=await fetch('/api/health').then(r=>r.json()); ENV=h.env; }catch{}
   $('#loginView').classList.add('hidden');$('#appView').classList.remove('hidden');
   medirTopbar();syncNavBtn();
@@ -773,7 +775,9 @@ async function ajustesMc(){
    <div class="row" style="margin-top:8px"><button class="primary" onclick="ajGuardarCats()">Guardar topes</button></div>`);
 }
 async function ajGuardarFb(){const b={url:$('#aj_fburl').value.trim()};const t=$('#aj_fbtok').value;if(t)b.token=t;
-  try{await api('/api/fisherboy/config',{method:'PUT',body:JSON.stringify(b)});$('#aj_fbtok').value='';toast('Conexión guardada');}catch(e){toast(e.message,true);}}
+  try{await api('/api/fisherboy/config',{method:'PUT',body:JSON.stringify(b)});$('#aj_fbtok').value='';toast('Conexión guardada');refrescarFunciones();}catch(e){toast(e.message,true);}}
+// Tras cambiar la conexion con Fisherboy, el panel lateral muestra u oculta Mis Comprobantes.
+async function refrescarFunciones(){try{const me=await api('/api/auth/me');FUNC=me.funciones||{};renderNav((location.hash||'#panel').slice(1));}catch{}}
 async function ajGuardarReceta(){try{const r=JSON.parse($('#aj_receta').value);await api('/api/mis-comprobantes/receta',{method:'PUT',body:JSON.stringify(r)});toast('Receta guardada');}catch(e){toast(e.message||'JSON inválido',true);}}
 async function ajRestaurarReceta(){if(!confirm('¿Volver a la receta de fábrica?'))return;try{const {receta}=await api('/api/mis-comprobantes/receta',{method:'DELETE'});$('#aj_receta').value=JSON.stringify(receta,null,2);toast('Receta restaurada');}catch(e){toast(e.message,true);}}
 async function ajGuardarCats(){try{const c=JSON.parse($('#aj_cats').value);await api('/api/monotributo/categorias',{method:'PUT',body:JSON.stringify(c)});toast('Topes guardados');}catch(e){toast(e.message||'JSON inválido',true);}}
