@@ -3,6 +3,11 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [2.1.21] - 2026-11-26
+
+### Documentación
+- El video de presentación se reproduce directamente en el README, con sonido, sin descargarlo.
+
 ## [2.1.20] - 2026-11-26
 
 ### Documentación

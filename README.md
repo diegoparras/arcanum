@@ -13,11 +13,13 @@ Gateway REST self-hosted para los Web Services de ARCA (ex AFIP), con panel web,
 [![Imagen Docker](https://img.shields.io/badge/imagen-ghcr.io-27408b)](https://github.com/diegoparras/arcanum/pkgs/container/arcanum)
 [![Licencia MIT](https://img.shields.io/badge/licencia-MIT-27408b)](LICENSE)
 
-[**Ver el video**](docs/media/arcanum.mp4) · [**Guía de instalación (PDF)**](docs/guias/arcanum-guia-instalacion.pdf) · [**Guía de uso (PDF)**](docs/guias/arcanum-guia-uso.pdf) · [**Instalar ya**](#instalalo-en-minutos)
-
-<a href="docs/media/arcanum.mp4"><img src="docs/media/adelanto.gif" alt="Adelanto del video de presentación de Arcanum" width="100%"></a>
+[**Guía de instalación (PDF)**](docs/guias/arcanum-guia-instalacion.pdf) · [**Guía de uso (PDF)**](docs/guias/arcanum-guia-uso.pdf) · [**Instalar ya**](#instalalo-en-minutos)
 
 </div>
+
+https://github.com/user-attachments/assets/ac2dd376-f306-46a7-909a-5a58a4a4aa7d
+
+<div align="center"><sub>Arcanum en 90 segundos, con sonido. En alta definición: <a href="docs/media/arcanum.mp4">arcanum.mp4 (1080p)</a>.</sub></div>
 
 ---
 
