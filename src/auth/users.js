@@ -81,8 +81,13 @@ async function login(username, password) {
 
 async function crear({ username, password, role, cuitAllow }) {
   if (!username || !password) throw Object.assign(new Error('Faltan usuario y contrasena'), { httpStatus: 400 });
-  const r = ['superadmin', 'admin', 'operador', 'lectura'].includes(role) ? role : 'operador';
-  const allow = Array.isArray(cuitAllow) && cuitAllow.length ? cuitAllow.map((c) => String(c).replace(/[^0-9]/g, '')) : null;
+  // Rol desconocido o CUIT mal tipeado: error, nunca un valor por defecto en silencio (M-10).
+  const ROLES = ['superadmin', 'admin', 'operador', 'lectura'];
+  if (!ROLES.includes(role)) throw Object.assign(new Error(`Rol invalido: usa ${ROLES.join(', ')}`), { httpStatus: 400 });
+  const r = role;
+  const { listaCuits, sinCuitsParaAdmin } = require('./permisos');
+  const allow = listaCuits(cuitAllow, 'cuitAllow');
+  sinCuitsParaAdmin(r, allow);
   await db.query('INSERT INTO usuarios (username, pass_hash, role, cuit_allow) VALUES ($1, $2, $3, $4)', [username, hashPassword(password), r, allow]);
   return { username, role: r, cuitAllow: allow };
 }

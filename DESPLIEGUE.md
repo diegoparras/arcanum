@@ -17,13 +17,19 @@ Estos paneles importan un `docker-compose.yml`. Es el camino mas simple.
 
 ```bash
 git clone <repo> arcanum && cd arcanum
-cp .env.example .env        # completá ARCANUM_API_KEY y ARCANUM_MASTER_KEY
+cp .env.example .env        # completá ARCANUM_API_KEY, ARCANUM_MASTER_KEY,
+                            # ARCANUM_SESSION_SECRET y POSTGRES_PASSWORD
 docker compose up -d
 ```
 
 Levanta `arcanum-db` (Postgres) y `arcanum` (app), conectados solos. La app queda
-en el puerto `8094`. En los paneles, pegá el contenido del compose en su editor y
-cargá las variables del `.env` en la seccion de Environment.
+en `127.0.0.1:8094`: delante va el proxy con HTTPS. Para abrirla a la red sin proxy (no
+recomendado, sin TLS), `ARCANUM_BIND=0.0.0.0`. En los paneles, pegá el contenido del compose
+en su editor y cargá las variables del `.env` en la seccion de Environment: todas las de
+`.env.example` llegan al contenedor.
+
+`POSTGRES_PASSWORD` es obligatoria. Si actualizás una instalación que ya tenía la base con la
+clave por defecto, poné `POSTGRES_PASSWORD=arcanum` (y cambiala despues con `ALTER USER`).
 
 ---
 

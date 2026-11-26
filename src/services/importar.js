@@ -151,8 +151,12 @@ async function importar(cuitConsultante, input = {}) {
     const c = await constatar(consultante, d);
     constatacion = { ...c, consultado: true, motivo: null };
   } catch (e) {
-    // Best-effort: si el cert no esta asociado a WSCDC, se importa igual pero avisando.
-    constatacion.motivo = e.message;
+    // Falla cerrado (auditoria 2026-11-26, M-09): si ARCA no pudo constatarlo, no se guarda. Antes se
+    // importaba igual y quedaba como "Autorizado" sin que nadie lo hubiera validado.
+    throw new SoapError(
+      `No se pudo constatar el comprobante con ARCA, asi que no se importo: ${e.message}. Proba de nuevo cuando ARCA responda, o revisa que el certificado tenga asociado WSCDC.`,
+      503,
+    );
   }
   if (constatacion.consultado && !constatacion.valido) {
     throw new SoapError(

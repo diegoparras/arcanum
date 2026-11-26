@@ -3,6 +3,7 @@
 // WSFEv1 — Factura Electronica nacional (comprobantes A/B/C/M, CAE).
 // Mapea el SOAP de ARCA a funciones JS limpias. El router REST las expone.
 
+const { CONFLICTO_EMISION } = require('./sqlComprobantes');
 const db = require('../db');
 const webhooks = require('./webhooks');
 const { config } = require('../config');
@@ -400,7 +401,7 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
             importe_total, doc_tipo, doc_nro, idempotency_key, raw)
          VALUES ($1,$2,$3,$4,$5,$6, to_date($7,'YYYYMMDD'),$8, to_date($9,'YYYYMMDD'),
                  $10,$11,$12,$13,$14)
-         ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
+         ${CONFLICTO_EMISION}`,
         [cuit, config.env, ptoVta, tipoCbte, numero, out.cae, out.caeVencimiento, resultado, cbteFecha,
          out.importeTotal, out.docTipo, out.docNro, idem, JSON.stringify(out)],
       );
@@ -439,7 +440,7 @@ async function registrarAdoptado(cuit, consultado, cuerpo, idem) {
        (cuit, entorno, punto_venta, tipo_cbte, numero, cae, cae_vto, resultado, fecha,
         importe_total, doc_tipo, doc_nro, idempotency_key, raw)
      VALUES ($1,$2,$3,$4,$5,$6, to_date($7,'YYYYMMDD'),'A', to_date($8,'YYYYMMDD'),$9,$10,$11,$12,$13)
-     ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
+     ${CONFLICTO_EMISION}`,
     [c, config.env, consultado.puntoVenta, consultado.tipoComprobante, consultado.numero, consultado.cae,
       consultado.caeVencimiento, consultado.fecha, raw.importeTotal, consultado.docTipo, consultado.docNro, idem, JSON.stringify(raw)]);
   return raw; // el aviso comprobante_emitido lo manda la cola (uno solo)

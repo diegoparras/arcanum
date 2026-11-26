@@ -8,6 +8,7 @@
 // hasta pasar la fecha limite (`dias`, 90 por defecto) o el tope de consultas por corrida. Lo que
 // trae se guarda con origen 'arca'. Ademas compara el ultimo local contra ARCA (CAE e importe).
 
+const { CONFLICTO_EMISION } = require('./sqlComprobantes');
 const { esIndisponibilidad } = require('./contingencia');
 
 const TIPOS_USUALES = [1, 2, 3, 6, 7, 8, 11, 12, 13, 51, 52, 53];
@@ -107,7 +108,7 @@ function repoSql() {
         `INSERT INTO comprobantes (cuit, entorno, punto_venta, tipo_cbte, numero, cae, cae_vto, resultado, fecha,
            importe_total, doc_tipo, doc_nro, raw, origen)
          VALUES ($1,$2,$3,$4,$5,$6, to_date(NULLIF($7,''),'YYYYMMDD'),$8, to_date(NULLIF($9,''),'YYYYMMDD'),$10,$11,$12,$13,'arca')
-         ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
+         ${CONFLICTO_EMISION}`,
         [cuit, config.env, c.puntoVenta, c.tipoComprobante, c.numero, c.cae, String(c.caeVencimiento || ''), c.resultado,
           String(c.fecha || ''), Number(c.importeTotal || 0), c.docTipo || null, String(c.docNro || ''), JSON.stringify(raw)]);
     },

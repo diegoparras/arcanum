@@ -12,7 +12,6 @@
 
 const crypto = require('crypto');
 const db = require('../db');
-const { normalizeCuit } = require('./tenants');
 
 const ROLES = ['lectura', 'operador', 'admin'];
 const PREFIJO = 'ark_';
@@ -35,12 +34,6 @@ function extraerClave(headers = {}) {
   if (x && String(x).trim()) return String(x).trim();
   const m = String(headers.authorization || '').match(/^Bearer\s+(\S+)\s*$/i);
   return m ? m[1] : '';
-}
-
-function normCuits(lista) {
-  if (!Array.isArray(lista)) return null;
-  const out = lista.map((c) => normalizeCuit(c)).filter((c) => /^\d{11}$/.test(c));
-  return out.length ? [...new Set(out)] : null;
 }
 
 /** Dias hasta el vencimiento (entero, null = no vence, 0 o 1-n para dias corridos). */
@@ -92,6 +85,9 @@ async function crear({ nombre, rol, cuits, venceDias, limitePorMinuto } = {}, cr
   const n = String(nombre || '').trim().slice(0, 80);
   if (!n) throw err('Falta el nombre de la clave (ej. "SecretarIA")', 400);
   if (!ROLES.includes(rol)) throw err(`Rol invalido: usa ${ROLES.join(', ')}`, 400);
+  const { listaCuits, sinCuitsParaAdmin } = require('./permisos');
+  const listaCuit = listaCuits(cuits, 'cuits');
+  sinCuitsParaAdmin(rol, listaCuit);
   const dias = normDias(venceDias, 'venceDias', MAX_VENCE_DIAS);
   const limite = normLimite(limitePorMinuto);
   const clave = nuevaClave();
@@ -99,7 +95,7 @@ async function crear({ nombre, rol, cuits, venceDias, limitePorMinuto } = {}, cr
     `INSERT INTO api_keys (nombre, key_hash, role, prefix, cuit_allow, created_by, expires_at, rate_limit)
      VALUES ($1,$2,$3,$4,$5,$6, CASE WHEN $7::int IS NULL THEN NULL ELSE now() + make_interval(days => $7::int) END, $8)
      RETURNING ${COLS}`,
-    [n, hash(clave), rol, clave.slice(0, 10), normCuits(cuits), creadaPor, dias, limite],
+    [n, hash(clave), rol, clave.slice(0, 10), listaCuit, creadaPor, dias, limite],
   );
   return { ...fmt(rows[0]), clave };
 }

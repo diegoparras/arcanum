@@ -3,6 +3,28 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.16] - 2026-11-26
+
+### Seguridad
+- **Importar un comprobante exige que ARCA lo constate.** Antes, si la constatación no se podía
+  hacer (ARCA caído, certificado sin WSCDC), se importaba igual y quedaba como "Autorizado".
+  Ahora no se guarda y la respuesta (503) dice por qué.
+  - Un importado no genera PDF: es de un tercero y saldría con tu CUIT como emisor. En
+    Comprobantes aparece marcado como **Importado**.
+  - Si un importado ocupa el mismo punto de venta y número que una emisión propia, la emisión lo
+    reemplaza. Antes la emisión no se registraba aunque ARCA hubiera dado el CAE.
+- **Alta de claves y usuarios sin valores por defecto silenciosos.** Un CUIT mal tipeado (por
+  ejemplo, con un dígito de menos) dejaba la credencial con acceso a todos los CUITs; un rol
+  desconocido creaba un operador. Ahora los dos son un error 400 que dice qué está mal. Una clave o
+  un usuario admin no aceptan lista de CUITs, porque el rol admin ve todos.
+- **`docker-compose.yml` oficial:**
+  - Pasa al contenedor todas las variables de `.env.example`; antes `ARCANUM_SESSION_SECRET`,
+    OIDC, SMTP y el resto no llegaban.
+  - Publica Arcanum solo en `127.0.0.1` (`ARCANUM_BIND` lo cambia).
+  - Exige `POSTGRES_PASSWORD`. Si actualizás una instalación con la clave por defecto, poné
+    `POSTGRES_PASSWORD=arcanum`.
+  - El despliegue en EasyPanel por servicios no cambia.
+
 ## [2.1.15] - 2026-11-26
 
 ### Seguridad y disponibilidad

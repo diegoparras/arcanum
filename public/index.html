@@ -1544,7 +1544,7 @@ async function vComprobantes(){
   const v=$('#view');const {comprobantes}=await api('/api/comprobantes');
   const rows=comprobantes.map(c=>`<tr><td class="mono">${esc(c.cuit)}</td><td class="mono">${esc(c.punto_venta)}-${esc(c.numero)}</td><td>${esc(c.tipo_cbte)}</td>
     <td class="mono">${esc((c.fecha||'').slice?.(0,10)||c.fecha||'')}</td><td class="mono">${esc(c.cae||'')}</td><td class="mono">$${Number(c.importe_total).toFixed(2)}</td>
-    <td><a href="/api/comprobantes/${encodeURIComponent(c.cuit)}/${Number(c.punto_venta)}/${Number(c.tipo_cbte)}/${Number(c.numero)}/pdf"><button class="ghost">PDF</button></a></td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
+    <td>${c.origen==='importado'?'<span class="tag" title="Comprobante de un tercero, constatado con ARCA">Importado</span>':`<a href="/api/comprobantes/${encodeURIComponent(c.cuit)}/${Number(c.punto_venta)}/${Number(c.tipo_cbte)}/${Number(c.numero)}/pdf"><button class="ghost">PDF</button></a>`}</td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
   v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes</h2>
      <button style="margin-left:auto" onclick="sincronizarEmitidos()">Traer lo emitido por fuera</button>
      <button class="primary" onclick="importarQr()">Importar por QR</button>

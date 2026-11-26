@@ -2,8 +2,12 @@
 # Sirve para Docker vanilla y para paneles que importan compose (Dokploy,
 # Portainer, Coolify, y EasyPanel en su modo compose beta).
 #
-#   1) cp .env.example .env  y completar ARCANUM_API_KEY + ARCANUM_MASTER_KEY
+#   1) cp .env.example .env  y completar ARCANUM_API_KEY, ARCANUM_MASTER_KEY,
+#      ARCANUM_SESSION_SECRET y POSTGRES_PASSWORD
 #   2) docker compose up -d
+#
+# El puerto se publica en 127.0.0.1: delante va un proxy con HTTPS (ARCANUM_BIND=0.0.0.0 lo
+# abre a la red, sin TLS). Todas las variables de .env.example llegan al contenedor.
 #
 # Para EasyPanel sin compose, ver DESPLIEGUE.md (servicio Postgres + servicio App).
 services:
@@ -13,7 +17,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-arcanum}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-arcanum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defini POSTGRES_PASSWORD en .env (si la base ya existia con la clave por defecto, usa POSTGRES_PASSWORD=arcanum)}
       POSTGRES_DB: ${POSTGRES_DB:-arcanum}
     volumes:
       - arcanum-pg:/var/lib/postgresql/data
@@ -32,12 +36,41 @@ services:
       arcanum-db:
         condition: service_healthy
     ports:
-      - "8094:8094"
+      - "${ARCANUM_BIND:-127.0.0.1}:8094:8094"
     environment:
       ARCANUM_ENV: ${ARCANUM_ENV:-homo}            # homo | prod
-      ARCANUM_API_KEY: ${ARCANUM_API_KEY:-}         # vacio => se genera y se imprime en el log
+      ARCANUM_API_KEY: ${ARCANUM_API_KEY:-}         # vacio => se genera en el volumen (no va al log)
       ARCANUM_MASTER_KEY: ${ARCANUM_MASTER_KEY:-}   # 32 bytes hex; cifra las claves privadas
-      DATABASE_URL: postgres://${POSTGRES_USER:-arcanum}:${POSTGRES_PASSWORD:-arcanum}@arcanum-db:5432/${POSTGRES_DB:-arcanum}
+      ARCANUM_SESSION_SECRET: ${ARCANUM_SESSION_SECRET:-}  # vacio => se genera en el volumen
+      ARCANUM_ADMIN_USER: ${ARCANUM_ADMIN_USER:-}
+      ARCANUM_ADMIN_PASS: ${ARCANUM_ADMIN_PASS:-}
+      ARCANUM_PROXIES: ${ARCANUM_PROXIES:-1}
+      ARCANUM_METRICS_TOKEN: ${ARCANUM_METRICS_TOKEN:-}
+      ARCANUM_AUDITORIA_DIAS: ${ARCANUM_AUDITORIA_DIAS:-90}
+      ARCANUM_OIDC_ISSUER: ${ARCANUM_OIDC_ISSUER:-}
+      ARCANUM_OIDC_CLIENT_ID: ${ARCANUM_OIDC_CLIENT_ID:-}
+      ARCANUM_OIDC_CLIENT_SECRET: ${ARCANUM_OIDC_CLIENT_SECRET:-}
+      ARCANUM_OIDC_ROLE_CLAIM: ${ARCANUM_OIDC_ROLE_CLAIM:-}
+      ARCANUM_OIDC_REDIRECT_URI: ${ARCANUM_OIDC_REDIRECT_URI:-}
+      ARCANUM_EMISORES_PERMITIDOS: ${ARCANUM_EMISORES_PERMITIDOS:-}
+      ARCANUM_EMISOR_RAZON_SOCIAL: ${ARCANUM_EMISOR_RAZON_SOCIAL:-}
+      ARCANUM_EMISOR_NOMBRE_FANTASIA: ${ARCANUM_EMISOR_NOMBRE_FANTASIA:-}
+      ARCANUM_EMISOR_DOMICILIO: ${ARCANUM_EMISOR_DOMICILIO:-}
+      ARCANUM_EMISOR_CONDICION_IVA: ${ARCANUM_EMISOR_CONDICION_IVA:-}
+      ARCANUM_EMISOR_IIBB: ${ARCANUM_EMISOR_IIBB:-}
+      ARCANUM_EMISOR_INICIO_ACTIVIDADES: ${ARCANUM_EMISOR_INICIO_ACTIVIDADES:-}
+      ARCANUM_UMBRAL_CF_ID: ${ARCANUM_UMBRAL_CF_ID:-}
+      ARCANUM_SMTP_HOST: ${ARCANUM_SMTP_HOST:-}
+      ARCANUM_SMTP_PORT: ${ARCANUM_SMTP_PORT:-}
+      ARCANUM_SMTP_USER: ${ARCANUM_SMTP_USER:-}
+      ARCANUM_SMTP_PASS: ${ARCANUM_SMTP_PASS:-}
+      ARCANUM_SMTP_FROM: ${ARCANUM_SMTP_FROM:-}
+      ARCANUM_NOTIFY_EMAIL: ${ARCANUM_NOTIFY_EMAIL:-}
+      FISHERBOY_URL: ${FISHERBOY_URL:-}
+      FISHERBOY_TOKEN: ${FISHERBOY_TOKEN:-}
+      FACTORUM_URL: ${FACTORUM_URL:-}
+      FACTORUM_TOKEN: ${FACTORUM_TOKEN:-}
+      DATABASE_URL: postgres://${POSTGRES_USER:-arcanum}:${POSTGRES_PASSWORD:?Defini POSTGRES_PASSWORD en .env (si la base ya existia con la clave por defecto, usa POSTGRES_PASSWORD=arcanum)}@arcanum-db:5432/${POSTGRES_DB:-arcanum}
       PORT: 8094
     volumes:
       - arcanum-data:/data                          # master key autogenerada + artefactos

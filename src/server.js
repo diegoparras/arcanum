@@ -699,6 +699,10 @@ async function route(req, res, url) {
       assertCuitAllowed(principal, seg[2]);
       const cmp = await comprobantes.get(seg[2], seg[3], seg[4], seg[5]);
       if (!cmp) throw notFound();
+      // Un importado es de un tercero: Arcanum no arma su PDF (saldria con este CUIT como emisor). M-09.
+      if (cmp.origen === 'importado') {
+        throw Object.assign(new Error('Es un comprobante importado de un tercero: su PDF lo tiene quien lo emitio.'), { httpStatus: 409 });
+      }
       // Multi-emisor: el encabezado legal sale de los datos fiscales de ESE CUIT.
       // Modelo y nombre: los del pedido (?modelo, ?nombre, ?copias), si no los elegidos al facturar,
       // si no el modelo de ARCA y su nombre (CUIT_TIPO_PV_NUMERO.pdf).

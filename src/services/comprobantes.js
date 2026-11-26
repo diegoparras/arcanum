@@ -31,7 +31,7 @@ async function list({ cuit, desde, hasta, limit = 200, entorno = config.env } = 
   }
   params.push(Math.min(parseInt(limit, 10) || 200, 5000));
   const { rows } = await db.query(
-    `SELECT cuit, punto_venta, tipo_cbte, numero, cae, cae_vto, fecha, importe_total, doc_tipo, doc_nro, resultado, created_at
+    `SELECT cuit, punto_venta, tipo_cbte, numero, cae, cae_vto, fecha, importe_total, doc_tipo, doc_nro, resultado, origen, created_at
      FROM comprobantes WHERE ${cond.join(' AND ')} ORDER BY created_at DESC LIMIT $${params.length}`,
     params,
   );
