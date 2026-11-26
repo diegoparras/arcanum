@@ -83,15 +83,22 @@ function depsPorDefecto() {
 }
 
 // Variantes del receptor para reintentar un rechazo. WSCDC exige el documento del receptor tal como
-// lo informo el emisor, y en una factura B o C a una persona muchos comercios la hacen a su DNI o
-// como consumidor final, no a su CUIT. El CSV de Mis Comprobantes no dice cual uso: si ARCA rechaza
-// con el CUIT, se prueba con el DNI (solo CUIT de persona humana) y como consumidor final.
+// lo informo el emisor, y en una factura B o C a una persona muchos comercios la hacen a su CUIL
+// (mismo numero, otro tipo: lo usan las aseguradoras), a su DNI o como consumidor final, no a su
+// CUIT. El CSV de Mis Comprobantes no dice cual uso: si ARCA rechaza con el CUIT, se prueban esas
+// (CUIL y DNI solo para CUIT de persona humana).
 const PREFIJOS_PERSONA = ['20', '23', '24', '27'];
+// Sube cuando cambian las variantes: los "NO CONSTA" guardados con un criterio anterior vuelven a
+// quedar pendientes una sola vez (1 = CUIT, DNI y consumidor final; 2 = suma CUIL).
+const CRITERIO = 2;
 function variantesReceptor(it) {
   const doc = String(it.docNro || '').replace(/\D/g, '');
   if (Number(it.docTipo) !== 80 || doc.length !== 11) return [];
   const v = [];
-  if (PREFIJOS_PERSONA.includes(doc.slice(0, 2))) v.push({ como: 'DNI', docTipo: 96, docNro: String(Number(doc.slice(2, 10))) });
+  if (PREFIJOS_PERSONA.includes(doc.slice(0, 2))) {
+    v.push({ como: 'CUIL', docTipo: 86, docNro: doc });
+    v.push({ como: 'DNI', docTipo: 96, docNro: String(Number(doc.slice(2, 10))) });
+  }
   v.push({ como: 'consumidor_final', docTipo: 99, docNro: '0' });
   return v;
 }
@@ -178,7 +185,7 @@ function repoPorDefecto() {
       const { where, vals } = condicionesListado(cuit, { ...f, tipo: 'recibido' });
       vals.push(limite);
       const { rows } = await db.query(
-        `SELECT * FROM mc_comprobantes WHERE ${where} AND (constatacion IS NULL OR ((constatacion->>'valido') = 'false' AND NOT (constatacion ? 'receptorProbado'))) ORDER BY fecha DESC, id DESC LIMIT $${vals.length}`, vals);
+        `SELECT * FROM mc_comprobantes WHERE ${where} AND (constatacion IS NULL OR ((constatacion->>'valido') = 'false' AND COALESCE((constatacion->>'criterio')::int, 0) < ${CRITERIO})) ORDER BY fecha DESC, id DESC LIMIT $${vals.length}`, vals);
       return rows;
     },
     async guardar(id, constatacion) {
@@ -186,7 +193,7 @@ function repoPorDefecto() {
     },
     async contarPendientes(cuit) {
       const { rows } = await db.query(
-        "SELECT count(*)::int AS n FROM mc_comprobantes WHERE cuit = $1 AND tipo = 'recibido' AND (constatacion IS NULL OR ((constatacion->>'valido') = 'false' AND NOT (constatacion ? 'receptorProbado')))", [cuit]);
+        `SELECT count(*)::int AS n FROM mc_comprobantes WHERE cuit = $1 AND tipo = 'recibido' AND (constatacion IS NULL OR ((constatacion->>'valido') = 'false' AND COALESCE((constatacion->>'criterio')::int, 0) < ${CRITERIO}))`, [cuit]);
       return rows[0].n;
     },
   };
@@ -242,6 +249,7 @@ async function iniciarConstatacion(cuit, { filtros = {}, limite = MAX_ITEMS, pau
           await repo.guardar(filas[i].id, {
             valido: res.valido, resultado: res.resultado, observaciones: res.observaciones, apoc: res.apoc,
             ...(res.receptorProbado ? { receptorProbado: res.receptorProbado } : {}),
+            criterio: CRITERIO,
             ...(res.receptor ? { receptor: res.receptor } : {}),
             fecha: new Date().toISOString(),
           });
@@ -300,4 +308,4 @@ async function resumenGuardado(cuit) {
   return { ...rows[0], observados: obs };
 }
 
-module.exports = { constatarLista, iniciarConstatacion, detenerConstatacion, estadoConstatacion, esperarConstatacion, parsearListaCsv, itemDesdeMc, resumenGuardado, MAX_ITEMS };
+module.exports = { CRITERIO, constatarLista, iniciarConstatacion, detenerConstatacion, estadoConstatacion, esperarConstatacion, parsearListaCsv, itemDesdeMc, resumenGuardado, MAX_ITEMS };

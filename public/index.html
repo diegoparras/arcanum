@@ -923,18 +923,52 @@ function mcaToggleTodos(abrir){if(!abrir){MCA.abiertos=new Set();mcAnalisis();re
 const NOMBRE_TIPO={1:'Factura A',2:'ND A',3:'NC A',6:'Factura B',7:'ND B',8:'NC B',11:'Factura C',12:'ND C',13:'NC C',51:'Factura M',201:'FCE A',206:'FCE B',211:'FCE C'};
 async function mcCargarTabla(){
   try{const {comprobantes:l}=await api(`/api/mis-comprobantes/${MC.cuit}?${mcFiltros()}`);
-    const pesos=n=>Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const obs=c=>(c.observaciones||[]).map(o=>o.message||o.Msg||'').filter(Boolean).join(' | ');
-    const cons=c=>!c?'<span class="hint">sin constatar</span>':c.apoc&&c.apoc.esApocrifo?'<span class="tag no">APÓCRIFO</span>'
-      :c.valido?`<span class="tag ok">OK</span>${c.receptor?` <span class="hint">(a tu ${c.receptor.como==='DNI'?'DNI':'nombre como consumidor final'})</span>`:''}`
-      :`<span class="tag no" title="${esc(obs(c)||'ARCA no dio el motivo')}">NO CONSTA</span>${obs(c)?`<div class="hint" style="font-size:11.5px;max-width:260px">${esc(obs(c))}</div>`:''}`;
+    MC.filas=l;
     const r=$('#mc_tabla_resumen');if(r)r.textContent=l.length?`${l.length} ${l.length===1?'comprobante':'comprobantes'} con los filtros del análisis${l.length>=500?' (se muestran los primeros 500; el CSV trae hasta 5000)':''}.`:'Con los filtros del análisis.';
-    $('#mc_tabla').innerHTML=l.length?`<table><tr><th>Fecha</th><th>Tipo</th><th>Comprobante</th><th>Contraparte</th><th>Total</th><th>CAE</th><th>Constatación</th></tr>${l.map(f=>`<tr>
-      <td class="mono">${String(f.fecha).slice(0,10)}</td><td>${f.tipo==='recibido'?'Recibido':'Emitido'} · ${esc(NOMBRE_TIPO[f.cbte_tipo]||f.cbte_tipo)}</td>
-      <td class="mono">${String(f.punto_venta).padStart(4,'0')}-${String(f.numero_desde).padStart(8,'0')}</td>
-      <td>${esc(f.contraparte||'')} <span class="hint mono">${esc(f.doc_nro||'')}</span></td><td class="mono">$${pesos(f.total)}</td>
-      <td class="mono hint">${esc(f.cae||'')}</td><td>${f.tipo==='recibido'?cons(f.constatacion):''}</td></tr>`).join('')}</table>`:'<p class="hint">No hay comprobantes bajados con estos filtros.</p>';
+    mcPintarTabla();
   }catch(e){$('#mc_tabla').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+/* Tabla de comprobantes: se ordena por cualquier columna (clic en el titulo: ascendente, otro clic:
+   descendente) y el motivo de ARCA de los "NO CONSTA" se muestra u oculta. Ambas cosas se recuerdan
+   en este navegador. */
+const MC_COMO={CUIL:'CUIL',DNI:'DNI',consumidor_final:'nombre como consumidor final'};
+const mcObs=c=>((c&&c.observaciones)||[]).map(o=>o.message||o.Msg||'').filter(Boolean).join(' | ');
+// Para ordenar la constatacion: primero lo que hay que mirar.
+const mcRangoCons=f=>{if(f.tipo!=='recibido')return 4;const c=f.constatacion;if(!c)return 2;if(c.apoc&&c.apoc.esApocrifo)return 0;return c.valido?3:1;};
+const MC_COLS=[
+  ['fecha','Fecha',f=>String(f.fecha).slice(0,10)],
+  ['tipo','Tipo',f=>`${f.tipo} ${String(f.cbte_tipo).padStart(3,'0')}`],
+  ['cbte','Comprobante',f=>Number(f.punto_venta)*1e9+Number(f.numero_desde)],
+  ['contraparte','Contraparte',f=>String(f.contraparte||f.doc_nro||'').toLowerCase()],
+  ['total','Total',f=>Number(f.total||0)],
+  ['cae','CAE',f=>String(f.cae||'')],
+  ['constatacion','Constatación',mcRangoCons],
+];
+function mcPrefs(){if(!MC.prefs){let p={};try{p=JSON.parse(localStorage.getItem('arcanum.mcTabla')||'{}');}catch{}MC.prefs={orden:p.orden||'fecha',dir:p.dir===1?1:-1,motivos:p.motivos!==false};}return MC.prefs;}
+function mcGuardarPrefs(){try{localStorage.setItem('arcanum.mcTabla',JSON.stringify(MC.prefs));}catch{}}
+function mcOrdenar(col){const p=mcPrefs();if(p.orden===col)p.dir=-p.dir;else{p.orden=col;p.dir=1;}mcGuardarPrefs();mcPintarTabla();}
+function mcMotivos(ver){mcPrefs().motivos=!!ver;mcGuardarPrefs();mcPintarTabla();}
+function mcPintarTabla(){
+  const box=$('#mc_tabla');if(!box)return;const l=MC.filas||[];
+  if(!l.length){box.innerHTML='<p class="hint">No hay comprobantes bajados con estos filtros.</p>';return;}
+  const p=mcPrefs();
+  const pesos=n=>Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const cons=c=>!c?'<span class="hint">sin constatar</span>':c.apoc&&c.apoc.esApocrifo?'<span class="tag no">APÓCRIFO</span>'
+    :c.valido?`<span class="tag ok">OK</span>${c.receptor?` <span class="hint">(a tu ${MC_COMO[c.receptor.como]||esc(c.receptor.como)})</span>`:''}`
+    :`<span class="tag no" title="${esc(mcObs(c)||'ARCA no dio el motivo')}">NO CONSTA</span>${p.motivos&&mcObs(c)?`<div class="hint" style="font-size:11.5px;max-width:260px">${esc(mcObs(c))}</div>`:''}`;
+  const col=MC_COLS.find(c=>c[0]===p.orden)||MC_COLS[0];
+  const filas=l.map((f,i)=>[col[2](f),i,f]).sort((x,y)=>{const a=x[0],b=y[0];
+    const d=typeof a==='number'&&typeof b==='number'?a-b:String(a).localeCompare(String(b),'es',{numeric:true});
+    return d?d*p.dir:x[1]-y[1];}).map(x=>x[2]);
+  const flecha=d=>`<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px"><path d="${d>0?'M6 15l6-6 6 6':'M6 9l6 6 6-6'}"/></svg>`;
+  const th=([k,t])=>`<th aria-sort="${p.orden===k?(p.dir>0?'ascending':'descending'):'none'}"><button type="button" class="linkbtn" style="text-decoration:none;color:inherit;font:inherit;font-weight:inherit;display:inline-flex;align-items:center;gap:4px" onclick="mcOrdenar('${k}')" title="Ordenar por ${t.toLowerCase()}">${t}${p.orden===k?flecha(p.dir):''}</button></th>`;
+  const hayMotivos=l.some(f=>f.tipo==='recibido'&&f.constatacion&&f.constatacion.valido===false&&mcObs(f.constatacion));
+  box.innerHTML=`${hayMotivos?`<label class="chk" style="margin:0 0 8px"><input type="checkbox" ${p.motivos?'checked':''} onchange="mcMotivos(this.checked)"> Mostrar el motivo de ARCA en los que no constan</label>`:''}
+    <table><tr>${MC_COLS.map(th).join('')}</tr>${filas.map(f=>`<tr>
+    <td class="mono">${String(f.fecha).slice(0,10)}</td><td>${f.tipo==='recibido'?'Recibido':'Emitido'} · ${esc(NOMBRE_TIPO[f.cbte_tipo]||f.cbte_tipo)}</td>
+    <td class="mono">${String(f.punto_venta).padStart(4,'0')}-${String(f.numero_desde).padStart(8,'0')}</td>
+    <td>${esc(f.contraparte||'')} <span class="hint mono">${esc(f.doc_nro||'')}</span></td><td class="mono">$${pesos(f.total)}</td>
+    <td class="mono hint">${esc(f.cae||'')}</td><td>${f.tipo==='recibido'?cons(f.constatacion):''}</td></tr>`).join('')}</table>`;
 }
 async function mcExportar(){
   try{const r=await fetch(`/api/mis-comprobantes/${MC.cuit}/export.csv?${mcFiltros()}`,{credentials:'include'});

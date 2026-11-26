@@ -3,6 +3,22 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.8] - 2026-11-26
+
+### Corregido
+- **Mas recibidos que daban "NO CONSTA" sin serlo:** las aseguradoras suelen facturar al **CUIL**
+  (mismo numero que el CUIT, otro tipo de documento). Ahora, si ARCA rechaza con el CUIT, se prueba
+  CUIL, DNI y consumidor final, en ese orden. Los "NO CONSTA" guardados antes vuelven a quedar
+  pendientes una sola vez: cada resultado se guarda con un numero de criterio y solo se re-constata
+  si el criterio cambio.
+
+### Agregado
+- **Tabla de comprobantes ordenable:** clic en el titulo de cualquier columna ordena ascendente y
+  otro clic descendente. En Constatacion, ascendente pone primero lo que hay que mirar (apocrifos,
+  no constan, sin constatar). El orden se recuerda en el navegador.
+- **Mostrar u ocultar el motivo de ARCA** debajo de los "NO CONSTA" (sigue visible al pasar el
+  mouse). Tambien se recuerda.
+
 ## [2.1.7] - 2026-11-26
 
 ### Corregido

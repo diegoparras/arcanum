@@ -145,8 +145,8 @@ test('si ARCA rechaza con el CUIT del receptor, reintenta con su DNI y da OK si 
   const x = r.resultados[0];
   assert.strictEqual(x.valido, true);
   assert.deepStrictEqual(x.receptor, { como: 'DNI', docTipo: 96, docNro: '26363074' });
-  assert.deepStrictEqual(x.receptorProbado, ['CUIT', 'DNI']);
-  assert.deepStrictEqual(d.wscdc, [[80, '20263630743'], [96, '26363074']], 'no prueba consumidor final si el DNI ya dio OK');
+  assert.deepStrictEqual(x.receptorProbado, ['CUIT', 'CUIL', 'DNI']);
+  assert.deepStrictEqual(d.wscdc, [[80, '20263630743'], [86, '20263630743'], [96, '26363074']], 'no prueba consumidor final si el DNI ya dio OK');
   assert.strictEqual(r.validos, 1);
 });
 
@@ -158,7 +158,7 @@ test('si no coincide ni con CUIT ni con DNI, prueba como consumidor final', asyn
   };
   const r = await cons.constatarLista('20263630743', [item(1)], { pausaMs: 0, deps: d });
   assert.strictEqual(r.resultados[0].receptor.como, 'consumidor_final');
-  assert.deepStrictEqual(d.wscdc, [80, 96, 99]);
+  assert.deepStrictEqual(d.wscdc, [80, 86, 96, 99]);
 });
 
 test('si no coincide de ninguna forma queda NO CONSTA con el motivo original de ARCA', async () => {
@@ -168,7 +168,7 @@ test('si no coincide de ninguna forma queda NO CONSTA con el motivo original de 
   const x = r.resultados[0];
   assert.strictEqual(x.valido, false);
   assert.strictEqual(x.receptor, undefined);
-  assert.deepStrictEqual(x.receptorProbado, ['CUIT', 'DNI', 'consumidor_final']);
+  assert.deepStrictEqual(x.receptorProbado, ['CUIT', 'CUIL', 'DNI', 'consumidor_final']);
   assert.deepStrictEqual(x.observaciones, [{ code: 80, message: 'rechazo 80' }], 'se muestra el rechazo con el CUIT, no el de la ultima variante');
 });
 
@@ -202,7 +202,26 @@ test('lo que se guarda dice con que documento dio OK y que se probo', async () =
   const [, g] = completos[0];
   assert.strictEqual(g.valido, true);
   assert.deepStrictEqual(g.receptor, { como: 'DNI', docTipo: 96, docNro: '26363074' });
-  assert.deepStrictEqual(g.receptorProbado, ['CUIT', 'DNI']);
+  assert.deepStrictEqual(g.receptorProbado, ['CUIT', 'CUIL', 'DNI']);
+  assert.strictEqual(g.criterio, cons.CRITERIO, 'queda marcado con el criterio actual: no se re-constata otra vez');
+});
+
+test('las aseguradoras suelen facturar al CUIL: mismo numero, otro tipo de documento', async () => {
+  const d = deps();
+  d.constatar = async (c, it) => { d.wscdc.push(it.docTipo); return it.docTipo === 86 ? { valido: true, resultado: 'A', observaciones: [] } : { valido: false, resultado: 'R', observaciones: [] }; };
+  const r = await cons.constatarLista('20263630743', [item(1)], { pausaMs: 0, deps: d });
+  assert.deepStrictEqual(r.resultados[0].receptor, { como: 'CUIL', docTipo: 86, docNro: '20263630743' });
+  assert.deepStrictEqual(d.wscdc, [80, 86]);
+});
+
+test('lo que ya dio OK o no se pudo constatar tambien se guarda con el criterio actual', async () => {
+  const repo = repoFalso([fila(51, 1)]);
+  const completos = [];
+  repo.guardar = async (id, c) => { completos.push(c); };
+  await cons.iniciarConstatacion('20777777771', { pausaMs: 0, deps: deps(), repo });
+  await cons.esperarConstatacion('20777777771');
+  assert.strictEqual(completos[0].valido, true);
+  assert.strictEqual(completos[0].criterio, cons.CRITERIO);
 });
 
 // ---- Detener y seguir despues ----

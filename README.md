@@ -221,7 +221,7 @@ La receta se edita en vivo (superadmin, menú **Fisherboy y Mis Comprobantes**) 
 **Lo que se hace con esos datos:**
 
 - **Topes de Monotributo** (`GET /api/monotributo/:cuit`): suma 12 meses de emitidos (Mis Comprobantes + lo emitido por Arcanum que no esté ahí, sin contar dos veces), con las notas de crédito restando, contra el tope de la categoría del padrón. Semáforo 80% / 100%, categoría sugerida, aviso `tope_monotributo` y recordatorio de recategorización en enero y julio. Los topes se cargan en Arcanum con su vigencia: **verificá los vigentes** en arca.gob.ar.
-- **Constatación masiva** (`POST /api/constatacion` o el botón **Constatar recibidos**): cada recibido contra WSCDC y su emisor contra la base de apócrifos, hasta 500 por pedido. Si ARCA lo rechaza con tu CUIT como receptor, se reintenta con tu DNI y como consumidor final (muchas facturas B y C se hacen así); el resultado dice con cuál dio OK. Corre en segundo plano y se puede **Detener**: lo constatado queda guardado y la próxima vez sigue desde lo pendiente.
+- **Constatación masiva** (`POST /api/constatacion` o el botón **Constatar recibidos**): cada recibido contra WSCDC y su emisor contra la base de apócrifos, hasta 500 por pedido. Si ARCA lo rechaza con tu CUIT como receptor, se reintenta con tu CUIL, tu DNI y como consumidor final (muchas facturas B y C se hacen así); el resultado dice con cuál dio OK. Corre en segundo plano y se puede **Detener**: lo constatado queda guardado y la próxima vez sigue desde lo pendiente.
 
 ## Factorum (facturas recibidas)
 
