@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.19] - 2026-11-26
+
+### Seguridad
+- **El CI no publica nada sin pasar tests, lint y `npm audit`.** Antes cada push a `main`
+  publicaba la imagen `:latest` sin correr nada. Ahora un job previo corre `npm ci`, el lint, los
+  tests y `npm audit` de las dependencias de la app, y el build solo arranca si pasan.
+- Las acciones de GitHub van fijadas por SHA (con la versión al lado), y el token del runner
+  solo tiene permiso de escritura en el job que publica.
+- **Imagen:**
+  - Las dependencias se instalan con `npm ci` (exige el lock).
+  - La imagen final no trae npm ni corepack, que la app no usa y tenían avisos de seguridad
+    propios.
+  - El código en `/app` queda de root: el usuario que ejecuta Arcanum no puede modificarlo.
+  - Solo `/data` es escribible.
+
 ## [2.1.18] - 2026-11-26
 
 ### Agregado
