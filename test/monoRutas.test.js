@@ -50,3 +50,25 @@ test('categorias: todos las leen, solo superadmin las cambia', async () => {
     assert.strictEqual(put.status, 200);
   });
 });
+
+test('plantilla de topes: CSV para descargar (cualquier rol) e importar CSV (solo superadmin)', async () => {
+  const mono = monoFalso();
+  mono.plantillaCsv = () => 'categoria;tope_ingresos_brutos_anuales\nA;1\n';
+  mono.topesDesdeCsv = (csv) => ({ A: csv.length });
+  const guardados = [];
+  mono.guardarCategorias = async (c) => { guardados.push(c); return c; };
+  await conServidor({ username: 'l', role: 'lectura' }, mono, async (base) => {
+    const r = await fetch(`${base}/api/monotributo/categorias/plantilla.csv`);
+    assert.strictEqual(r.status, 200);
+    assert.match(r.headers.get('content-type'), /text\/csv/);
+    assert.match(r.headers.get('content-disposition'), /attachment; filename="topes-monotributo\.csv"/);
+    assert.match(await r.text(), /^categoria;tope/);
+    const p = await fetch(`${base}/api/monotributo/categorias`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv: 'x' }) });
+    assert.strictEqual(p.status, 403);
+  });
+  await conServidor({ username: 's', role: 'superadmin' }, mono, async (base) => {
+    const p = await fetch(`${base}/api/monotributo/categorias`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv: 'abc', vigencia: '2026-08', fuente: 'arca.gob.ar' }) });
+    assert.strictEqual(p.status, 200);
+    assert.deepStrictEqual(guardados[0], { topes: { A: 3 }, vigencia: '2026-08', fuente: 'arca.gob.ar' });
+  });
+});

@@ -108,3 +108,36 @@ test('avisos: una vez por mes y nivel, y recordatorio de recategorizacion en ene
   await mono.revisarAvisos(cuits, { ...deps, hoy: new Date('2027-01-06T12:00:00Z') });
   assert.strictEqual(emitidos.length, 4);
 });
+
+// ---- Tabla de topes: plantilla CSV para descargar e importar -----------------------------
+
+const TOPES_OK = { A: 10, B: 20, C: 30, D: 40, E: 50, F: 60, G: 70, H: 80, I: 90, J: 100, K: 110 };
+
+test('plantilla CSV: una fila por categoria, separador ; y coma decimal (abre bien en Excel)', () => {
+  const csv = mono.plantillaCsv({ vigencia: '2026-08', topes: { ...TOPES_OK, A: 8992597.87 } });
+  const lineas = csv.trim().split(/\r?\n/);
+  assert.strictEqual(lineas[0], 'categoria;tope_ingresos_brutos_anuales');
+  assert.strictEqual(lineas[1], 'A;8992597,87');
+  assert.strictEqual(lineas.length, 12);
+});
+
+test('importar CSV: acepta formato argentino, puntos de miles, signo $ y lo que devuelve la plantilla', () => {
+  const csv = 'categoria;tope_ingresos_brutos_anuales\nA;$ 8.992.597,87\nB;13175201.52\n' +
+    'C;18.473.166\nD;22934610,05\nE;26977793,60\nF;33809379,57\nG;40431835,35\nH;61344853,64\nI;68664410,05\nJ;78632948,76\nK;94805682,90\n';
+  const t = mono.topesDesdeCsv(csv);
+  assert.deepStrictEqual([t.A, t.B, t.C, t.K], [8992597.87, 13175201.52, 18473166, 94805682.9]);
+  const ida = mono.topesDesdeCsv(mono.plantillaCsv({ topes: t }));
+  assert.deepStrictEqual(ida, t, 'la plantilla vuelve igual');
+  assert.deepStrictEqual(mono.topesDesdeCsv('categoria,tope\na,10\nb,20\nc,30\nd,40\ne,50\nf,60\ng,70\nh,80\ni,90\nj,100\nk,110'), TOPES_OK, 'coma como separador y letras en minuscula');
+});
+
+test('validar topes: tienen que estar las 11 categorias, ser positivos y crecer de A a K', () => {
+  assert.doesNotThrow(() => mono.validarTopes(TOPES_OK));
+  const { K, ...sinK } = TOPES_OK;
+  assert.ok(K);
+  assert.throws(() => mono.validarTopes(sinK), (e) => e.httpStatus === 400 && /falta.*K/i.test(e.message));
+  assert.throws(() => mono.validarTopes({ ...TOPES_OK, F: 45 }), (e) => e.httpStatus === 400 && /F.*mayor.*E/i.test(e.message));
+  assert.throws(() => mono.validarTopes({ ...TOPES_OK, A: -1 }), (e) => e.httpStatus === 400);
+  assert.throws(() => mono.validarTopes({ ...TOPES_OK, L: 120 }), (e) => e.httpStatus === 400 && /L/.test(e.message));
+  assert.throws(() => mono.topesDesdeCsv('categoria;tope\nA;mucho'), (e) => e.httpStatus === 400 && /A/.test(e.message));
+});

@@ -3,6 +3,31 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.6] - 2026-11-26
+
+### Seguridad
+- **El rol "lector" de Lockatus entraba a Arcanum como operador** y podía emitir. Arcanum
+  buscaba "lectura" o "read" dentro del claim; "lector" no coincidía y caía en el rol por
+  defecto, que era operador. Ahora el rol se toma por palabra exacta:
+  - superadmin y admin quedan como están;
+  - operador o editor pasan a operador;
+  - lectura o lector pasan a lectura.
+
+  Un valor desconocido queda en **lectura** (lo mínimo), y ya no basta con que el claim
+  "contenga" admin. `ARCANUM_OIDC_DEFAULT_ROLE` sigue sirviendo para elegir otro rol por defecto.
+  Lockatus 0.1.7 declara para Arcanum los roles superadmin, admin, operador y lectura: desde
+  ahí se da superadmin, el rol que crea usuarios y cambia topes, receta y conexión con Fisherboy.
+
+### Agregado
+- **Tabla de topes de Monotributo** ("Ver y cargar topes" en la tarjeta de Monotributo): las
+  11 categorías con su vigencia y su fuente.
+  - **Descargar plantilla** baja un CSV con los topes cargados, listo para editar en Excel.
+  - **Importar CSV** la vuelve a cargar y acepta formato argentino, puntos de miles y "$".
+  - Antes de guardar se revisa que estén las 11 categorías y que cada tope sea mayor que el
+    anterior.
+  - Cambiarlos sigue siendo de superadmin; el resto los ve y descarga la plantilla.
+  - API: `GET /api/monotributo/categorias/plantilla.csv`. El `PUT` acepta `{ csv, vigencia, fuente }`.
+
 ## [2.1.5] - 2026-11-26
 
 ### Corregido

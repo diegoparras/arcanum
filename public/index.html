@@ -988,9 +988,50 @@ async function mcConstRetomar(){
     if(c.terminada&&Date.now()-new Date(c.terminada)<15*60000)mcConstPintar(c);
   }catch{}
 }
+/* Topes de Monotributo: tabla A a K, plantilla CSV para descargar e importar. Cambiarlos es de superadmin. */
+const MC_LETRAS=['A','B','C','D','E','F','G','H','I','J','K'];
+async function mcTopes(){
+  const su=ME.role==='superadmin';
+  let c;try{({categorias:c}=await api('/api/monotributo/categorias'));}catch(e){toast(e.message,true);return;}
+  const fmt=n=>n==null?'':Number(n).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const filas=MC_LETRAS.map(l=>`<tr><td class="mono" style="width:90px">${l}</td><td>${su?`<input class="mono mct-tope" data-l="${l}" value="${fmt(c.topes&&c.topes[l])}" inputmode="decimal" aria-label="Tope de la categoría ${l}" style="text-align:right">`:`<span class="mono">$ ${fmt(c.topes&&c.topes[l])}</span>`}</td></tr>`).join('');
+  modal(`<button class="modal-x" type="button" aria-label="Cerrar" onclick="closeModal()">&times;</button><h3 style="text-transform:none">Topes de Monotributo</h3>
+    <p class="hint">Ingresos brutos anuales máximos por categoría. Arcanum los usa para el semáforo de Monotributo. ARCA los actualiza dos veces por año (febrero y agosto): copiá los vigentes de arca.gob.ar.</p>
+    <div class="f2"><div><label>Vigencia</label><input id="mct_vig" value="${escA(c.vigencia||'')}" placeholder="2026-08" ${su?'':'disabled'}></div>
+    <div><label>Fuente</label><input id="mct_fuente" value="${escA(c.fuente||'')}" placeholder="arca.gob.ar, tabla vigente desde 08/2026" ${su?'':'disabled'}></div></div>
+    <table style="margin-top:12px"><tr><th>Categoría</th><th>Tope anual</th></tr>${filas}</table>
+    <p class="hint" id="mct_msg" style="margin:10px 0 0"></p>
+    <div class="row" style="margin-top:12px"><button type="button" onclick="mcTopesPlantilla()">Descargar plantilla</button>
+      ${su?`<label class="ghost" style="margin:0;cursor:pointer;border:1px solid var(--line);border-radius:9px;padding:7px 13px;font-size:14px;color:var(--ink)">Importar CSV<input type="file" accept=".csv,text/csv,text/plain" style="display:none" onchange="mcTopesImportar(this)"></label>
+      <button type="button" class="primary" style="margin-left:auto" onclick="mcTopesGuardar()">Guardar topes</button>`:'<span class="hint" style="margin-left:auto">Solo un superadmin puede cambiarlos.</span>'}</div>
+    <p class="hint" style="margin:10px 0 0">La plantilla trae los topes cargados: editala en Excel (una fila por categoría, con coma decimal) e importala. Antes de guardar se revisa que estén las 11 categorías y que cada tope sea mayor que el anterior.</p>`);
+}
+async function mcTopesPlantilla(){
+  try{const r=await fetch('/api/monotributo/categorias/plantilla.csv',{credentials:'include'});if(!r.ok)throw new Error('HTTP '+r.status);
+    const a=document.createElement('a');a.href=URL.createObjectURL(await r.blob());a.download='topes-monotributo.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
+  catch(e){toast(e.message,true);}
+}
+function mcTopesImportar(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{const vistos=[];
+    for(const linea of String(rd.result).replace(/^﻿/,'').split(/\r?\n/)){
+      const sep=linea.includes(';')?';':linea.includes('\t')?'\t':',';const [cat,...resto]=linea.split(sep);
+      const l=String(cat||'').replace(/["']/g,'').trim().toUpperCase();const el=document.querySelector(`.mct-tope[data-l="${l}"]`);
+      if(el){el.value=resto.join(sep===','?'.':sep).replace(/["']/g,'').trim();vistos.push(l);}}
+    $('#mct_msg').textContent=vistos.length?`Se cargaron ${vistos.length} categorías desde ${f.name}. Revisalas y tocá «Guardar topes».`:`${f.name} no tiene filas con una categoría (A a K) y su tope.`;
+    inp.value='';};
+  rd.readAsText(f);
+}
+async function mcTopesGuardar(){
+  const csv='categoria;tope\n'+MC_LETRAS.map(l=>`${l};${(document.querySelector(`.mct-tope[data-l="${l}"]`)||{}).value||''}`).join('\n');
+  try{await api('/api/monotributo/categorias',{method:'PUT',body:JSON.stringify({csv,vigencia:$('#mct_vig').value.trim(),fuente:$('#mct_fuente').value.trim()})});
+    closeModal();toast('Topes guardados');if($('#mc_mono'))mcMonotributo();}
+  catch(e){$('#mct_msg').textContent=e.message;$('#mct_msg').style.color='var(--bad)';}
+}
 async function mcMonotributo(){
   try{const {monotributo:m}=await api(`/api/monotributo/${MC.cuit}`);
-    if(!m.aplica){$('#mc_mono').innerHTML=`<p class="hint">${esc(m.motivo||'No aplica')}</p>`;return;}
+    if(!m.aplica){$('#mc_mono').innerHTML=`<p class="hint">${esc(m.motivo||'No aplica')}</p><button class="ghost" onclick="mcTopes()">Ver y cargar topes</button>`;return;}
     const pesos=n=>'$'+Number(n||0).toLocaleString('es-AR',{maximumFractionDigits:0});
     const pct=m.usado!=null?Math.min(m.usado*100,100):0;
     const color=m.alerta==='100'?'var(--bad)':m.alerta==='80'?'var(--warn)':'var(--ok)';
@@ -1000,7 +1041,8 @@ async function mcMonotributo(){
       <span class="stat"><span class="label">Sugerida</span><div class="val">${esc(m.categoriaSugerida||'RG')}</div></span></div>
       ${m.tope?`<div style="height:10px;border-radius:6px;background:var(--chip);margin-top:12px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${color}"></div></div>
       <p class="hint">${(m.usado*100).toFixed(1)}% del tope · ventana ${esc(m.ingresos.desde)} a ${esc(m.ingresos.hasta)}</p>`:`<p class="hint">${esc(m.advertenciaPadron||'No se pudo leer la categoría del padrón.')}</p>`}
-      <p class="hint">Topes cargados: vigencia ${esc(m.vigenciaTopes||'?')}. Verificá los topes vigentes en arca.gob.ar.${m.excedeMaxima?' Supera la categoría máxima: corresponde evaluar el Régimen General.':''}</p>`;
+      <div class="row" style="justify-content:space-between;margin-top:6px"><p class="hint" style="margin:0">Topes cargados: vigencia ${esc(m.vigenciaTopes||'?')}. Verificá los topes vigentes en arca.gob.ar.${m.excedeMaxima?' Supera la categoría máxima: corresponde evaluar el Régimen General.':''}</p>
+      <button class="ghost" onclick="mcTopes()">Ver y cargar topes</button></div>`;
   }catch(e){$('#mc_mono').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
 /* Backups y master key (superadmin) */

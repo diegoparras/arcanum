@@ -116,17 +116,58 @@ async function categorias() {
   return CATEGORIAS_SEMILLA;
 }
 
-async function guardarCategorias(c, usuario) {
-  const db = require('../db');
-  const topes = c && c.topes;
-  if (!topes || typeof topes !== 'object' || !Object.keys(topes).length) {
-    throw Object.assign(new Error('Faltan los topes por categoria (topes: { A: ..., B: ... })'), { httpStatus: 400 });
-  }
+const LETRAS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'];
+const e400 = (m) => Object.assign(new Error(m), { httpStatus: 400 });
+
+/** Las 11 categorias, positivas y creciendo de A a K (ataja un error de tipeo). Devuelve numeros. */
+function validarTopes(topes) {
+  if (!topes || typeof topes !== 'object') throw e400('Faltan los topes por categoria (topes: { A: ..., B: ... })');
   const limpio = {};
   for (const [k, v] of Object.entries(topes)) {
-    if (!/^[A-K]$/.test(k) || !(Number(v) > 0)) throw Object.assign(new Error(`Tope invalido para ${k}`), { httpStatus: 400 });
-    limpio[k] = Number(v);
+    if (!LETRAS.includes(k)) throw e400(`Categoria invalida: ${k} (van de la A a la K)`);
+    if (!(Number(v) > 0)) throw e400(`Tope invalido para ${k}`);
+    limpio[k] = Math.round(Number(v) * 100) / 100;
   }
+  const faltan = LETRAS.filter((l) => limpio[l] === undefined);
+  if (faltan.length) throw e400(`Falta el tope de ${faltan.length === 1 ? 'la categoria' : 'las categorias'} ${faltan.join(', ')}`);
+  for (let i = 1; i < LETRAS.length; i += 1) {
+    const a = LETRAS[i - 1];
+    const b = LETRAS[i];
+    if (!(limpio[b] > limpio[a])) throw e400(`El tope de ${b} tiene que ser mayor que el de ${a}: revisá esos dos valores`);
+  }
+  return limpio;
+}
+
+/** Plantilla para descargar: los topes cargados, uno por fila, ";" y coma decimal (Excel en castellano). */
+function plantillaCsv(cats) {
+  const t = (cats && cats.topes) || {};
+  const filas = LETRAS.map((l) => `${l};${t[l] != null ? Number(t[l]).toFixed(2).replace('.', ',') : ''}`);
+  return `categoria;tope_ingresos_brutos_anuales\n${filas.join('\n')}\n`;
+}
+
+/** CSV (la plantilla, o uno propio con categoria y tope) -> { A: n, ... } validado. */
+function topesDesdeCsv(texto) {
+  const lineas = String(texto || '').replace(/^﻿/, '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const topes = {};
+  for (const linea of lineas) {
+    const sep = linea.includes(';') ? ';' : linea.includes('\t') ? '\t' : ',';
+    const [cat, ...resto] = linea.split(sep);
+    const letra = String(cat || '').replace(/["']/g, '').trim().toUpperCase();
+    if (!/^[A-Z]$/.test(letra)) continue; // encabezado u otra cosa
+    const crudo = resto.join(sep === ',' ? '.' : sep).replace(/["'$\s]/g, '');
+    let n;
+    if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(crudo)) n = Number(crudo.replace(/\./g, '').replace(',', '.'));
+    else if (/^\d+,\d+$/.test(crudo)) n = Number(crudo.replace(',', '.'));
+    else if (/^\d+(\.\d+)?$/.test(crudo)) n = Number(crudo);
+    else throw e400(`No se entiende el tope de la categoria ${letra}: "${resto.join(sep).slice(0, 30)}"`);
+    topes[letra] = n;
+  }
+  return validarTopes(topes);
+}
+
+async function guardarCategorias(c, usuario) {
+  const db = require('../db');
+  const limpio = validarTopes(c && c.topes);
   const valor = { vigencia: String(c.vigencia || '').slice(0, 20) || null, fuente: String(c.fuente || 'cargado a mano').slice(0, 200), topes: limpio };
   await db.query(
     "INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('monotributo_categorias',$1,$2,now()) ON CONFLICT (key) DO UPDATE SET value=$1, updated_by=$2, updated_at=now()",
@@ -218,4 +259,4 @@ async function revisarAvisos(cuits, deps = {}) {
   }
 }
 
-module.exports = { CATEGORIAS_SEMILLA, calcularIngresos, evaluar, letraCategoria, ventana, categorias, guardarCategorias, topes, revisarAvisos };
+module.exports = { CATEGORIAS_SEMILLA, calcularIngresos, evaluar, letraCategoria, ventana, categorias, guardarCategorias, validarTopes, plantillaCsv, topesDesdeCsv, topes, revisarAvisos };

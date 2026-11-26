@@ -14,7 +14,8 @@ const CFG = {
   redirectUri: process.env.ARCANUM_OIDC_REDIRECT_URI || '',
   scope: process.env.ARCANUM_OIDC_SCOPE || 'openid profile email',
   roleClaim: process.env.ARCANUM_OIDC_ROLE_CLAIM || 'role',
-  defaultRole: process.env.ARCANUM_OIDC_DEFAULT_ROLE || 'operador',
+  // Si el claim no trae un rol conocido: lectura (lo minimo). Antes era operador, que puede emitir.
+  defaultRole: ['superadmin', 'admin', 'operador', 'lectura'].includes(process.env.ARCANUM_OIDC_DEFAULT_ROLE) ? process.env.ARCANUM_OIDC_DEFAULT_ROLE : 'lectura',
 };
 
 function enabled() {
@@ -87,12 +88,22 @@ async function exchangeCode(code, verifier, redirectUri) {
   return { username, role, federated: true };
 }
 
+// Palabra exacta del claim -> rol de Arcanum. Lockatus declara para Arcanum superadmin, admin,
+// operador y lectura; editor y lector son los nombres viejos. Se compara la palabra entera (no
+// "contiene admin") y, si vienen varias, gana la de mas permisos.
+const ROLES_CLAIM = {
+  superadmin: 'superadmin', admin: 'admin',
+  operador: 'operador', editor: 'operador',
+  lectura: 'lectura', lector: 'lectura', read: 'lectura', readonly: 'lectura',
+};
+const ORDEN_ROLES = ['lectura', 'operador', 'admin', 'superadmin'];
+
 function mapRole(claim) {
-  const v = Array.isArray(claim) ? claim.join(',') : String(claim || '');
-  if (/superadmin/i.test(v)) return 'superadmin';
-  if (/admin/i.test(v)) return 'admin';
-  if (/lectura|read/i.test(v)) return 'lectura';
-  return CFG.defaultRole;
+  const palabras = (Array.isArray(claim) ? claim.join(',') : String(claim || ''))
+    .toLowerCase().split(/[\s,;]+/).filter(Boolean);
+  const roles = palabras.map((p) => ROLES_CLAIM[p]).filter(Boolean);
+  if (!roles.length) return CFG.defaultRole;
+  return roles.sort((a, b) => ORDEN_ROLES.indexOf(b) - ORDEN_ROLES.indexOf(a))[0];
 }
 
 function b64url(s) {
@@ -132,4 +143,4 @@ async function verifyIdToken(idToken) {
   return claims;
 }
 
-module.exports = { enabled, buildAuthUrl, exchangeCode, CFG };
+module.exports = { enabled, buildAuthUrl, exchangeCode, mapRole, CFG };
