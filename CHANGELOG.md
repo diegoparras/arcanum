@@ -3,6 +3,33 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.17] - 2026-11-26
+
+### Agregado
+- **Cambiar contraseña** desde el menú (usuarios locales; los de Lockatus la cambian en Lockatus).
+  Pide la actual y cierra las demás sesiones abiertas de ese usuario.
+- **Borrar usuarios** desde Usuarios (superadmin). No se puede borrar el propio ni el último
+  superadmin, y las sesiones del usuario borrado se cierran al instante.
+- **La contraseña que Arcanum genera al instalarse se cambia en el primer ingreso:** hasta
+  hacerlo no se puede usar nada más, y al cambiarla se borra el archivo donde había quedado.
+
+### Seguridad
+- Contraseñas de al menos 12 caracteres y distintas del usuario.
+- Los errores internos (500) ya no muestran el mensaje técnico: dicen "Error interno" con un
+  código para buscarlo en el log. Una cookie mal codificada de otra app del mismo dominio ya no
+  deja el panel en 500, y un login con cuerpo vacío da 400.
+- La cookie de sesión es `Secure` cuando el pedido llega por https, aunque ARCA esté en
+  homologación (antes dependía solo del entorno de ARCA).
+- `/api/health` responde solo `{ "ok": true }`, sin versión ni entorno. `/api/metrics`, para una
+  clave o un usuario limitado a algunos CUITs, muestra solo los números de esos CUITs.
+- El motor genérico (`/api/ws/...`) acepta otro `entorno` que el del sistema solo de un admin.
+- Leer una comunicación de e-Ventanilla (o sus adjuntos) la marca como leída en ARCA: ahora pide
+  rol operador o más. Listarlas sigue abierto al rol lectura.
+- Los intentos de login y los logout quedan en la auditoría con IP y usuario.
+- Una ruta que quedaba colgada sin responder ahora da 404, y el servidor tiene timeouts y tope de
+  conexiones propios (`ARCANUM_REQUEST_TIMEOUT_MS`, `ARCANUM_MAX_CONEXIONES`).
+- `.gitignore` ignora `data/` entera.
+
 ## [2.1.16] - 2026-11-26
 
 ### Seguridad

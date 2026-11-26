@@ -257,7 +257,7 @@ async function api(path,opts={}){
 }
 function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast show'+(bad?' bad':'');setTimeout(()=>t.className='toast',2600);}
 function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.add('open');}
-function closeModal(){$('#modal').classList.remove('open');}
+function closeModal(){if($('#modal').dataset.fijo)return;$('#modal').classList.remove('open');}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
 /* confirmar({titulo, texto, si, no, tono}) -> Promise<boolean>. tono: 'info' | 'aviso' | 'peligro'.
    Esc, clic afuera o Cancelar = false. En 'peligro' el foco arranca en Cancelar. texto se escapa. */
@@ -296,7 +296,7 @@ async function doLogin(){
   try{ await api('/api/auth/login',{method:'POST',body:JSON.stringify({username:$('#lu').value,password:$('#lp').value})});
     await boot(); }catch(e){ toast('Usuario o contraseña inválidos',true); }
 }
-async function logout(){ await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); showLogin(); }
+async function logout(){ await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); delete $('#modal').dataset.fijo; closeModal(); showLogin(); }
 
 /* ---------- NAVEGACION: panel lateral agrupado, se achica a iconos ---------- */
 const NI=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
@@ -361,7 +361,8 @@ function go(v){if(!disponible(v))v='panel';if(navMovil())cerrarNavMovil();if(typ
 
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; FUNC=me.funciones||{}; }catch(e){ showLogin(); return; }
-  try{ const h=await fetch('/api/health').then(r=>r.json()); ENV=h.env; }catch{}
+  if(ME.debeCambiar){$('#loginView').classList.add('hidden');$('#appView').classList.remove('hidden');cambiarClave(true);return;}
+  try{ const c=await api('/api/config'); ENV=c.entorno; }catch{}
   $('#loginView').classList.add('hidden');$('#appView').classList.remove('hidden');
   medirTopbar();syncNavBtn();
   go((location.hash||'#panel').slice(1));
@@ -1658,17 +1659,42 @@ async function emitirTodo(id){if(!await confirmar({titulo:'Emitir el lote',texto
 /* ---------- USUARIOS ---------- */
 async function vUsuarios(){
   const v=$('#view');const {usuarios}=await api('/api/usuarios');
-  const rows=usuarios.map(u=>`<tr><td>${esc(u.username)}</td><td><span class="tag">${esc(u.role)}</span></td><td class="hint">${u.last_login?new Date(u.last_login).toLocaleString('es-AR'):'nunca'}</td></tr>`).join('');
   const puede=ME.role==='superadmin';
-  v.innerHTML=`<h2>Usuarios</h2><div class="card"><table><thead><tr><th>Usuario</th><th>Rol</th><th>Último ingreso</th></tr></thead><tbody>${rows}</tbody></table></div>
+  const rows=usuarios.map(u=>`<tr><td>${esc(u.username)}</td><td><span class="tag">${esc(u.role)}</span></td><td class="hint">${u.last_login?new Date(u.last_login).toLocaleString('es-AR'):'nunca'}</td>
+    <td>${puede&&u.username!==ME.username?`<button class="ghost" onclick="borrarUsuario(${jsA(u.username)})">Borrar</button>`:''}</td></tr>`).join('');
+  v.innerHTML=`<h2>Usuarios</h2><div class="card"><table><thead><tr><th>Usuario</th><th>Rol</th><th>Último ingreso</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
    ${puede?`<div class="card" style="margin-top:14px;max-width:480px"><h3 style="margin-top:0">Nuevo usuario</h3>
-    <label>Usuario</label><input id="u_user"><label>Contraseña</label>${pwField('u_pass')}
+    <label>Usuario</label><input id="u_user"><label>Contraseña <span class="hint">(12 caracteres o más)</span></label>${pwField('u_pass')}
     <label>Rol</label><select id="u_role"><option value="operador">operador</option><option value="lectura">lectura</option><option value="admin">admin</option><option value="superadmin">superadmin</option></select>
     <button class="primary" style="margin-top:14px" onclick="addUser()">Crear</button></div>`:'<p class="hint">Solo un superadmin puede crear usuarios.</p>'}
    <h2 style="margin-top:28px">Claves de API</h2>
    <p class="hint">Para integraciones (SecretarIA, sistemas propios). Se envían como <code>Authorization: Bearer &lt;clave&gt;</code> o <code>X-API-Key</code>. Una clave con rol <b>lectura</b> solo consulta: no puede emitir ni modificar nada, ni por la API ni por <code>/mcp</code>. Cada clave se da de baja por separado.</p>
    <div id="clavesBox"><p class="hint">Cargando…</p></div>`;
   cargarClaves();
+}
+async function borrarUsuario(u){
+  if(!await confirmar({titulo:'Borrar el usuario '+u,texto:'No va a poder entrar más y sus sesiones abiertas se cierran al instante.',si:'Borrar usuario',tono:'peligro'}))return;
+  try{await api('/api/usuarios/'+encodeURIComponent(u),{method:'DELETE'});toast('Usuario borrado');vUsuarios();}catch(e){toast(e.message,true);}
+}
+/* Cambio de contrasena (usuarios locales). Con `obligatorio` no se puede cerrar: es la contrasena
+   generada al instalar y el servidor no deja hacer nada mas hasta cambiarla. */
+function cambiarClave(obligatorio){
+  $('#appmenu').classList.remove('open');
+  modal(`${obligatorio?'':'<button class="modal-x" type="button" aria-label="Cerrar" onclick="closeModal()">&times;</button>'}
+   <h3 style="text-transform:none">${obligatorio?'Cambiá la contraseña inicial':'Cambiar contraseña'}</h3>
+   ${obligatorio?'<p class="hint">Entraste con la contraseña que Arcanum generó al instalarse. Antes de seguir, elegí una propia.</p>':''}
+   <label>Contraseña actual</label>${pwField('cc_act')}
+   <label>Contraseña nueva <span class="hint">(12 caracteres o más)</span></label>${pwField('cc_new')}
+   <label>Repetila</label>${pwField('cc_rep')}
+   <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarClaveNueva(${obligatorio?'true':'false'})">Cambiar contraseña</button>${obligatorio?'<button onclick="logout()">Salir</button>':''}</div>`);
+  if(obligatorio)$('#modal').dataset.fijo='1';
+}
+async function guardarClaveNueva(obligatorio){
+  const a=$('#cc_act').value,n=$('#cc_new').value,r=$('#cc_rep').value;
+  if(n!==r){toast('Las contraseñas nuevas no coinciden',true);return;}
+  try{await api('/api/auth/password',{method:'POST',body:JSON.stringify({actual:a,nueva:n})});
+    delete $('#modal').dataset.fijo;closeModal();toast('Contraseña cambiada');
+    if(obligatorio)boot();}catch(e){toast(e.message,true);}
 }
 async function cargarClaves(){
   const box=$('#clavesBox');if(!box)return;
@@ -1884,6 +1910,7 @@ async function renderMenu(){
        </select></div>
      <div class="hint" style="padding:2px 12px 6px">Cambia los endpoints de ARCA para toda la instancia.</div></div>`:''}
    ${ME.role==='superadmin'?`<button class="menu-item" onclick="ajustesMc()">${I_GEAR}<span>Fisherboy y Mis Comprobantes</span></button><button class="menu-item" onclick="ajustesFactorum()">${I_GEAR}<span>Factorum (facturas recibidas)</span></button><button class="menu-item" onclick="verBackups()">${I_GEAR}<span>Backups y master key</span></button>`:''}
+   ${ME.origen==='local'?`<button class="menu-item" onclick="cambiarClave(false)">${I_GEAR}<span>Cambiar contraseña</span></button>`:''}
    <button class="menu-item" onclick="novedadesTodas()">${I_NEWS}<span>Novedades</span></button>
    <button class="menu-item" onclick="acercaDe()">${I_INFO}<span>Acerca de Arcanum</span></button>
    <div class="menu-sep"></div>

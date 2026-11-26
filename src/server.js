@@ -133,7 +133,7 @@ async function checkAuth(req, res) {
     if (sess.origen === 'local') {
       const u = await ses.usuarioLocal(sess.username);
       if (!u) throw Object.assign(new Error('El usuario ya no existe.'), { httpStatus: 401 });
-      return { ...sess, role: u.role, cuitAllow: u.cuitAllow, via: 'sesion' };
+      return { ...sess, role: u.role, cuitAllow: u.cuitAllow, debeCambiar: u.debeCambiar, via: 'sesion' };
     }
     return { ...sess, via: 'sesion' };
   }
@@ -227,7 +227,8 @@ async function route(req, res, url) {
 
   // Publicas (sin API key)
   if (req.method === 'GET' && url.pathname === '/api/health') {
-    return sendJson(res, 200, { ok: true, service: 'arcanum', version: config.version, env: config.env });
+    // Sin version ni entorno: es publico (B-08). La version esta en /api/config, con sesion.
+    return sendJson(res, 200, { ok: true });
   }
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/app')) {
     return serveDashboard(res);
@@ -291,7 +292,7 @@ async function route(req, res, url) {
     const principal = await oidc.exchangeCode(url.searchParams.get('code'), cookies.arcanum_oidc_verifier, oidcRedirect(req, url));
     const sid = await sesiones.servicio().crear(principal, 'oidc');
     res.setHeader('Set-Cookie', [
-      session.cookieHeader(session.sign({ ...principal, sid, origen: 'oidc' })),
+      session.cookieHeader(session.sign({ ...principal, sid, origen: 'oidc' }), req),
       'arcanum_oidc_state=; Path=/; Max-Age=0',
       'arcanum_oidc_verifier=; Path=/; Max-Age=0',
     ]);
@@ -306,8 +307,13 @@ async function route(req, res, url) {
     if (oidc.enabled() && !config.allowLocalLogin) {
       throw Object.assign(new Error('Login local deshabilitado: ingresá con Lockatus (SSO).'), { httpStatus: 403 });
     }
-    const { username, password } = await readJsonBody(req, { max: 8 * 1024 }); // un login no pesa mas
+    const cuerpo = await readJsonBody(req, { max: 8 * 1024 }); // un login no pesa mas
+    if (!cuerpo || typeof cuerpo !== 'object') throw badRequest('Falta usuario y contrasena');
+    const { username, password } = cuerpo;
+    req._ip = ipCliente(req); // B-11: el login deja IP y usuario intentado en la auditoria
+    req._op = 'login';
     validarUsuario(username);
+    req._user = String(username).slice(0, 64);
     if (typeof password !== 'string' || password.length > 1024) throw badRequest('Contrasena invalida');
     const ip = ipCliente(req);
     limiteLogin.chequear(ip, username);
@@ -315,8 +321,8 @@ async function route(req, res, url) {
       const principal = await users.login(username, password);
       limiteLogin.exito(ip, username);
       const sid = await sesiones.servicio().crear(principal, 'local');
-      res.setHeader('Set-Cookie', session.cookieHeader(session.sign({ ...principal, sid, origen: 'local' })));
-      return sendJson(res, 200, { ok: true, usuario: { username: principal.username, role: principal.role } });
+      res.setHeader('Set-Cookie', session.cookieHeader(session.sign({ ...principal, sid, origen: 'local' }), req));
+      return sendJson(res, 200, { ok: true, usuario: { username: principal.username, role: principal.role, debeCambiar: !!principal.debeCambiar } });
     } catch (e) {
       if (e.httpStatus === 401) limiteLogin.fallo(ip, username);
       throw e;
@@ -325,6 +331,7 @@ async function route(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
     // Revoca la sesion en el servidor: una copia de la cookie deja de valer (M-06).
     const sess = session.fromRequest(req);
+    req._ip = ipCliente(req); req._op = 'logout'; if (sess) req._user = sess.username;
     if (sess) await sesiones.servicio().revocar(sess.sid).catch(() => {});
     res.setHeader('Set-Cookie', session.clearCookieHeader());
     return sendJson(res, 200, { ok: true });
@@ -338,6 +345,28 @@ async function route(req, res, url) {
   const principal = await checkAuth(req, res);
   req._user = principal.username;
   chequearCsrf(req, principal); // sesion por cookie: solo desde el panel y con JSON (M-07)
+  // Contrasena generada al instalar: hasta cambiarla, solo se puede cambiarla o salir (B-07).
+  if (principal.debeCambiar && !['/api/auth/me', '/api/auth/password', '/api/auth/logout'].includes(url.pathname)) {
+    throw Object.assign(new Error('Antes de seguir, cambia la contrasena inicial.'), { httpStatus: 403 });
+  }
+
+  // POST /api/auth/password { actual, nueva } -> cambia la contrasena del usuario local (B-07)
+  if (req.method === 'POST' && url.pathname === '/api/auth/password') {
+    if (principal.via !== 'sesion' || principal.origen !== 'local') {
+      throw badRequest('Solo los usuarios locales cambian la contrasena aca; los de Lockatus, en Lockatus.');
+    }
+    const { actual, nueva } = await readJsonBody(req, { max: 8 * 1024 });
+    const ip = ipCliente(req);
+    limiteLogin.chequear(ip, principal.username);
+    try {
+      await users.cambiarClave(principal.username, String(actual || ''), nueva, principal.sid);
+      sesiones.servicio().olvidarUsuario(principal.username);
+    } catch (e) {
+      if (e.httpStatus === 401) limiteLogin.fallo(ip, principal.username);
+      throw e;
+    }
+    return sendJson(res, 200, { ok: true, mensaje: 'Contrasena cambiada. Las otras sesiones abiertas se cerraron.' });
+  }
   // Rol "lectura" (usuario o clave): solo GET/HEAD (mas una lista cerrada de POST que
   // no escriben, como la vista previa), en todas las rutas. Falla cerrado.
   assertPuedeEscribir(principal, req.method, url.pathname);
@@ -349,7 +378,9 @@ async function route(req, res, url) {
     const misComprobantes = await require('./services/fisherboy').configurado();
     // Analisis: solo si hay comprobantes bajados de algun CUIT que esta persona puede ver.
     const analisis = await require('./services/misComprobantes').servicio().hayComprobantes(principal).catch(() => false);
-    return sendJson(res, 200, { ok: true, usuario: principal, funciones: { misComprobantes, analisis } });
+    // Sin sid ni datos internos de la sesion: solo lo que la UI necesita.
+    const usuario = { username: principal.username, role: principal.role, cuitAllow: principal.cuitAllow || null, origen: principal.origen || null, debeCambiar: !!principal.debeCambiar, via: principal.via || null };
+    return sendJson(res, 200, { ok: true, usuario, funciones: { misComprobantes, analisis } });
   }
 
   // Mis Comprobantes (via Fisherboy) y la conexion con Fisherboy: ver src/rutas/misComprobantes.js
@@ -467,7 +498,9 @@ async function route(req, res, url) {
     requireRole(principal, 'superadmin', 'admin', 'operador');
     const body = await readJsonBody(req);
     if (body.cuit) assertCuitAllowed(principal, body.cuit);
-    const result = await engine.call(seg[2], seg[3], body.params || {}, { cuit: body.cuit, entorno: body.entorno });
+    // Otro entorno que el del sistema, solo admin (B-09): cambiar de entorno exige admin.
+    const entornoPedido = body.entorno && ['superadmin', 'admin'].includes(principal.role) ? body.entorno : undefined;
+    const result = await engine.call(seg[2], seg[3], body.params || {}, { cuit: body.cuit, entorno: entornoPedido });
     return sendJson(res, 200, { ok: true, servicio: seg[2], operacion: seg[3], resultado: result });
   }
 
@@ -628,7 +661,7 @@ async function route(req, res, url) {
       if (req.method === 'POST' && seg[4] === 'completar' && !seg[5]) {
         return sendJson(res, 200, { ok: true, ...(await datosImpresion.completarEmisor(seg[2], { forzar: true })) });
       }
-      if (seg[4]) return false;
+      if (seg[4]) throw notFound();
       if (req.method === 'GET') {
         const emisor = await emisores.get(seg[2]);
         return sendJson(res, 200, { ok: true, emisor, faltan: datosImpresion.faltantesEmisor(emisor) });
@@ -662,7 +695,9 @@ async function route(req, res, url) {
 
   // --- Metricas ---
   if (req.method === 'GET' && url.pathname === '/api/metrics') {
-    return sendJson(res, 200, { ok: true, metricas: await metrics.resumen() });
+    // Con alcance por CUIT, los numeros son solo de esos CUITs (B-08).
+    const cuits = scopedRequiresCuit(principal) ? principal.cuitAllow : null;
+    return sendJson(res, 200, { ok: true, metricas: await metrics.resumen({ cuits }) });
   }
 
   // --- Comprobantes emitidos ---
@@ -730,6 +765,13 @@ async function route(req, res, url) {
     if (req.method === 'POST' && !seg[2]) {
       requireRole(principal, 'superadmin');
       return sendJson(res, 200, { ok: true, usuario: await users.crear(await readJsonBody(req)) });
+    }
+    // DELETE /api/usuarios/:username -> baja (B-07). No a uno mismo ni al ultimo superadmin.
+    if (req.method === 'DELETE' && seg[2] && !seg[3]) {
+      requireRole(principal, 'superadmin');
+      await users.borrar(decodeURIComponent(seg[2]), principal.username);
+      sesiones.servicio().olvidarUsuario(decodeURIComponent(seg[2]));
+      return sendJson(res, 200, { ok: true, borrado: decodeURIComponent(seg[2]) });
     }
   }
 
@@ -834,6 +876,9 @@ async function route(req, res, url) {
       return sendJson(res, 200, { ok: true, ...r });
     }
     // GET /api/eventanilla/comunicacion/:id?cuit=        -> cuerpo del mensaje
+    // Leer una comunicacion (o sus adjuntos) la marca como leida en ARCA: es una escritura, rol
+    // operador o mas (P-01). Listarlas sigue abierto a lectura.
+    if (req.method === 'GET' && seg[2] === 'comunicacion' && seg[3]) requireRole(principal, 'superadmin', 'admin', 'operador');
     if (req.method === 'GET' && seg[2] === 'comunicacion' && seg[3] && !seg[4]) {
       const cuit = requireQ(q, 'cuit');
       assertCuitAllowed(principal, cuit);
@@ -1002,6 +1047,12 @@ const server = http.createServer(async (req, res) => {
     sendError(res, err);
   }
 });
+
+// Timeouts y tope de conexiones propios (B-10): los de Node dejan 300 s para mandar un cuerpo y no
+// limitan conexiones. 120 s alcanza para subir un lote de facturas a Factorum.
+server.headersTimeout = 30_000;
+server.requestTimeout = parseInt(process.env.ARCANUM_REQUEST_TIMEOUT_MS || '120000', 10);
+server.maxConnections = parseInt(process.env.ARCANUM_MAX_CONEXIONES || '1000', 10);
 
 async function start() {
   // Lo primero que se ve en los registros al levantar: version y que cambia (CHANGELOG).

@@ -209,6 +209,8 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS emisor JSONB;
 -- Comprobantes importados (no emitidos por nosotros): origen y constatacion ARCA.
 ALTER TABLE comprobantes ADD COLUMN IF NOT EXISTS origen TEXT NOT NULL DEFAULT 'emitido';
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cuit_allow TEXT[];
+-- 2.1.17: la contrasena generada al instalar se cambia en el primer ingreso (B-07).
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS debe_cambiar BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE requests ADD COLUMN IF NOT EXISTS usuario TEXT;
 ALTER TABLE requests ADD COLUMN IF NOT EXISTS ip TEXT;
 

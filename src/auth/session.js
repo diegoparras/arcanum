@@ -71,7 +71,9 @@ function parseCookies(req) {
   const raw = req.headers.cookie || '';
   for (const part of raw.split(';')) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i <= 0) continue;
+    // Una cookie mal codificada (de otra app del mismo dominio) se ignora: no es un 500 (B-04).
+    try { out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); } catch { /* se ignora */ }
   }
   return out;
 }
@@ -80,8 +82,12 @@ function fromRequest(req) {
   return verify(parseCookies(req)[COOKIE]);
 }
 
-function cookieHeader(token) {
-  const secure = config.isProd ? ' Secure;' : '';
+/** Secure si el pedido llego por https (lo informa el proxy), si ARCA esta en prod o con
+ *  ARCANUM_COOKIE_SECURE=1. Antes dependia solo del entorno de ARCA (B-06). */
+function cookieHeader(token, req) {
+  const proto = req && req.headers ? String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() : '';
+  const porHttps = proto === 'https' || !!(req && req.socket && req.socket.encrypted);
+  const secure = porHttps || config.isProd || process.env.ARCANUM_COOKIE_SECURE === '1' ? ' Secure;' : '';
   return `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/;${secure} Max-Age=${TTL_MS / 1000}`;
 }
 function clearCookieHeader() {

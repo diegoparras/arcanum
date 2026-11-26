@@ -53,12 +53,18 @@ function crearSesiones({ db = null, ahora = () => Date.now(), cacheMs = CACHE_MS
       await base().query('UPDATE sesiones SET revocada_at = now() WHERE sid = $1 AND revocada_at IS NULL', [sid]);
     },
 
+    /** Tras cambiar la contrasena o borrar un usuario: sin esperar al cache de 30 s. */
+    olvidarUsuario(username) {
+      usuarios.delete(username);
+      vigentes.clear(); // las sesiones revocadas en la base se releen en el proximo pedido
+    },
+
     /** Rol y CUITs actuales de un usuario local; null si ya no existe. */
     async usuarioLocal(username) {
       const c = usuarios.get(username);
       if (c && c.hasta > ahora()) return c.u;
-      const { rows } = await base().query('SELECT username, role, cuit_allow FROM usuarios WHERE username = $1', [username]);
-      const u = rows[0] ? { role: rows[0].role, cuitAllow: rows[0].cuit_allow || null } : null;
+      const { rows } = await base().query('SELECT username, role, cuit_allow, debe_cambiar FROM usuarios WHERE username = $1', [username]);
+      const u = rows[0] ? { role: rows[0].role, cuitAllow: rows[0].cuit_allow || null, debeCambiar: !!rows[0].debe_cambiar } : null;
       usuarios.set(username, { u, hasta: ahora() + cacheMs });
       if (usuarios.size > 5000) usuarios.clear();
       return u;

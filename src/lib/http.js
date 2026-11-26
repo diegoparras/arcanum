@@ -22,14 +22,18 @@ function sendError(res, err) {
     if (typeof res.destroy === 'function') res.destroy();
     return;
   }
+  // Un 500 sin httpStatus es un error no previsto: el detalle va al log con un id y el cliente
+  // recibe un mensaje generico (B-04). Los errores con httpStatus (incluidos 502/503 de ARCA) son
+  // mensajes pensados para el usuario y se devuelven tal cual.
+  const interno = !err.httpStatus;
+  const id = interno ? require('crypto').randomBytes(4).toString('hex') : null;
   const payload = {
     ok: false,
-    error: err.message || 'Error interno',
+    error: interno ? `Error interno (ref. ${id}).` : (err.message || 'Error interno'),
   };
-  if (err.extra && err.extra.errors) payload.detalles = err.extra.errors;
+  if (!interno && err.extra && err.extra.errors) payload.detalles = err.extra.errors;
   if (status >= 500) {
-    // Log del stack solo para errores internos (no exponemos al cliente).
-    console.error('[arcanum]', err.stack || err.message);
+    console.error('[arcanum]' + (id ? ` [ref. ${id}]` : ''), err.stack || err.message);
   }
   sendJson(res, status, payload);
 }

@@ -45,6 +45,15 @@ test('la revocacion hecha por otra instancia se nota cuando vence el cache', asy
   assert.strictEqual(await s.vigente(sid), false);
 });
 
+test('olvidarUsuario descarta el cache: un cambio en la base se ve al instante', async () => {
+  const b = baseFalsa();
+  const s = crearSesiones({ db: b.db, ahora: () => 0 });
+  await s.usuarioLocal('ana');
+  b.usuarios.set('ana', { username: 'ana', role: 'lectura', cuit_allow: null, debe_cambiar: false });
+  s.olvidarUsuario('ana');
+  assert.strictEqual((await s.usuarioLocal('ana')).role, 'lectura');
+});
+
 test('un sid inexistente o vacio no esta vigente', async () => {
   const s = crearSesiones({ db: baseFalsa().db });
   assert.strictEqual(await s.vigente('no-existe'), false);
@@ -55,10 +64,10 @@ test('el rol de un usuario local sale de la base, y un usuario borrado devuelve 
   const b = baseFalsa();
   let t = 0;
   const s = crearSesiones({ db: b.db, ahora: () => t });
-  assert.deepStrictEqual(await s.usuarioLocal('ana'), { role: 'admin', cuitAllow: null });
+  assert.deepStrictEqual(await s.usuarioLocal('ana'), { role: 'admin', cuitAllow: null, debeCambiar: false });
   b.usuarios.set('ana', { username: 'ana', role: 'lectura', cuit_allow: ['20111111112'] });
   t += 31000;
-  assert.deepStrictEqual(await s.usuarioLocal('ana'), { role: 'lectura', cuitAllow: ['20111111112'] });
+  assert.deepStrictEqual(await s.usuarioLocal('ana'), { role: 'lectura', cuitAllow: ['20111111112'], debeCambiar: false });
   b.usuarios.delete('ana');
   t += 31000;
   assert.strictEqual(await s.usuarioLocal('ana'), null);
