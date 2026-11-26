@@ -524,3 +524,46 @@ test('una corrida que termina bien no pide ni guarda pantalla', async () => {
   assert.strictEqual(pedidas, 0);
   assert.deepStrictEqual(repo.capturas, {});
 });
+
+test('analisis: trae del repo desde el periodo anterior y calcula con los filtros validados', async () => {
+  const repo = repoFalso();
+  let pedido;
+  repo.paraAnalisis = async (cuit, desde, hasta) => {
+    pedido = [cuit, desde, hasta];
+    return [{ tipo: 'emitido', fecha: '2026-11-02', cbte_tipo: 11, doc_nro: '30500000001', contraparte: 'X', total: 100 }];
+  };
+  const s = mc.crear({ repo, fisherboy: fisherboyFalso([]), vault, webhooks: webhooks(), ahora: () => new Date('2026-11-25T15:00:00Z') });
+  const a = await s.analisis('20-26363074-3', { tipo: 'emitido', clase: 'facturas', contraparte: '30500000001' });
+  assert.deepStrictEqual(a.periodo, { desde: '2025-12-01', hasta: '2026-11-25' });
+  assert.deepStrictEqual(pedido, ['20263630743', a.anterior.desde, '2026-11-25']);
+  assert.strictEqual(a.kpis.facturado, 100);
+  for (const malo of [{ clase: 'x' }, { tipo: 'todo' }, { cbte: 'abc' }, { desde: '2026-12-01', hasta: '2026-01-01' }, { desde: '2015-01-01', hasta: '2026-01-01' }]) {
+    await assert.rejects(() => s.analisis('20263630743', malo), (e) => e.httpStatus === 400, JSON.stringify(malo));
+  }
+});
+
+test('listado: los filtros del clic llegan como condiciones SQL con parametros (nunca texto pegado)', () => {
+  const { condicionesListado } = mc;
+  const { where, vals } = condicionesListado('20263630743', { tipo: 'recibido', desde: '2026-11-01', hasta: '2026-11-30', clase: 'nc', contraparte: '30711111118', q: "o'brien" });
+  assert.match(where, /cuit = \$1/);
+  assert.match(where, /tipo = \$2/);
+  assert.match(where, /cbte_tipo = ANY\(\$\d+::int\[\]\)/);
+  assert.match(where, /doc_nro = \$\d+/);
+  assert.match(where, /contraparte ILIKE \$\d+/);
+  assert.ok(!where.includes("o'brien"), 'el texto va como parametro');
+  assert.ok(vals.includes('%o\'brien%'));
+  assert.deepStrictEqual(vals.find(Array.isArray), [3, 8, 13, 21, 53, 110, 112, 113, 114, 203, 208, 213]);
+  const fac = condicionesListado('20263630743', { clase: 'facturas' });
+  assert.match(fac.where, /NOT \(cbte_tipo = ANY/);
+});
+
+test('hayComprobantes: con alcance por CUIT pregunta solo por esos; admin, por todos', async () => {
+  const repo = repoFalso();
+  const pedidos = [];
+  repo.hayComprobantes = async (cuits) => { pedidos.push(cuits); return true; };
+  const { s } = servicio(repo, fisherboyFalso([]));
+  assert.strictEqual(await s.hayComprobantes({ role: 'operador', cuitAllow: ['30711111118'] }), true);
+  assert.strictEqual(await s.hayComprobantes({ role: 'admin', cuitAllow: ['30711111118'] }), true);
+  assert.strictEqual(await s.hayComprobantes({ role: 'lectura' }), true);
+  assert.deepStrictEqual(pedidos, [['30711111118'], null, null]);
+});

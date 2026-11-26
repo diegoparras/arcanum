@@ -13,6 +13,8 @@
 
 const { RECETA_DEFAULT, DOMINIOS, OK_AUTOMATICO } = require('./misComprobantes.receta');
 const { desdeArchivo } = require('./mcParser');
+const { analizar, periodoPorDefecto, periodoAnterior } = require('./mcAnalisis');
+const { NOTAS_CREDITO, NOTAS_DEBITO } = require('./tiposCbte');
 
 const ESTADOS_VIVOS = ['iniciando', 'corriendo', 'esperando_humano', 'humano', 'esperando_ok'];
 const TIPOS = { emitidos: 'emitido', recibidos: 'recibido' };
@@ -50,6 +52,51 @@ function dia(s) {
 /** Fecha de hoy en Argentina (UTC-3), AAAA-MM-DD. */
 function hoyAr(d) { return iso(new Date(d.getTime() - 3 * 3600000)); }
 function ddmmaaaa(s) { const [a, m, d] = s.split('-'); return `${d}/${m}/${a}`; }
+
+const CLASES = ['facturas', 'nc', 'nd'];
+const MAX_DIAS_ANALISIS = 5 * 366;
+
+/** Filtros extra del listado y del analisis (los del clic): validados, o error 400. */
+function filtrosExtra(o = {}) {
+  const f = {};
+  if (o.clase) {
+    if (!CLASES.includes(o.clase)) throw err(`Clase invalida: ${o.clase} (facturas, nc o nd)`, 400);
+    f.clase = o.clase;
+  }
+  if (o.cbte != null && o.cbte !== '') {
+    if (!/^\d{1,4}$/.test(String(o.cbte))) throw err('Tipo de comprobante invalido', 400);
+    f.cbte = Number(o.cbte);
+  }
+  if (o.contraparte) {
+    const d = String(o.contraparte).replace(/\D/g, '');
+    if (!d || d.length > 13) throw err('Contraparte invalida (CUIT o documento)', 400);
+    f.contraparte = d;
+  }
+  if (o.q) f.q = String(o.q).slice(0, 80);
+  return f;
+}
+
+/** WHERE del listado con todos los filtros como parametros (nada de texto pegado al SQL). */
+function condicionesListado(cuit, { tipo, desde, hasta, clase, cbte, contraparte, q } = {}) {
+  const cond = ['cuit = $1'];
+  const vals = [cuit];
+  const p = (v) => { vals.push(v); return `$${vals.length}`; };
+  if (tipo) cond.push(`tipo = ${p(tipo)}`);
+  if (desde) cond.push(`fecha >= ${p(desde)}`);
+  if (hasta) cond.push(`fecha <= ${p(hasta)}`);
+  if (cbte) cond.push(`cbte_tipo = ${p(Number(cbte))}`);
+  if (clase === 'nc') cond.push(`cbte_tipo = ANY(${p([...NOTAS_CREDITO])}::int[])`);
+  if (clase === 'nd') cond.push(`cbte_tipo = ANY(${p([...NOTAS_DEBITO])}::int[])`);
+  if (clase === 'facturas') cond.push(`NOT (cbte_tipo = ANY(${p([...NOTAS_CREDITO, ...NOTAS_DEBITO])}::int[]))`);
+  if (contraparte) cond.push(`doc_nro = ${p(String(contraparte))}`);
+  if (q) {
+    const escapado = String(q).replace(/[\\%_]/g, (m) => `\\${m}`);
+    const texto = p(`%${escapado}%`);
+    const digitos = String(q).replace(/\D/g, '');
+    cond.push(digitos.length >= 3 ? `(contraparte ILIKE ${texto} OR doc_nro LIKE ${p(`%${digitos}%`)})` : `contraparte ILIKE ${texto}`);
+  }
+  return { where: cond.join(' AND '), vals };
+}
 
 /** Parte [desde, hasta] en tramos de a lo sumo `maxDias` dias (ARCA limita el rango). */
 function tramos(desde, hasta, maxDias = TRAMO_DIAS) {
@@ -194,15 +241,25 @@ function repoSql() {
     async borrarReceta() {
       await db.query("DELETE FROM settings WHERE key = 'mc_receta'");
     },
-    async listar(cuit, { tipo, desde, hasta, limite = 500 } = {}) {
-      const cond = ['cuit = $1'];
-      const vals = [cuit];
-      if (tipo) { vals.push(tipo); cond.push(`tipo = $${vals.length}`); }
-      if (desde) { vals.push(desde); cond.push(`fecha >= $${vals.length}`); }
-      if (hasta) { vals.push(hasta); cond.push(`fecha <= $${vals.length}`); }
-      vals.push(Math.min(Number(limite) || 500, 5000));
+    async listar(cuit, filtros = {}) {
+      const { where, vals } = condicionesListado(cuit, filtros);
+      vals.push(Math.min(Number(filtros.limite) || 500, 5000));
       const { rows } = await db.query(
-        `SELECT * FROM mc_comprobantes WHERE ${cond.join(' AND ')} ORDER BY fecha DESC, id DESC LIMIT $${vals.length}`, vals);
+        `SELECT * FROM mc_comprobantes WHERE ${where} ORDER BY fecha DESC, id DESC LIMIT $${vals.length}`, vals);
+      return rows;
+    },
+    // cuits: null = cualquiera; si no, solo esos (alcance de la persona).
+    async hayComprobantes(cuits) {
+      const { rows } = cuits
+        ? await db.query('SELECT EXISTS (SELECT 1 FROM mc_comprobantes WHERE cuit = ANY($1::text[])) AS hay', [cuits])
+        : await db.query('SELECT EXISTS (SELECT 1 FROM mc_comprobantes) AS hay');
+      return !!(rows[0] && rows[0].hay);
+    },
+    // Solo las columnas que usa el analisis; el periodo y el anterior en una sola consulta.
+    async paraAnalisis(cuit, desde, hasta) {
+      const { rows } = await db.query(
+        `SELECT tipo, fecha, cbte_tipo, doc_nro, contraparte, tipo_cambio, iva, total
+           FROM mc_comprobantes WHERE cuit = $1 AND fecha >= $2 AND fecha <= $3 LIMIT 200000`, [cuit, desde, hasta]);
       return rows;
     },
     async corridas(cuit, limite = 20) {
@@ -505,8 +562,22 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     return si ? fisherboy.ok(fila.token_fb) : fisherboy.no(fila.token_fb);
   }
 
+  /** Totales, graficos y subtotales de lo bajado (vista Analisis). Por defecto, 12 meses. */
+  async function analisis(cuit, o = {}) {
+    const c = cuitDe(cuit);
+    const def = periodoPorDefecto(dia(hoyAr(ahora())));
+    const desde = o.desde ? iso(dia(o.desde)) : def.desde;
+    const hasta = o.hasta ? iso(dia(o.hasta)) : def.hasta;
+    if (desde > hasta) throw err('"desde" es posterior a "hasta"', 400);
+    if ((dia(hasta) - dia(desde)) / 86400000 > MAX_DIAS_ANALISIS) throw err('El periodo del analisis no puede pasar de 5 años', 400);
+    if (o.tipo && !['emitido', 'recibido'].includes(o.tipo)) throw err('Tipo invalido (emitido o recibido)', 400);
+    const ant = periodoAnterior({ desde, hasta });
+    const filas = await repo.paraAnalisis(c, ant.desde, hasta);
+    return analizar(filas, { desde, hasta, tipo: o.tipo || undefined, ...filtrosExtra(o) });
+  }
+
   async function exportarCsv(cuit, filtros) {
-    const filas = await repo.listar(cuitDe(cuit), { ...filtros, limite: 5000 });
+    const filas = await repo.listar(cuitDe(cuit), { ...filtros, ...filtrosExtra(filtros), limite: 5000 });
     const cols = ['tipo', 'fecha', 'cbte_tipo', 'punto_venta', 'numero_desde', 'numero_hasta', 'cae', 'doc_tipo', 'doc_nro', 'contraparte', 'moneda', 'tipo_cambio', 'neto_gravado', 'no_gravado', 'exento', 'iva', 'total'];
     const esc = (v) => {
       const s = v == null ? '' : (v instanceof Date ? iso(v) : String(v));
@@ -523,7 +594,14 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     /** Al arrancar: las corridas que seguian vivas perdieron su seguimiento (estaba en memoria). */
     marcarHuerfanas: async () => repo.marcarHuerfanas('Arcanum se reinicio durante la corrida: volve a sincronizar'),
     corrida: async (id) => repo.corrida(Number(id)),
-    listar: async (cuit, filtros) => repo.listar(cuitDe(cuit), filtros),
+    listar: async (cuit, filtros = {}) => repo.listar(cuitDe(cuit), { ...filtros, ...filtrosExtra(filtros) }),
+    analisis,
+    /** Hay algo bajado que esta persona pueda ver: decide si la UI muestra "Analisis". */
+    hayComprobantes: async (principal = {}) => {
+      const admin = ['superadmin', 'admin'].includes(principal.role);
+      const allow = !admin && Array.isArray(principal.cuitAllow) && principal.cuitAllow.length ? principal.cuitAllow : null;
+      return repo.hayComprobantes(allow);
+    },
     corridas: async (cuit, limite) => repo.corridas(cuitDe(cuit), limite),
     conSincronizacion: async () => repo.conSincronizacion(),
     exportarCsv,
@@ -543,4 +621,4 @@ function servicio() {
   return porDefecto;
 }
 
-module.exports = { crear, servicio, tramos, cuitDe, progresoDe, iaPorEntorno, ESTADOS_VIVOS, RECETA_DEFAULT };
+module.exports = { crear, servicio, tramos, cuitDe, progresoDe, iaPorEntorno, condicionesListado, ESTADOS_VIVOS, RECETA_DEFAULT };

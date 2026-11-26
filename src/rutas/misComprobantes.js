@@ -11,6 +11,7 @@
 //   GET      /api/mis-comprobantes/corridas/:id/captura pantalla del robot al fallar (JPEG, 404 si no hay)
 //   POST     /api/mis-comprobantes/corridas/:id/{evento,tomar-control,devolver}
 //   GET      /api/mis-comprobantes/:cuit                comprobantes bajados (cualquier rol, con scope)
+//   GET      /api/mis-comprobantes/:cuit/analisis       totales, graficos y subtotales (mismos filtros)
 //   GET      /api/mis-comprobantes/:cuit/export.csv
 //   GET      /api/mis-comprobantes/:cuit/corridas
 //   GET      /api/mis-comprobantes/:cuit/rango?tipo=      proxima sincronizacion (incremental)
@@ -151,9 +152,15 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
     assertCuitAllowed(principal, cuit);
     const q = url.searchParams;
     const filtros = { tipo: q.get('tipo') || undefined, desde: q.get('desde') || undefined, hasta: q.get('hasta') || undefined, limite: q.get('limite') || undefined };
+    // Los del clic en el analisis: filtran igual el analisis, el listado y el CSV.
+    for (const k of ['clase', 'cbte', 'contraparte', 'q']) if (q.get(k)) filtros[k] = q.get(k);
 
     if (req.method === 'GET' && !seg[3]) {
       return json(res, 200, { ok: true, cuit, comprobantes: await servicio().listar(cuit, filtros) });
+    }
+    if (req.method === 'GET' && seg[3] === 'analisis' && !seg[4]) {
+      const f = Object.fromEntries(Object.entries(filtros).filter(([k, v]) => k !== 'limite' && v !== undefined));
+      return json(res, 200, { ok: true, cuit, analisis: await servicio().analisis(cuit, f) });
     }
     if (req.method === 'GET' && seg[3] === 'export.csv') {
       const csv = await servicio().exportarCsv(cuit, filtros);

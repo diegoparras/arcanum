@@ -293,7 +293,9 @@ async function route(req, res, url) {
     // funciones: que partes opcionales estan disponibles, para que la UI no muestre secciones
     // que no pueden andar (Mis Comprobantes sin Fisherboy configurado).
     const misComprobantes = await require('./services/fisherboy').configurado();
-    return sendJson(res, 200, { ok: true, usuario: principal, funciones: { misComprobantes } });
+    // Analisis: solo si hay comprobantes bajados de algun CUIT que esta persona puede ver.
+    const analisis = await require('./services/misComprobantes').servicio().hayComprobantes(principal).catch(() => false);
+    return sendJson(res, 200, { ok: true, usuario: principal, funciones: { misComprobantes, analisis } });
   }
 
   // Mis Comprobantes (via Fisherboy) y la conexion con Fisherboy: ver src/rutas/misComprobantes.js

@@ -3,6 +3,26 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.2] - 2026-11-25
+
+### Agregado
+- **Análisis de Mis Comprobantes**, con su propio ícono en la barra lateral (aparece cuando hay
+  comprobantes bajados). Para el período elegido muestra:
+  - indicadores: facturado (con las notas de crédito restadas y la variación contra el período
+    anterior), notas de crédito, comprado, IVA crédito y débito, y resultado bruto;
+  - un gráfico por mes de lo facturado contra lo comprado;
+  - los principales clientes y proveedores, con cuánto pesa el primero;
+  - los totales por tipo de comprobante y del período;
+  - los subtotales por mes y contraparte, que se abren y se cierran.
+
+  Todo filtra con un clic: un mes, un cliente o proveedor, un tipo o un indicador. Cada filtro
+  queda como un chip para sacarlo, y el listado de abajo y el CSV siguen los mismos filtros.
+  También se filtra por período (12 meses, este mes, este año, año anterior o a medida), por
+  clase (facturas, notas de crédito, notas de débito) y por texto (nombre o CUIT). La moneda
+  extranjera se pasa a pesos al tipo de cambio del comprobante.
+- API: `GET /api/mis-comprobantes/:cuit/analisis`. El listado y el CSV aceptan `clase`, `cbte`,
+  `contraparte` y `q`, siempre como parámetros de SQL.
+
 ## [2.1.1] - 2026-11-25
 
 > Requiere **Fisherboy 1.12.0** o superior (paso de receta `fetch`). Actualizá Fisherboy antes.

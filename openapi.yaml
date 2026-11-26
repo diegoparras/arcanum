@@ -534,9 +534,28 @@ paths:
         - { name: desde, in: query, schema: { type: string, format: date } }
         - { name: hasta, in: query, schema: { type: string, format: date } }
         - { name: limite, in: query, schema: { type: integer, maximum: 5000 } }
+        - { name: clase, in: query, schema: { type: string, enum: [facturas, nc, nd] } }
+        - { name: cbte, in: query, description: Tipo de comprobante de ARCA, schema: { type: integer } }
+        - { name: contraparte, in: query, description: CUIT o documento de la contraparte, schema: { type: string } }
+        - { name: q, in: query, description: Texto en el nombre o digitos del CUIT de la contraparte, schema: { type: string, maxLength: 80 } }
       responses: { '200': { description: comprobantes } }
+  /api/mis-comprobantes/{cuit}/analisis:
+    get:
+      tags: [Mis Comprobantes]
+      summary: Totales, comparacion con el periodo anterior, evolucion por mes, principales clientes y proveedores, tipos y subtotales
+      description: Acepta los mismos filtros que el listado. Sin desde/hasta, los ultimos 12 meses. Importes en pesos con signo (las notas de credito restan); el periodo no puede pasar de 5 años.
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string } }
+        - { name: tipo, in: query, schema: { type: string, enum: [emitido, recibido] } }
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+        - { name: clase, in: query, schema: { type: string, enum: [facturas, nc, nd] } }
+        - { name: cbte, in: query, schema: { type: integer } }
+        - { name: contraparte, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string, maxLength: 80 } }
+      responses: { '200': { description: analisis }, '400': { description: filtro o periodo invalido }, '403': { description: CUIT fuera del alcance } }
   /api/mis-comprobantes/{cuit}/export.csv:
-    get: { tags: [Mis Comprobantes], summary: Lo mismo en CSV (separador punto y coma), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: CSV } } }
+    get: { tags: [Mis Comprobantes], summary: Lo mismo en CSV (separador punto y coma), con los mismos filtros, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: CSV } } }
   /api/mis-comprobantes/{cuit}/corridas:
     get: { tags: [Mis Comprobantes], summary: Historial de sincronizaciones, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: corridas } } }
   /api/mis-comprobantes/{cuit}/credencial:

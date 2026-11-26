@@ -192,3 +192,17 @@ test('pantalla del error: JPEG sin cache, 404 si no hay, y respeta el cuit_allow
     assert.strictEqual(r.status, 403);
   });
 });
+
+test('analisis: pasa los filtros al servicio y respeta el cuit_allow', async () => {
+  const mc = mcFalso();
+  mc.analisis = async (cuit, f) => { mc.llamadas.push(['analisis', cuit, f]); return { kpis: { facturado: 1 } }; };
+  await conServidor(LECTURA, { mc, fisherboy: fbFalso() }, async (base) => {
+    const r = await pedir(base, 'GET', '/api/mis-comprobantes/20263630743/analisis?tipo=emitido&desde=2026-01-01&hasta=2026-11-30&clase=nc&cbte=13&contraparte=30500000001&q=uba');
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual((await r.json()).analisis.kpis.facturado, 1);
+    assert.deepStrictEqual(mc.llamadas.at(-1), ['analisis', '20263630743', { tipo: 'emitido', desde: '2026-01-01', hasta: '2026-11-30', clase: 'nc', cbte: '13', contraparte: '30500000001', q: 'uba' }]);
+  });
+  await conServidor(OPERADOR, { mc, fisherboy: fbFalso() }, async (base) => {
+    assert.strictEqual((await pedir(base, 'GET', '/api/mis-comprobantes/20263630743/analisis')).status, 403);
+  });
+});

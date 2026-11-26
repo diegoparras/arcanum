@@ -64,6 +64,42 @@
   button.ghost svg,nav button svg{width:16px;height:16px}
   /* Botones de icono del header (rayitas y kebab): planos, sin recuadro. */
   .mc-avance{margin:10px 0 0;font-size:13px;color:var(--text)}
+  /* Analisis de Mis Comprobantes: emitidos con el acento, recibidos con una segunda serie. */
+  :root{--serie2:#b45309} :root[data-theme="dark"]{--serie2:#e0a34a}
+  .mca-filtros{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .mca-filtros select,.mca-filtros input{width:auto}
+  .mca-seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .mca-seg button{border:0;border-radius:0;padding:7px 12px}
+  .mca-seg button.on{background:var(--accent);color:var(--on-accent)}
+  .mca-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .mca-chip{font-size:12px;padding:3px 4px 3px 10px;border-radius:999px;background:var(--field-bg);border:1px solid var(--field-border);display:inline-flex;align-items:center;gap:2px}
+  .mca-chip button{border:0;background:none;padding:0 6px;font-size:15px;line-height:1;color:var(--muted);cursor:pointer}
+  .mca-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
+  .mca-kpi{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;font:inherit;color:inherit}
+  .mca-kpi:hover{border-color:var(--accent)}
+  .mca-kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .mca-kpi .val{font-size:20px;font-weight:650;font-family:var(--mono);margin-top:4px}
+  .mca-kpi .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .mca-meses{display:flex;align-items:flex-end;gap:6px;height:170px;border-bottom:1px solid var(--line);margin-top:10px}
+  .mca-mes{flex:1;display:flex;align-items:flex-end;justify-content:center;gap:2px;height:100%;background:none;border:0;padding:0;cursor:pointer;border-radius:6px 6px 0 0}
+  .mca-mes:hover{background:var(--card)}
+  .mca-mes i{display:block;width:40%;max-width:18px;border-radius:4px 4px 0 0}
+  .mca-e{background:var(--accent)} .mca-r{background:var(--serie2)}
+  .mca-ejes{display:flex;gap:6px;margin-top:6px} .mca-ejes span{flex:1;text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono)}
+  .mca-ley{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted)} .mca-ley i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .mca-top button{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;width:100%;background:none;border:0;padding:6px 6px;text-align:left;cursor:pointer;border-radius:8px;font:inherit;color:inherit}
+  .mca-top button:hover{background:var(--card)}
+  .mca-top .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .mca-top .m{font-family:var(--mono);font-size:12.5px}
+  .mca-top .b{grid-column:1/-1;height:6px;border-radius:3px;background:var(--card)} .mca-top .b i{display:block;height:100%;border-radius:3px}
+  .mca-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin-top:14px}
+  .mca-2 > .card{min-width:0}
+  tr.mca-click{cursor:pointer} tr.mca-click:hover td{background:var(--card)}
+  tr.mca-grupo td{font-weight:600;background:var(--card)}
+  .mca-tog{background:none;border:0;padding:0 6px 0 0;cursor:pointer;color:var(--muted);font:inherit}
+  .mca-tog svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+  .mca-link{background:none;border:0;padding:0;cursor:pointer;color:var(--accent-ink);font:inherit;font-weight:600}
+  @media(max-width:760px){.mca-2{grid-template-columns:minmax(0,1fr)} .mca-meses{gap:2px}}
   .iconbtn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:9px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;transition:color .15s,background-color .15s}
   .iconbtn:hover{color:var(--ink);background:var(--card);border-color:transparent;box-shadow:none}
   .iconbtn:focus-visible{outline:none;box-shadow:var(--ring)}
@@ -214,6 +250,7 @@ const NAV_ICON={
   contingencia:NI('<path d="M12 4 3 20h18z"/><path d="M12 10v4M12 17h.01"/>'),
   clientes:NI('<circle cx="9" cy="8" r="3.5"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6 6 0 0 1 3 5.5"/>'),
   mis:NI('<path d="M7 18a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 18 9.5a4 4 0 0 1 0 8.5"/><path d="M12 11v9M9 17l3 3 3-3"/>'),
+  analisis:NI('<path d="M4 20h16"/><rect x="5" y="12" width="3.2" height="6" rx="1"/><rect x="10.4" y="6" width="3.2" height="12" rx="1"/><rect x="15.8" y="9" width="3.2" height="9" rx="1"/>'),
   recibidas:NI('<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="m9.5 14 2 2 3.5-4"/>'),
   servicios:NI('<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>'),
   generador:NI('<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>'),
@@ -223,12 +260,13 @@ const NAV_ICON={
 const NAV=[
   [null,[['panel','Panel']]],
   ['Facturar',[['emitir','Emitir'],['facturador','Facturador'],['comprobantes','Comprobantes'],['contingencia','Contingencia']]],
-  ['ARCA',[['clientes','Clientes'],['mis','Mis Comprobantes'],['recibidas','Facturas recibidas'],['servicios','Servicios'],['generador','Generador']]],
+  ['ARCA',[['clientes','Clientes'],['mis','Mis Comprobantes'],['analisis','Análisis'],['recibidas','Facturas recibidas'],['servicios','Servicios'],['generador','Generador']]],
   ['Administración',[['webhooks','Webhooks'],['usuarios','Usuarios']]],
 ];
 const VIEWS=NAV.flatMap(g=>g[1]);
-// Secciones que dependen de algo opcional: Mis Comprobantes necesita Fisherboy configurado.
-function disponible(v){return v!=='mis'||!!FUNC.misComprobantes;}
+// Secciones que dependen de algo opcional: Mis Comprobantes necesita Fisherboy configurado, y
+// Análisis aparece cuando hay comprobantes bajados.
+function disponible(v){if(v==='mis')return !!FUNC.misComprobantes;if(v==='analisis')return !!FUNC.analisis;return true;}
 function renderNav(cur){
   const admin=['superadmin','admin'].includes(ME.role);
   $('#nav').innerHTML=NAV.map(([grupo,items])=>{
@@ -261,7 +299,7 @@ function medirTopbar(){const h=document.querySelector('#appView header');if(h&&h
 addEventListener('resize',()=>{medirTopbar();if(!navMovil())cerrarNavMovil();else syncNavBtn();});
 addEventListener('keydown',e=>{if(e.key==='Escape'&&document.documentElement.getAttribute('data-nav-movil')==='abierto')cerrarNavMovil();});
 let VISTA='panel';
-function go(v){if(!disponible(v))v='panel';if(navMovil())cerrarNavMovil();if(typeof mcPararTimers==='function')mcPararTimers();if(typeof faPararTimers==='function')faPararTimers();VISTA=v;renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,recibidas:vRecibidas,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();if(v==='panel'||!['clientes','servicios','emitir','facturador','comprobantes','mis','recibidas','contingencia','generador','webhooks','usuarios'].includes(v))setTimeout(()=>{if(typeof avisoMasterKey==='function')avisoMasterKey();},600);}
+function go(v){if(!disponible(v))v='panel';if(navMovil())cerrarNavMovil();if(typeof mcPararTimers==='function')mcPararTimers();if(typeof faPararTimers==='function')faPararTimers();VISTA=v;renderNav(v);location.hash=v;const el=$('#view');if(el)el.innerHTML='<p class="hint">Cargando…</p>';({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,facturador:vFacturador,comprobantes:vComprobantes,mis:vMis,analisis:vAnalisis,recibidas:vRecibidas,contingencia:vContingencia,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();if(v==='panel'||!['clientes','servicios','emitir','facturador','comprobantes','mis','analisis','recibidas','contingencia','generador','webhooks','usuarios'].includes(v))setTimeout(()=>{if(typeof avisoMasterKey==='function')avisoMasterKey();},600);}
 
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; FUNC=me.funciones||{}; }catch(e){ showLogin(); return; }
@@ -605,7 +643,7 @@ async function vMis(){
    </div>
    <div class="card" style="margin-top:14px"><h3 style="text-transform:none">Monotributo</h3><div id="mc_mono" class="hint">Cargando…</div></div>
    <h2>Sincronizaciones</h2><div class="card" id="mc_corridas"><p class="hint">Cargando…</p></div>
-   <h2>Comprobantes</h2>
+   <div class="row" style="justify-content:space-between;align-items:baseline"><h2>Comprobantes</h2>${FUNC.analisis?'<button class="ghost" onclick="go(\'analisis\')">Ver análisis</button>':''}</div>
    <div class="card"><div class="row">
      <select id="mc_ftipo" style="width:auto"><option value="">Todos</option><option value="emitido">Emitidos</option><option value="recibido">Recibidos</option></select>
      <input id="mc_fdesde" type="date" style="width:auto"><input id="mc_fhasta" type="date" style="width:auto">
@@ -617,6 +655,43 @@ async function vMis(){
   if(!/^\d{11}$/.test(MC.cuit)){['mc_cred','mc_mono','mc_corridas','mc_tabla'].forEach(id=>$('#'+id).innerHTML='<p class="hint">Elegí un CUIT.</p>');return;}
   mcCredencial(admin);mcMonotributo();mcCorridas(true);mcCargarTabla();mcRango();
   if(admin)api('/api/fisherboy/salud').then(r=>{$('#mc_fbsalud').textContent=r.fisherboy.ok?`Fisherboy ${r.fisherboy.version||''} conectado`:`Fisherboy: ${r.fisherboy.error||'no responde'}`;}).catch(()=>{});
+}
+/* ---------- ANÁLISIS de Mis Comprobantes (sección propia en la barra lateral) ---------- */
+async function vAnalisis(){
+  mcPararTimers();
+  const v=$('#view');let tenants=[];try{({tenants}=await api('/api/tenants'));}catch{}
+  const opera=['superadmin','admin','operador'].includes(ME.role);
+  MC.cuit=MC.cuit||(tenants[0]&&tenants[0].cuit)||'';
+  v.innerHTML=`<h2>Análisis</h2>
+   <p class="hint">Totales, gráficos y subtotales de lo bajado de Mis Comprobantes. Tocá una barra, un cliente, un tipo o un indicador para filtrar; el listado de abajo y el CSV siguen los mismos filtros.</p>
+   <div class="card"><div class="row"><div style="flex:1;min-width:220px"><label>CUIT</label>
+     <input id="mc_cuit" class="mono" list="mc_cuits" value="${esc(MC.cuit)}" placeholder="11 dígitos"></div>
+     <datalist id="mc_cuits">${tenants.map(t=>`<option value="${t.cuit}">${esc(t.nombre||'')}</option>`).join('')}</datalist>
+     <button style="margin-top:26px" onclick="MC.cuit=$('#mc_cuit').value.replace(/\\D/g,'');vAnalisis()">Ver</button></div></div>
+   <div class="card" style="margin-top:14px">
+     <div class="mca-filtros">
+       <div class="mca-seg" id="mca_seg" role="group" aria-label="Emitidos o recibidos">
+         <button type="button" data-v="" class="on">Ambos</button><button type="button" data-v="emitido">Emitidos</button><button type="button" data-v="recibido">Recibidos</button></div>
+       <select id="mca_per" aria-label="Período" onchange="mcaPeriodo(this.value)"><option value="12m">Últimos 12 meses</option><option value="mes">Este mes</option><option value="anio">Este año</option><option value="anioant">Año anterior</option><option value="custom">Personalizado</option></select>
+       <input id="mc_fdesde" type="date" aria-label="Desde" onchange="mcaFechaManual()"><input id="mc_fhasta" type="date" aria-label="Hasta" onchange="mcaFechaManual()">
+       <select id="mca_clase" aria-label="Clase de comprobante" onchange="MCA.f.clase=this.value;mcAplicar()"><option value="">Todos los tipos</option><option value="facturas">Facturas</option><option value="nc">Notas de crédito</option><option value="nd">Notas de débito</option></select>
+       <input id="mca_q" placeholder="Cliente, proveedor o CUIT" style="flex:1;min-width:180px" onkeydown="if(event.key==='Enter'){MCA.f.q=this.value.trim();mcAplicar();}">
+       <button type="button" onclick="MCA.f.q=$('#mca_q').value.trim();mcAplicar()">Filtrar</button>
+     </div>
+     <div class="mca-chips" id="mca_chips"></div>
+     <div id="mca_cuerpo"><p class="hint">Cargando…</p></div>
+   </div>
+   <h2>Comprobantes</h2>
+   <div class="card"><div class="row">
+     <span class="hint" id="mc_tabla_resumen">Con los filtros del análisis.</span>
+     <span style="margin-left:auto" class="row"><button onclick="mcExportar()">Exportar CSV</button>
+     <button ${opera?'':'disabled'} onclick="mcConstatar()">Constatar recibidos</button></span></div>
+     <div id="mc_const"></div>
+     <div id="mc_tabla" style="margin-top:10px;overflow-x:auto"><p class="hint">Cargando…</p></div></div>`;
+  if(!/^\d{11}$/.test(MC.cuit)){['mc_tabla','mca_cuerpo'].forEach(id=>$('#'+id).innerHTML='<p class="hint">Elegí un CUIT.</p>');return;}
+  $('#mca_seg').querySelectorAll('button').forEach(b=>{b.classList.toggle('on',b.dataset.v===MCA.f.tipo);b.onclick=()=>{MCA.f.tipo=b.dataset.v;mcAplicar();};});
+  $('#mca_clase').value=MCA.f.clase;$('#mca_q').value=MCA.f.q;mcaPeriodo(MCA.per||'12m',true);
+  mcAplicar();
 }
 async function mcCredencial(admin){
   try{const {credencial:c,diaria:dd}=await api(`/api/mis-comprobantes/${MC.cuit}/credencial`);
@@ -697,7 +772,7 @@ function mcSeguir(id){
       $('#mc_devolver').classList.toggle('hidden',!humano);
       const av=$('#mc_vivo_avance'),ta=mcAvance(c);av.textContent=ta;av.classList.toggle('hidden',!ta);av.title=c.progreso&&c.progreso.error?`Error del paso: ${c.progreso.error}`:'';
       $('#mc_vivo_motivo').textContent=pideOk?`Fisherboy frenó antes de tocar «${(c.progreso&&c.progreso.ok&&c.progreso.ok.texto)||'un botón'}» porque podría no deshacerse${c.progreso&&c.progreso.ok&&c.progreso.ok.motivo?` (${c.progreso.ok.motivo})`:''}. Mirá la pantalla y decidí: «Sí, dale» lo toca, «No» lo cancela.`:c.estado==='esperando_humano'?'ARCA pide a una persona (captcha o segundo factor). Resolvelo en la pantalla y después tocá "Devolver a la receta".':c.estado==='error'?(c.error||''):c.estado==='terminado'?`Listo: ${c.cantidad} comprobantes.`:'';
-      if(!MC_VIVOS.includes(c.estado)){mcPararTimers();mcCorridas(false);mcCargarTabla();mcMonotributo();mcRango();}
+      if(!MC_VIVOS.includes(c.estado)){mcPararTimers();mcCorridas(false);mcAplicar();mcMonotributo();mcRango();if(c.estado==='terminado'&&!FUNC.analisis)refrescarFunciones();}
     }catch{}
   };
   const foto=async()=>{
@@ -723,12 +798,129 @@ async function mcOk(si){
 async function mcControl(accion){
   try{await api(`/api/mis-comprobantes/corridas/${MC.corrida}/${accion}`,{method:'POST'});toast(accion==='devolver'?'Control devuelto':'Tenés el control');}catch(e){toast(e.message,true);}
 }
-function mcFiltros(){const q=new URLSearchParams();const t=$('#mc_ftipo').value,d=$('#mc_fdesde').value,h=$('#mc_fhasta').value;if(t)q.set('tipo',t);if(d)q.set('desde',d);if(h)q.set('hasta',h);return q.toString();}
+/* ----- Análisis: un solo juego de filtros para el análisis, el listado y el CSV. Cada barra,
+   fila o indicador filtra con un clic y queda como chip para sacarlo. ----- */
+const MCA={f:{tipo:'',clase:'',cbte:'',cbteNombre:'',contraparte:'',contraparteNombre:'',contraparteLado:'',q:''},per:'12m',desde:'',hasta:'',mesPrevio:null,abiertos:null};
+const MESES_CORTO=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const MESES_LARGO=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const mcaMesCorto=m=>`${MESES_CORTO[+m.slice(5,7)-1]} ${m.slice(2,4)}`;
+const mcaMesLargo=m=>`${MESES_LARGO[+m.slice(5,7)-1]} ${m.slice(0,4)}`;
+function mcaPlata(n,corto){const v=Number(n||0),a=Math.abs(v),s=v<0?'−':'';
+  if(!corto)return `${s}$ ${a.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  if(a>=1e6)return `${s}$ ${(a/1e6).toLocaleString('es-AR',{maximumFractionDigits:1})} M`;
+  if(a>=1e4)return `${s}$ ${Math.round(a/1e3).toLocaleString('es-AR')} mil`;
+  return `${s}$ ${Math.round(a).toLocaleString('es-AR')}`;}
+const I_CHEV_R='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>',I_CHEV_D='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+function mcaContraparteEl(el){mcaContraparte(el.dataset.doc,el.dataset.nombre,el.dataset.lado);}
+const mcaPct=x=>`${(x*100).toLocaleString('es-AR',{maximumFractionDigits:1})}%`;
+function mcaPeriodo(per,silencioso){
+  const hoy=new Date(),y=hoy.getFullYear(),m=hoy.getMonth(),f=d=>isoHoy(new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())));
+  let d=MCA.desde,h=MCA.hasta;
+  if(per==='12m'){d=f(new Date(y,m-11,1));h=f(hoy);}else if(per==='mes'){d=f(new Date(y,m,1));h=f(hoy);}
+  else if(per==='anio'){d=`${y}-01-01`;h=f(hoy);}else if(per==='anioant'){d=`${y-1}-01-01`;h=`${y-1}-12-31`;}
+  MCA.per=per;MCA.mesPrevio=null;$('#mca_per').value=per;$('#mc_fdesde').value=d||'';$('#mc_fhasta').value=h||'';
+  if(!silencioso)mcAplicar();
+}
+/* En Mis Comprobantes el listado usa sus propios filtros; en Análisis, los del análisis. */
+function mcFiltros(){const q=new URLSearchParams();const d=$('#mc_fdesde').value,h=$('#mc_fhasta').value;
+  if(!$('#mca_seg')){const t=$('#mc_ftipo')&&$('#mc_ftipo').value;if(t)q.set('tipo',t);if(d)q.set('desde',d);if(h)q.set('hasta',h);return q.toString();}
+  const f=MCA.f;if(f.tipo)q.set('tipo',f.tipo);if(d)q.set('desde',d);if(h)q.set('hasta',h);
+  for(const k of ['clase','cbte','contraparte','q'])if(f[k])q.set(k,f[k]);
+  return q.toString();}
+function mcaChips(){
+  const f=MCA.f,ch=[];
+  if(MCA.mesPrevio)ch.push(['mes',`Mes: ${mcaMesLargo($('#mc_fdesde').value)}`]);
+  if(f.contraparte)ch.push(['contraparte',`${f.contraparteLado==='recibido'?'Proveedor':f.contraparteLado==='emitido'?'Cliente':'Contraparte'}: ${f.contraparteNombre||f.contraparte}`]);
+  if(f.cbte)ch.push(['cbte',`Tipo: ${f.cbteNombre||f.cbte}`]);
+  if(f.clase)ch.push(['clase',{facturas:'Solo facturas',nc:'Solo notas de crédito',nd:'Solo notas de débito'}[f.clase]]);
+  if(f.q)ch.push(['q',`Búsqueda: ${f.q}`]);
+  $('#mca_chips').innerHTML=ch.map(([k,t])=>`<span class="mca-chip">${escA(t)}<button type="button" aria-label="Quitar filtro ${escA(t)}" onclick="mcaQuitar('${k}')">&times;</button></span>`).join('')
+    +(ch.length>1?'<button type="button" class="ghost" style="padding:3px 8px;font-size:12px" onclick="mcaLimpiar()">Limpiar filtros</button>':'');
+}
+function mcaQuitar(k){const f=MCA.f;
+  if(k==='mes'&&MCA.mesPrevio){const p=MCA.mesPrevio;MCA.per=p.per;$('#mca_per').value=p.per;$('#mc_fdesde').value=p.desde;$('#mc_fhasta').value=p.hasta;MCA.mesPrevio=null;}
+  if(k==='contraparte'){f.contraparte=f.contraparteNombre=f.contraparteLado='';}
+  if(k==='cbte'){f.cbte=f.cbteNombre='';}
+  if(k==='clase'){f.clase='';$('#mca_clase').value='';}
+  if(k==='q'){f.q='';$('#mca_q').value='';}
+  mcAplicar();}
+function mcaLimpiar(){MCA.f={tipo:MCA.f.tipo,clase:'',cbte:'',cbteNombre:'',contraparte:'',contraparteNombre:'',contraparteLado:'',q:''};$('#mca_clase').value='';$('#mca_q').value='';mcaPeriodo('12m');}
+function mcaMes(mes){
+  if(!MCA.mesPrevio)MCA.mesPrevio={per:MCA.per,desde:$('#mc_fdesde').value,hasta:$('#mc_fhasta').value};
+  const [y,m]=mes.split('-').map(Number),fin=new Date(Date.UTC(y,m,0)).getUTCDate();
+  MCA.per='custom';$('#mca_per').value='custom';$('#mc_fdesde').value=`${mes}-01`;$('#mc_fhasta').value=`${mes}-${String(fin).padStart(2,'0')}`;mcAplicar();}
+function mcaContraparte(doc,nombre,lado){Object.assign(MCA.f,{contraparte:doc,contraparteNombre:nombre,contraparteLado:lado});mcAplicar();}
+function mcaTipo(lado,cbte){Object.assign(MCA.f,{tipo:lado,cbte:String(cbte),cbteNombre:NOMBRE_TIPO[cbte]||String(cbte)});mcAplicar();}
+function mcaKpi(tipo,clase){MCA.f.tipo=tipo;MCA.f.clase=clase||'';$('#mca_clase').value=MCA.f.clase;mcAplicar();}
+function mcaFechaManual(){MCA.mesPrevio=null;MCA.per='custom';$('#mca_per').value='custom';mcAplicar();}
+function mcAplicar(){
+  if(!$('#mca_seg')){mcCargarTabla();return;}
+  MCA.desde=$('#mc_fdesde').value;MCA.hasta=$('#mc_fhasta').value;
+  $('#mca_seg').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===MCA.f.tipo));
+  mcaChips();mcAnalisis();mcCargarTabla();}
+async function mcAnalisis(){
+  const box=$('#mca_cuerpo');if(!box)return;
+  try{const {analisis:a}=await api(`/api/mis-comprobantes/${MC.cuit}/analisis?${mcFiltros()}`);
+    const filtrado=MCA.f.contraparte||MCA.f.cbte||MCA.f.clase||MCA.f.q||MCA.f.tipo||MCA.mesPrevio;
+    if(!a.total.cantidad){box.innerHTML=`<p class="hint" style="margin-top:12px">${filtrado?'No hay comprobantes con estos filtros.':'Todavía no hay comprobantes bajados en este período. Cuando sincronices Mis Comprobantes, acá vas a ver totales, gráficos y subtotales.'}</p>`;return;}
+    box.innerHTML=mcaKpis(a)+mcaMeses(a)+`<div class="mca-2">${mcaTop('Principales clientes',a.clientes,'emitido')}${mcaTop('Principales proveedores',a.proveedores,'recibido')}</div>`
+      +`<div class="mca-2">${mcaTipos(a)}<div class="card"><h3 style="text-transform:none;margin-top:0">Totales del período</h3>${mcaTotales(a)}</div></div>`+mcaSubtotales(a);
+  }catch(e){box.innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+function mcaKpis(a){const k=a.kpis,var_=k.variacion;
+  const comp=var_==null?'sin datos del período anterior':`${var_>=0?'+':'−'}${mcaPct(Math.abs(var_))} vs período anterior`;
+  const kpi=(label,val,sub,onclick,titulo)=>`<button type="button" class="mca-kpi" onclick="${onclick}" title="${escA(titulo)}"><div class="label">${label}</div><div class="val">${val}</div><div class="sub">${sub}</div></button>`;
+  return `<div class="mca-kpis">
+    ${kpi('Facturado',mcaPlata(k.facturado,true),`<span style="color:${var_==null?'var(--muted)':var_>=0?'var(--ok)':'var(--bad)'}">${comp}</span>`,"mcaKpi('emitido')",`${mcaPlata(k.facturado)} en ${k.cantEmitidos} comprobantes, notas de crédito restadas. Clic: ver solo emitidos.`)}
+    ${kpi('Notas de crédito',mcaPlata(k.notasCredito,true),k.facturado>0?`${mcaPct(k.notasCredito/(k.facturado+k.notasCredito))} de lo facturado`:'emitidas',"mcaKpi('emitido','nc')",`${mcaPlata(k.notasCredito)}. Clic: ver solo las notas de crédito emitidas.`)}
+    ${kpi('Comprado',mcaPlata(k.comprado,true),`${k.cantRecibidos} ${k.cantRecibidos===1?'comprobante':'comprobantes'} recibidos`,"mcaKpi('recibido')",`${mcaPlata(k.comprado)}. Clic: ver solo recibidos.`)}
+    ${kpi('IVA crédito fiscal',mcaPlata(k.ivaCredito,true),`débito ${mcaPlata(k.ivaDebito,true)}`,"mcaKpi('recibido')",`Crédito ${mcaPlata(k.ivaCredito)} (recibidos) · Débito ${mcaPlata(k.ivaDebito)} (emitidos).`)}
+    ${kpi('Resultado bruto',mcaPlata(k.resultado,true),'facturado menos comprado',"mcaKpi('')",`${mcaPlata(k.resultado)}. No incluye sueldos, impuestos ni gastos sin comprobante. Clic: ver emitidos y recibidos.`)}
+  </div>`;}
+function mcaMeses(a){const max=Math.max(1,...a.porMes.map(m=>Math.max(m.emitido,m.recibido)));
+  const alto=v=>v>0?Math.max(2,Math.round(v/max*100)):0;
+  const ver=t=>!MCA.f.tipo||MCA.f.tipo===t;
+  const cols=a.porMes.map(m=>`<button type="button" class="mca-mes" onclick="mcaMes('${m.mes}')" title="${escA(`${mcaMesLargo(m.mes)} · Facturado ${mcaPlata(m.emitido)} (${m.cantEmitidos}) · Comprado ${mcaPlata(m.recibido)} (${m.cantRecibidos}). Clic: ver este mes.`)}" aria-label="${escA(`Ver ${mcaMesLargo(m.mes)}`)}">
+      ${ver('emitido')?`<i class="mca-e" style="height:${alto(m.emitido)}%"></i>`:''}${ver('recibido')?`<i class="mca-r" style="height:${alto(m.recibido)}%"></i>`:''}</button>`).join('');
+  return `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3 style="text-transform:none;margin:0">Por mes</h3>
+    <div class="mca-ley">${ver('emitido')?'<span><i class="mca-e"></i>Facturado</span>':''}${ver('recibido')?'<span><i class="mca-r"></i>Comprado</span>':''}<span>Máximo: ${mcaPlata(max,true)}</span></div></div>
+    <div class="mca-meses">${cols}</div><div class="mca-ejes">${a.porMes.map(m=>`<span>${mcaMesCorto(m.mes)}</span>`).join('')}</div>
+    <p class="hint" style="margin:8px 0 0">Tocá un mes para ver solo ese mes.</p></div>`;}
+function mcaTop(titulo,r,lado){
+  if(!r.items.length)return `<div class="card"><h3 style="text-transform:none;margin-top:0">${titulo}</h3><p class="hint">Sin ${lado==='emitido'?'emitidos':'recibidos'} con estos filtros.</p></div>`;
+  const max=Math.max(1,...r.items.map(x=>x.total),r.otros.total),cls=lado==='emitido'?'mca-e':'mca-r';
+  const fila=(x)=>`<button type="button" data-doc="${escA(x.docNro)}" data-nombre="${escA(x.nombre)}" data-lado="${lado}" onclick="mcaContraparteEl(this)" title="${escA(`${x.nombre} ${x.docNro} · ${mcaPlata(x.total)} en ${x.cantidad} comprobantes. Clic: filtrar.`)}">
+      <span class="n">${esc(x.nombre||x.docNro)}</span><span class="m">${mcaPlata(x.total,true)}</span><span class="b"><i class="${cls}" style="width:${Math.max(1,Math.round(Math.max(0,x.total)/max*100))}%"></i></span></button>`;
+  const otros=r.otros.cantidad?`<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;padding:6px"><span class="n hint">Otros: ${r.otros.contrapartes} ${r.otros.contrapartes===1?'contraparte':'contrapartes'}, ${r.otros.cantidad} ${r.otros.cantidad===1?'comprobante':'comprobantes'}</span><span class="m hint mono">${mcaPlata(r.otros.total,true)}</span></div>`:'';
+  const conc=r.concentracion!=null&&r.items.length>1?`<p class="hint" style="margin:6px 0 0">El primero es el ${mcaPct(r.concentracion)} del total.</p>`:'';
+  return `<div class="card"><h3 style="text-transform:none;margin-top:0">${titulo}</h3><div class="mca-top">${r.items.map(fila).join('')}${otros}</div>${conc}</div>`;}
+function mcaTipos(a){
+  return `<div class="card" style="overflow-x:auto"><h3 style="text-transform:none;margin-top:0">Por tipo de comprobante</h3><table><tr><th>Lado</th><th>Tipo</th><th>Cant.</th><th style="text-align:right">Total</th></tr>
+    ${a.porTipo.map(t=>`<tr class="mca-click" tabindex="0" onclick="mcaTipo('${t.tipo}',${t.cbteTipo})" onkeydown="if(event.key==='Enter')this.click()" title="Clic: filtrar por este tipo"><td>${t.tipo==='emitido'?'Emitido':'Recibido'}</td><td>${esc(NOMBRE_TIPO[t.cbteTipo]||t.cbteTipo)}</td><td class="mono">${t.cantidad}</td><td class="mono" style="text-align:right">${mcaPlata(t.total)}</td></tr>`).join('')}</table></div>`;}
+function mcaTotales(a){const k=a.kpis,t=a.total;
+  const fila=(l,v)=>`<tr><td>${l}</td><td class="mono" style="text-align:right">${v}</td></tr>`;
+  return `<table>${fila('Comprobantes',t.cantidad)}${fila('Facturado',mcaPlata(k.facturado))}${fila('Notas de crédito emitidas',mcaPlata(-k.notasCredito))}${fila('Comprado',mcaPlata(k.comprado))}${fila('IVA débito',mcaPlata(k.ivaDebito))}${fila('IVA crédito',mcaPlata(k.ivaCredito))}${fila('Saldo de IVA (débito − crédito)',mcaPlata(k.ivaDebito-k.ivaCredito))}${fila('Resultado bruto',mcaPlata(k.resultado))}</table>
+    <p class="hint" style="margin:8px 0 0">Período ${esc(a.periodo.desde.split('-').reverse().join('/'))} a ${esc(a.periodo.hasta.split('-').reverse().join('/'))}. Importes en pesos; la moneda extranjera, al tipo de cambio del comprobante.</p>`;}
+function mcaSubtotales(a){
+  if(!MCA.abiertos)MCA.abiertos=new Set(a.subtotales.slice(0,2).map(g=>g.mes+'|'+g.tipo));
+  const filas=a.subtotales.map((g,i)=>{const k=g.mes+'|'+g.tipo,ab=MCA.abiertos.has(k),lado=g.tipo==='emitido'?'Emitidos':'Recibidos';
+    const cab=`<tr class="mca-grupo"><td><button type="button" class="mca-tog" aria-expanded="${ab}" aria-label="${ab?'Cerrar':'Abrir'} ${escA(mcaMesLargo(g.mes))}" onclick="mcaToggle('${k}')">${ab?I_CHEV_D:I_CHEV_R}</button><button type="button" class="mca-link" onclick="mcaMes('${g.mes}')" title="Clic: ver solo este mes">${esc(mcaMesLargo(g.mes))}</button> <span class="hint">· ${lado}</span></td><td class="mono">${g.cantidad}</td><td class="mono" style="text-align:right">${mcaPlata(g.neto)}</td><td class="mono" style="text-align:right">${mcaPlata(g.iva)}</td><td class="mono" style="text-align:right">${mcaPlata(g.total)}</td></tr>`;
+    const hijos=ab?g.contrapartes.map(x=>`<tr class="mca-click" tabindex="0" data-doc="${escA(x.docNro)}" data-nombre="${escA(x.nombre)}" data-lado="${g.tipo}" onclick="mcaContraparteEl(this)" onkeydown="if(event.key==='Enter')this.click()" title="Clic: filtrar por esta contraparte"><td style="padding-left:34px">${esc(x.nombre||'')} <span class="hint mono">${esc(x.docNro||'')}</span></td><td class="mono">${x.cantidad}</td><td class="mono" style="text-align:right">${mcaPlata(x.neto)}</td><td class="mono" style="text-align:right">${mcaPlata(x.iva)}</td><td class="mono" style="text-align:right">${mcaPlata(x.total)}</td></tr>`).join(''):'';
+    return cab+hijos;}).join('');
+  return `<div class="card" style="margin-top:14px;overflow-x:auto"><div class="row" style="justify-content:space-between"><h3 style="text-transform:none;margin:0">Subtotales por mes y contraparte</h3>
+    <span class="row"><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaToggleTodos(true)">Abrir todos</button><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaToggleTodos(false)">Cerrar todos</button></span></div>
+    <table style="margin-top:8px"><tr><th>Mes / contraparte</th><th>Cant.</th><th style="text-align:right">Neto</th><th style="text-align:right">IVA</th><th style="text-align:right">Total</th></tr>${filas}
+    <tr class="mca-grupo"><td>Total del período</td><td class="mono">${a.total.cantidad}</td><td class="mono" style="text-align:right">${mcaPlata(a.total.neto)}</td><td class="mono" style="text-align:right">${mcaPlata(a.total.iva)}</td><td class="mono" style="text-align:right">${mcaPlata(a.total.total)}</td></tr></table>
+    ${MCA.f.tipo?'':'<p class="hint" style="margin:8px 0 0">El total suma emitidos y recibidos; elegí Emitidos o Recibidos arriba para ver cada lado por separado.</p>'}</div>`;}
+function mcaToggle(k){MCA.abiertos.has(k)?MCA.abiertos.delete(k):MCA.abiertos.add(k);mcAnalisis();}
+function mcaToggleTodos(abrir){if(!abrir){MCA.abiertos=new Set();mcAnalisis();return;}
+  api(`/api/mis-comprobantes/${MC.cuit}/analisis?${mcFiltros()}`).then(({analisis:a})=>{MCA.abiertos=new Set(a.subtotales.map(g=>g.mes+'|'+g.tipo));mcAnalisis();}).catch(()=>{});}
 const NOMBRE_TIPO={1:'Factura A',2:'ND A',3:'NC A',6:'Factura B',7:'ND B',8:'NC B',11:'Factura C',12:'ND C',13:'NC C',51:'Factura M',201:'FCE A',206:'FCE B',211:'FCE C'};
 async function mcCargarTabla(){
   try{const {comprobantes:l}=await api(`/api/mis-comprobantes/${MC.cuit}?${mcFiltros()}`);
     const pesos=n=>Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
     const cons=c=>!c?'<span class="hint">sin constatar</span>':c.apoc&&c.apoc.esApocrifo?'<span class="tag no">APÓCRIFO</span>':c.valido?'<span class="tag ok">OK</span>':'<span class="tag no">NO CONSTA</span>';
+    const r=$('#mc_tabla_resumen');if(r)r.textContent=l.length?`${l.length} ${l.length===1?'comprobante':'comprobantes'} con los filtros del análisis${l.length>=500?' (se muestran los primeros 500; el CSV trae hasta 5000)':''}.`:'Con los filtros del análisis.';
     $('#mc_tabla').innerHTML=l.length?`<table><tr><th>Fecha</th><th>Tipo</th><th>Comprobante</th><th>Contraparte</th><th>Total</th><th>CAE</th><th>Constatación</th></tr>${l.map(f=>`<tr>
       <td class="mono">${String(f.fecha).slice(0,10)}</td><td>${f.tipo==='recibido'?'Recibido':'Emitido'} · ${esc(NOMBRE_TIPO[f.cbte_tipo]||f.cbte_tipo)}</td>
       <td class="mono">${String(f.punto_venta).padStart(4,'0')}-${String(f.numero_desde).padStart(8,'0')}</td>
@@ -835,7 +1027,7 @@ const FA_VEREDICTO={valida:['ok','VÁLIDA','ARCA confirma que el comprobante exi
 const FA_ESTADO={ok:['ok','OK'],revisar:['warn','Revisar'],error:['no','Error'],aprobado:['ok','Aprobado']};
 const FA_CAMPOS=[['tipo','Tipo (código ARCA)'],['letra','Letra'],['punto_venta','Punto de venta'],['numero','Número'],['fecha','Fecha (AAAA-MM-DD)'],['cuit_emisor','CUIT emisor'],['razon_social_emisor','Razón social del emisor'],['condicion_iva_emisor','Condición de IVA del emisor'],['doc_nro_receptor','Documento del receptor'],['razon_social_receptor','Receptor'],['moneda','Moneda'],['cotizacion','Cotización'],['neto_gravado','Neto gravado'],['no_gravado','No gravado'],['exento','Exento'],['iva_21','IVA 21%'],['iva_10_5','IVA 10,5%'],['iva_27','IVA 27%'],['iva_5','IVA 5%'],['iva_2_5','IVA 2,5%'],['otros_tributos','Otros tributos'],['total','Total'],['cae','CAE'],['vto_cae','Vencimiento del CAE']];
 const FA_ENTEROS=['tipo','punto_venta','numero'];
-const escA=s=>esc(s==null?'':s).replace(/"/g,'&quot;');
+const escA=s=>esc(s==null?'':s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const faPesos=n=>n==null||n===''?'':Number(n).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
 function faPararTimers(){clearTimeout(FA.timer);FA.timer=null;}
 async function faChequearSalud(){
