@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.9] - 2026-11-26
+
+### Agregado
+- **Analisis: bloques plegables.** Tocando el titulo de un bloque (Por mes, Principales clientes y
+  proveedores, Por tipo, Totales, Subtotales, Comprobantes) queda solo la cabecera; **Plegar todo**
+  y **Desplegar todo** arriba. Cuales estan plegados se recuerda en el navegador y se mantiene al
+  cambiar filtros. Los filtros y los indicadores quedan siempre a la vista.
+
+### Corregido
+- La flecha de los desplegables tapaba la ultima letra (por ejemplo, "Todos los tipos"): una regla
+  general les dejaba 10px a la derecha y la flecha necesita 32px.
+
 ## [2.1.8] - 2026-11-26
 
 ### Corregido

@@ -102,6 +102,10 @@
   tr.mca-grupo td{font-weight:600;background:var(--card)}
   .mca-tog{background:none;border:0;padding:0 6px 0 0;cursor:pointer;color:var(--muted);font:inherit}
   .mca-tog svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+  /* Analisis: cada tarjeta con titulo se pliega tocando el titulo (se recuerda en el navegador). */
+  .mca-pleg{cursor:pointer;user-select:none}
+  .card.plegada > :not(.mca-cab){display:none !important}
+  .card.plegada .mca-cab{margin:0 !important}
   .mca-link{background:none;border:0;padding:0;cursor:pointer;color:var(--accent-ink);font:inherit;font-weight:600}
   @media(max-width:760px){.mca-2{grid-template-columns:minmax(0,1fr)} .mca-meses{gap:2px}}
   .iconbtn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:9px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;transition:color .15s,background-color .15s}
@@ -136,6 +140,8 @@
   th{color:var(--muted);font-weight:560;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
   td.mono,.mono{font-family:var(--mono)}
   input,select,textarea{font-family:var(--sans);font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background-color:var(--field-rest);width:100%}
+  /* La flecha del desplegable (escriba-ui.css) va a 11px del borde: el texto no puede llegar hasta ahi. */
+  select{padding-right:32px}
   textarea{font-family:var(--mono);font-size:12px;min-height:120px}
   label{font-size:12px;color:var(--muted);display:block;margin:10px 0 4px}
   .f2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -668,7 +674,8 @@ async function vAnalisis(){
   const opera=['superadmin','admin','operador'].includes(ME.role);
   MC.cuit=MC.cuit||(tenants[0]&&tenants[0].cuit)||'';
   v.innerHTML=`<h2>Análisis</h2>
-   <p class="hint">Totales, gráficos y subtotales de lo bajado de Mis Comprobantes. Tocá una barra, un cliente, un tipo o un indicador para filtrar; el listado de abajo y el CSV siguen los mismos filtros.</p>
+   <p class="hint">Totales, gráficos y subtotales de lo bajado de Mis Comprobantes. Tocá una barra, un cliente, un tipo o un indicador para filtrar; el listado de abajo y el CSV siguen los mismos filtros. Tocá el título de un bloque para plegarlo.</p>
+   <div class="row" style="justify-content:flex-end;margin:-4px 0 8px"><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaPlegarTodo(true)">Plegar todo</button><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaPlegarTodo(false)">Desplegar todo</button></div>
    <div class="card"><div class="row"><div style="flex:1;min-width:220px"><label>CUIT</label>
      <input id="mc_cuit" class="mono" list="mc_cuits" value="${esc(MC.cuit)}" placeholder="11 dígitos"></div>
      <datalist id="mc_cuits">${tenants.map(t=>`<option value="${t.cuit}">${esc(t.nombre||'')}</option>`).join('')}</datalist>
@@ -686,8 +693,7 @@ async function vAnalisis(){
      <div class="mca-chips" id="mca_chips"></div>
      <div id="mca_cuerpo"><p class="hint">Cargando…</p></div>
    </div>
-   <h2>Comprobantes</h2>
-   <div class="card"><div class="row">
+   <div class="card" style="margin-top:14px"><h3 style="text-transform:none;margin:0 0 8px">Comprobantes</h3><div class="row">
      <span class="hint" id="mc_tabla_resumen">Con los filtros del análisis.</span>
      <span style="margin-left:auto" class="row"><button onclick="mcExportar()">Exportar CSV</button>
      <button id="mc_constBtn" ${opera?'':'disabled'} onclick="mcConstatar()" title="Constata con ARCA los recibidos todavía sin constatar que pasan los filtros">Constatar recibidos</button></span></div>
@@ -696,7 +702,7 @@ async function vAnalisis(){
   if(!/^\d{11}$/.test(MC.cuit)){['mc_tabla','mca_cuerpo'].forEach(id=>$('#'+id).innerHTML='<p class="hint">Elegí un CUIT.</p>');return;}
   $('#mca_seg').querySelectorAll('button').forEach(b=>{b.classList.toggle('on',b.dataset.v===MCA.f.tipo);b.onclick=()=>{MCA.f.tipo=b.dataset.v;mcAplicar();};});
   $('#mca_clase').value=MCA.f.clase;$('#mca_q').value=MCA.f.q;mcaPeriodo(MCA.per||'12m',true);
-  mcAplicar();mcConstRetomar();
+  mcAplicar();mcConstRetomar();mcaPlegables($('#view'));
 }
 async function mcCredencial(admin){
   try{const {credencial:c,diaria:dd}=await api(`/api/mis-comprobantes/${MC.cuit}/credencial`);
@@ -870,6 +876,7 @@ async function mcAnalisis(){
     if(!a.total.cantidad){box.innerHTML=`<p class="hint" style="margin-top:12px">${filtrado?'No hay comprobantes con estos filtros.':'Todavía no hay comprobantes bajados en este período. Cuando sincronices Mis Comprobantes, acá vas a ver totales, gráficos y subtotales.'}</p>`;return;}
     box.innerHTML=mcaKpis(a)+mcaMeses(a)+`<div class="mca-2">${mcaTop('Principales clientes',a.clientes,'emitido')}${mcaTop('Principales proveedores',a.proveedores,'recibido')}</div>`
       +`<div class="mca-2">${mcaTipos(a)}<div class="card"><h3 style="text-transform:none;margin-top:0">Totales del período</h3>${mcaTotales(a)}</div></div>`+mcaSubtotales(a);
+    mcaPlegables(box);
   }catch(e){box.innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
 function mcaKpis(a){const k=a.kpis,var_=k.variacion;
@@ -917,6 +924,37 @@ function mcaSubtotales(a){
     <table style="margin-top:8px"><tr><th>Mes / contraparte</th><th>Cant.</th><th style="text-align:right">Neto</th><th style="text-align:right">IVA</th><th style="text-align:right">Total</th></tr>${filas}
     <tr class="mca-grupo"><td>Total del período</td><td class="mono">${a.total.cantidad}</td><td class="mono" style="text-align:right">${mcaPlata(a.total.neto)}</td><td class="mono" style="text-align:right">${mcaPlata(a.total.iva)}</td><td class="mono" style="text-align:right">${mcaPlata(a.total.total)}</td></tr></table>
     ${MCA.f.tipo?'':'<p class="hint" style="margin:8px 0 0">El total suma emitidos y recibidos; elegí Emitidos o Recibidos arriba para ver cada lado por separado.</p>'}</div>`;}
+/* Bloques plegables del Analisis: toda tarjeta con un titulo h3 (directo o dentro de su primera
+   fila) se pliega tocando el titulo; queda solo la cabecera. Cuales estan plegadas se guarda por
+   titulo en este navegador, asi se mantienen al cambiar filtros o al volver. */
+function mcaPlegadas(){try{return new Set(JSON.parse(localStorage.getItem('arcanum.mcaPlegadas')||'[]'));}catch{return new Set();}}
+function mcaGuardarPlegadas(set){try{localStorage.setItem('arcanum.mcaPlegadas',JSON.stringify([...set]));}catch{}}
+function mcaPintarPleg(card){const pl=card.classList.contains('plegada'),b=card.querySelector('.mca-pleg-btn');
+  if(b){b.innerHTML=pl?I_CHEV_R:I_CHEV_D;b.setAttribute('aria-expanded',String(!pl));b.setAttribute('aria-label',`${pl?'Desplegar':'Plegar'} ${card.dataset.pleg}`);}}
+function mcaPlegables(root){
+  if(!root)return;const cerr=mcaPlegadas();
+  root.querySelectorAll('.card').forEach(card=>{
+    if(card.dataset.pleg)return;
+    const h=[...card.children].find(e=>e.tagName==='H3')||[...card.children].map(e=>e.classList.contains('row')?[...e.children].find(x=>x.tagName==='H3'):null).find(Boolean);
+    if(!h)return;
+    const clave=h.textContent.trim();if(!clave)return;
+    card.dataset.pleg=clave;
+    (h.parentElement===card?h:h.parentElement).classList.add('mca-cab');
+    h.classList.add('mca-pleg');h.title='Plegar o desplegar';
+    const b=document.createElement('button');b.type='button';b.className='mca-tog mca-pleg-btn';
+    h.prepend(b);
+    h.onclick=()=>mcaPlegar(card);
+    h.tabIndex=-1;
+    if(cerr.has(clave))card.classList.add('plegada');
+    mcaPintarPleg(card);
+  });
+}
+function mcaPlegar(card,plegar){
+  const pl=plegar==null?!card.classList.contains('plegada'):plegar;
+  card.classList.toggle('plegada',pl);mcaPintarPleg(card);
+  const set=mcaPlegadas();pl?set.add(card.dataset.pleg):set.delete(card.dataset.pleg);mcaGuardarPlegadas(set);
+}
+function mcaPlegarTodo(plegar){document.querySelectorAll('#view .card[data-pleg]').forEach(c=>mcaPlegar(c,plegar));}
 function mcaToggle(k){MCA.abiertos.has(k)?MCA.abiertos.delete(k):MCA.abiertos.add(k);mcAnalisis();}
 function mcaToggleTodos(abrir){if(!abrir){MCA.abiertos=new Set();mcAnalisis();return;}
   api(`/api/mis-comprobantes/${MC.cuit}/analisis?${mcFiltros()}`).then(({analisis:a})=>{MCA.abiertos=new Set(a.subtotales.map(g=>g.mes+'|'+g.tipo));mcAnalisis();}).catch(()=>{});}
