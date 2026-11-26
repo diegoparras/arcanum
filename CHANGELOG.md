@@ -3,6 +3,13 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.5] - 2026-11-26
+
+### Corregido
+- **DESPLIEGUE.md, Factorum:** decía que un `403` al constatar era por usar una clave de rol
+  `lectura`. Desde la 2.1.0 esa clave alcanza: un `403` es un CUIT que no está entre los
+  permitidos de la clave.
+
 ## [2.1.4] - 2026-11-26
 
 ### Corregido

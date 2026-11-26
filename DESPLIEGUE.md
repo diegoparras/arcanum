@@ -216,7 +216,7 @@ cuando Factorum responde.
 **Primera prueba**: en **Facturas recibidas -> Verificar una factura**, subí una factura real
 recibida. Tiene que volver `VALIDA` (o `NO VERIFICABLE` si al CUIT consultante le falta WSCDC). Si
 dice que ARCA no respondio, revisá en Arcanum el uso de la clave de Factorum (boton **Uso**): un
-`403` es una clave de rol `lectura` o un CUIT que no esta en su lista.
+`403` es un CUIT que no esta en la lista de CUITs permitidos de esa clave (el rol `lectura` alcanza).
 
 ## Prueba de emision en homologacion (antes de facturar en produccion)
 
