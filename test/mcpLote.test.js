@@ -38,10 +38,10 @@ test('cada herramienta del lote pasa por antes/despues con su propio CUIT', asyn
 test('si el limite corta a mitad del lote, las que siguen devuelven error y no se ejecutan', async () => {
   let ejecutadas = 0; let n = 0;
   const herr = [{ ...HERR[0], ejecutar: async () => { ejecutadas += 1; return {}; } }];
-  const ctx = { antesDeHerramienta: () => { n += 1; if (n > 2) throw Object.assign(new Error('Limite de pedidos de esta clave alcanzado'), { httpStatus: 429 }); } };
+  const ctx = { antesDeHerramienta: () => { n += 1; if (n > 2) throw Object.assign(new Error('Límite de pedidos de esta clave alcanzado'), { httpStatus: 429 }); } };
   const s = crearServidor({ nombre: 'a', version: '1', herramientas: herr });
   const r = await s.atender(JSON.stringify([llamada(1, 'a'), llamada(2, 'b'), llamada(3, 'c'), llamada(4, 'd')]), ctx);
   assert.strictEqual(ejecutadas, 2);
-  assert.ok(r[2].error && /Limite/.test(r[2].error.message));
+  assert.ok(r[2].error && /Límite/.test(r[2].error.message));
   assert.ok(r[3].error);
 });

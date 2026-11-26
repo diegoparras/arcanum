@@ -1,12 +1,20 @@
 node_modules/
 .env
+
 # Datos sensibles: NUNCA commitear certificados, claves, tokens, backups ni secretos generados.
 data/
-# Informe de auditoria (hallazgos de seguridad): no publicar
-AUDIT-*.md
 *.key
 *.crt
 *.pem
 *.csr
+
+# Informes de auditoría (hallazgos de seguridad): no se publican.
+AUDIT-*.md
+
+# Material de trabajo local.
 .superpowers/
+docs/superpowers/
 muestras/
+
+# Cuadros sueltos de revisión del video (video.py --cuadros).
+docs/fuentes/video/cuadro-*.png

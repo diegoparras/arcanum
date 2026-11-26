@@ -40,14 +40,14 @@ function extraerClave(headers = {}) {
 function normDias(v, campo, max) {
   if (v === undefined || v === null || v === '') return null;
   const n = parseInt(v, 10);
-  if (!Number.isFinite(n) || n < 1 || n > max) throw err(`"${campo}" debe ser un numero de 1 a ${max}`, 400);
+  if (!Number.isFinite(n) || n < 1 || n > max) throw err(`"${campo}" debe ser un número de 1 a ${max}`, 400);
   return n;
 }
 
 function normLimite(v) {
   if (v === undefined || v === null || v === '') return null;
   const n = parseInt(v, 10);
-  if (!Number.isFinite(n) || n < 1 || n > 100000) throw err('"limitePorMinuto" debe ser un numero de 1 a 100000', 400);
+  if (!Number.isFinite(n) || n < 1 || n > 100000) throw err('"limitePorMinuto" debe ser un número de 1 a 100000', 400);
   return n;
 }
 
@@ -84,7 +84,7 @@ function nuevaClave() {
 async function crear({ nombre, rol, cuits, venceDias, limitePorMinuto } = {}, creadaPor = null) {
   const n = String(nombre || '').trim().slice(0, 80);
   if (!n) throw err('Falta el nombre de la clave (ej. "SecretarIA")', 400);
-  if (!ROLES.includes(rol)) throw err(`Rol invalido: usa ${ROLES.join(', ')}`, 400);
+  if (!ROLES.includes(rol)) throw err(`Rol inválido: usá ${ROLES.join(', ')}`, 400);
   const { listaCuits, sinCuitsParaAdmin } = require('./permisos');
   const listaCuit = listaCuits(cuits, 'cuits');
   sinCuitsParaAdmin(rol, listaCuit);
@@ -127,7 +127,7 @@ async function rotar(id, { graciaDias } = {}, creadaPor = null) {
   const gracia = graciaDias === undefined || graciaDias === null || graciaDias === ''
     ? GRACIA_DEFAULT
     : parseInt(graciaDias, 10);
-  if (!Number.isFinite(gracia) || gracia < 0 || gracia > 90) throw err('"graciaDias" debe ser un numero de 0 a 90', 400);
+  if (!Number.isFinite(gracia) || gracia < 0 || gracia > 90) throw err('"graciaDias" debe ser un número de 0 a 90', 400);
   return db.tx(async (client) => {
     const { rows: viejas } = await client.query(
       `SELECT ${COLS} FROM api_keys WHERE id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now()) FOR UPDATE`,

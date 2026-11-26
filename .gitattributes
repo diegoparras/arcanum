@@ -1,0 +1,10 @@
+# Los scripts de shell se ejecutan en Linux (contenedores, WSL): siempre con LF.
+*.sh text eol=lf
+
+# Medios y documentos generados: binarios, sin conversión de finales de línea.
+*.png binary
+*.jpg binary
+*.gif binary
+*.mp4 binary
+*.pdf binary
+*.woff2 binary

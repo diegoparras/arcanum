@@ -38,7 +38,7 @@ function conTimeout(promesa, ms) {
   let timer;
   const corte = new Promise((_, reject) => {
     timer = setTimeout(() => {
-      reject(new Error(`ARCA no respondio a tiempo (mas de ${Math.round(ms / 1000)} s). Proba de nuevo en unos minutos.`));
+      reject(new Error(`ARCA no respondió a tiempo (más de ${Math.round(ms / 1000)} s). Probá de nuevo en unos minutos.`));
     }, ms);
   });
   return Promise.race([promesa, corte]).finally(() => clearTimeout(timer));
@@ -102,7 +102,7 @@ function crearServidor({ nombre, titulo, version, herramientas, timeoutMs = 8000
 
   async function atenderUno(msg, ctx) {
     if (!msg || typeof msg !== 'object' || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
-      return rpcError(msg && msg.id, -32600, 'Pedido JSON-RPC invalido');
+      return rpcError(msg && msg.id, -32600, 'Pedido JSON-RPC inválido');
     }
     // Notificaciones (sin id): no llevan respuesta (ej. notifications/initialized).
     if (msg.id === undefined || msg.id === null) return null;
@@ -122,7 +122,7 @@ function crearServidor({ nombre, titulo, version, herramientas, timeoutMs = 8000
       case 'tools/call':
         return llamar(msg.id, msg.params || {}, ctx);
       default:
-        return rpcError(msg.id, -32601, `Metodo no soportado: ${msg.method}`);
+        return rpcError(msg.id, -32601, `Método no soportado: ${msg.method}`);
     }
   }
 
@@ -135,11 +135,11 @@ function crearServidor({ nombre, titulo, version, herramientas, timeoutMs = 8000
     try {
       msg = JSON.parse(raw);
     } catch {
-      return rpcError(null, -32700, 'JSON invalido');
+      return rpcError(null, -32700, 'JSON inválido');
     }
     if (Array.isArray(msg)) {
-      if (!msg.length) return rpcError(null, -32600, 'Lote vacio');
-      if (msg.length > MAX_LOTE) return rpcError(null, -32600, `Lote demasiado grande: maximo ${MAX_LOTE} mensajes por pedido`);
+      if (!msg.length) return rpcError(null, -32600, 'Lote vacío');
+      if (msg.length > MAX_LOTE) return rpcError(null, -32600, `Lote demasiado grande: máximo ${MAX_LOTE} mensajes por pedido`);
       // En orden, de a uno: un lote no multiplica la concurrencia contra ARCA.
       const salidas = [];
       for (const m of msg) {

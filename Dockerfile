@@ -1,6 +1,6 @@
-# Arcanum — imagen minima, sin root, con healthcheck. Patron de la suite Escriba.
+# Arcanum — imagen mínima, sin root, con healthcheck. Patrón de la suite Escriba.
 # Imagen base pinneada por digest para builds reproducibles (node:24-slim, LTS).
-# Dos etapas (auditoria 2026-11-26, B-17): las dependencias se instalan con `npm ci` (exige el
+# Dos etapas (auditoría 2026-11-26, B-17): las dependencias se instalan con `npm ci` (exige el
 # lock) y la imagen final no trae npm ni corepack, que la app no usa.
 FROM node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS dependencias
 WORKDIR /app
@@ -23,10 +23,10 @@ COPY package.json package-lock.json ./
 COPY src ./src
 COPY public ./public
 COPY openapi.yaml ./openapi.yaml
-# Novedades por version: el log de arranque y la UI las leen de aca.
+# Novedades por versión: el log de arranque y la UI las leen de acá.
 COPY CHANGELOG.md ./CHANGELOG.md
 
-# Volumen persistente: certificados de cada CUIT + cache de tokens. El codigo (/app) queda de
+# Volumen persistente: certificados de cada CUIT + cache de tokens. El código (/app) queda de
 # root: el usuario que ejecuta no puede modificarlo.
 RUN mkdir -p /data/certs /data/cache && chown -R node:node /data
 VOLUME ["/data"]

@@ -38,7 +38,7 @@ const leerConfigDeBase = () => conexion.leer();
 function pedir(cfg, method, ruta, { cuerpo, datos, tipo, timeoutMs = TIMEOUT_MS, binario = false } = {}) {
   return new Promise((resolve, reject) => {
     let base;
-    try { base = new URL(cfg.url); } catch { return reject(err('Factorum no esta configurado (URL invalida)', 503)); }
+    try { base = new URL(cfg.url); } catch { return reject(err('Factorum no está configurado (URL inválida)', 503)); }
     const lib = base.protocol === 'https:' ? https : http;
     let payload = datos || null;
     let contentType = tipo;
@@ -64,7 +64,7 @@ function pedir(cfg, method, ruta, { cuerpo, datos, tipo, timeoutMs = TIMEOUT_MS,
       });
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(partes) }));
     });
-    req.on('timeout', () => req.destroy(err('Factorum no respondio a tiempo', 504)));
+    req.on('timeout', () => req.destroy(err('Factorum no respondió a tiempo', 504)));
     req.on('error', (e) => reject(e.httpStatus ? e : err(`No se pudo contactar a Factorum (${e.code || e.message})`, 503)));
     if (payload) req.write(payload);
     req.end();
@@ -78,12 +78,12 @@ function leerJson(body) {
 /** Error de Factorum -> error de Arcanum. 401/403 de Factorum es un problema de configuracion (502). */
 function errorDe(r) {
   const d = leerJson(r.body);
-  if (r.status === 401 || r.status === 403) return err('Factorum rechazo el token de Arcanum: revisa FACTORUM_TOKEN', 502);
-  return err(`Factorum: ${d.error || d.detail || `respondio ${r.status}`}`, r.status >= 500 ? 502 : r.status);
+  if (r.status === 401 || r.status === 403) return err('Factorum rechazó el token de Arcanum: revisá FACTORUM_TOKEN', 502);
+  return err(`Factorum: ${d.error || d.detail || `respondió ${r.status}`}`, r.status >= 500 ? 502 : r.status);
 }
 
 function idValido(id, que = 'id') {
-  if (!/^\d+$/.test(String(id))) throw err(`${que} invalido`, 400);
+  if (!/^\d+$/.test(String(id))) throw err(`${que} inválido`, 400);
   return String(id);
 }
 
@@ -140,7 +140,7 @@ const bool = (v) => (v === undefined || v === null ? undefined : (v === true || 
 function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
   async function cfg() {
     const c = await leerConfig();
-    if (!c || !c.url || !c.token) throw err('Factorum no esta configurado: carga FACTORUM_URL y FACTORUM_TOKEN (o la URL y el token en Ajustes)', 503);
+    if (!c || !c.url || !c.token) throw err('Factorum no está configurado: cargá FACTORUM_URL y FACTORUM_TOKEN (o la URL y el token en Ajustes)', 503);
     return c;
   }
 
@@ -171,7 +171,7 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
     async verificar({ nombre, contenidoBase64, cuitConsultante, ia } = {}) {
       if (!nombre) throw err('Falta "nombre" del archivo', 400);
       const buffer = contenidoDe({ nombre, contenidoBase64 });
-      if (!buffer.length) throw err('El archivo esta vacio', 400);
+      if (!buffer.length) throw err('El archivo está vacío', 400);
       if (buffer.length > MAX_ARCHIVO) throw err(`El archivo supera ${MAX_ARCHIVO / 1024 / 1024} MB`, 413);
       const cuerpo = { nombre: nombreSeguro(nombre), contenido_base64: buffer.toString('base64'), guardar: false };
       if (cuitConsultante) cuerpo.cuit_consultante = String(cuitConsultante);
@@ -204,7 +204,7 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
 
     /** Excel o CSV tal como lo arma Factorum. */
     async exportar(formato, filtros = {}) {
-      if (!['xlsx', 'csv'].includes(formato)) throw err('Formato invalido: xlsx o csv', 400);
+      if (!['xlsx', 'csv'].includes(formato)) throw err('Formato inválido: xlsx o csv', 400);
       return binario(`/api/export.${formato}${query(filtros)}`);
     },
 

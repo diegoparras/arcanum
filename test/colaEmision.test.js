@@ -138,7 +138,7 @@ test('indisponible reprograma con espera creciente', async () => {
   assert.strictEqual(cola.proximoIntento(99, AHORA).getTime(), AHORA.getTime() + 60 * 60000);
 });
 
-test('rechazo es final', async () => {
+test('un rechazo de ARCA es final: el item queda rechazado', async () => {
   const { s } = armar({ autoriza: () => ({ aprobado: false, resultado: 'R', observaciones: [{ code: 10016, message: 'Fecha' }] }) });
   const it = await s.encolar('20263630743', { ...INV }, {});
   const fin = await s.procesar(it.id);

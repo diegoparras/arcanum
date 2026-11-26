@@ -53,7 +53,7 @@ test('parseQr: acepta base64 directo (sin URL)', () => {
   const b64 = Buffer.from(JSON.stringify({ fecha: '2026-11-01', cuit: 20111111112, codAut: 76000000000009, ptoVta: 1, nroCmp: 1, tipoCmp: 11, importe: 1 })).toString('base64');
   assert.strictEqual(parseQr(b64).cae, '76000000000009');
 });
-test('parseQr: rechaza basura', () => {
+test('parseQr: rechaza un texto que no es un QR de ARCA', () => {
   assert.throws(() => parseQr('no-es-un-qr'), /no es un QR/i);
 });
 test('parseQr: rechaza QR sin cuit/codAut', () => {
@@ -69,8 +69,8 @@ test('toXml: escapa los VALORES', () => {
   assert.strictEqual(toXml({ a: '<x>&' }), '<a>&lt;x&gt;&amp;</a>');
 });
 test('toXml: rechaza CLAVES invalidas (inyeccion XML)', () => {
-  assert.throws(() => toXml({ 'x><ar:Otro>hack': 1 }), /Clave invalida/);
-  assert.throws(() => toXml({ '<script>': 1 }), /Clave invalida/);
+  assert.throws(() => toXml({ 'x><ar:Otro>hack': 1 }), /Clave inválida/);
+  assert.throws(() => toXml({ '<script>': 1 }), /Clave inválida/);
 });
 
 // ---------- lotes: helpers puros ----------

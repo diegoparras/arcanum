@@ -26,7 +26,7 @@ function ipCliente(req, proxies = Number(process.env.ARCANUM_PROXIES ?? 1)) {
 
 /** Nombre de usuario de un login: string de 1 a 64 caracteres. */
 function validarUsuario(u) {
-  if (typeof u !== 'string' || !u.length || u.length > 64) throw err('Usuario invalido', 400);
+  if (typeof u !== 'string' || !u.length || u.length > 64) throw err('Usuario inválido', 400);
   return u;
 }
 
@@ -59,10 +59,10 @@ function crearLimiteLogin({ ahora = () => Date.now(), porUsuario = 10, global = 
   return {
     chequear(ip, usuario) {
       const t = ahora();
-      if (ventanaGlobal.hasta > t) throw err('Demasiados intentos de inicio de sesion. Proba en un minuto.', 429);
+      if (ventanaGlobal.hasta > t) throw err('Demasiados intentos de inicio de sesión. Probá en un minuto.', 429);
       for (const k of [claveIp(ip, usuario), claveUsuario(usuario)]) {
         const r = fallos.get(k);
-        if (r && r.hasta > t) throw err('Demasiados intentos. Espera unos minutos.', 429);
+        if (r && r.hasta > t) throw err('Demasiados intentos. Esperá unos minutos.', 429);
       }
     },
     fallo(ip, usuario) {

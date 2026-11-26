@@ -1,14 +1,14 @@
 name: Publicar imagen Docker (GHCR)
 
-# Publica ghcr.io/<owner>/arcanum automaticamente:
+# Publica ghcr.io/<owner>/arcanum automáticamente:
 #  - push a main           -> tags :latest + :X.Y.Z (de package.json) + :sha, y Release vX.Y.Z
-#                             con las notas de esa version del CHANGELOG.md
+#                             con las notas de esa versión del CHANGELOG.md
 #  - tag vX.Y.Z (release)  -> tag :X.Y.Z + :X.Y
-# Cada version dice que cambia: sin su seccion en el CHANGELOG el build no sale.
+# Cada versión dice que cambia: sin su sección en el CHANGELOG el build no sale.
 # Usa el GITHUB_TOKEN del runner: sin tokens manuales.
 #
-# Cadena de suministro (auditoria 2026-11-26, B-17): no se publica nada sin pasar tests, lint y
-# npm audit; las acciones van fijadas por SHA (con la version al lado) y el token del runner solo
+# Cadena de suministro (auditoría 2026-11-26, B-17): no se publica nada sin pasar tests, lint y
+# npm audit; las acciones van fijadas por SHA (con la versión al lado) y el token del runner solo
 # puede escribir en el job que publica.
 
 on:
@@ -43,7 +43,7 @@ jobs:
     needs: verificar
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # crear el tag y el Release de la version
+      contents: write   # crear el tag y el Release de la versión
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

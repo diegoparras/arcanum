@@ -1,0 +1,94 @@
+/* Guías de Arcanum en PDF (A4). Marca: acento #27408b, Inter y JetBrains Mono. */
+@font-face { font-family: Inter; src: url("../../../public/vendor/fonts/inter-var-latin.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: Inter; src: url("../../../public/vendor/fonts/inter-var-latin-ext.woff2") format("woff2"); font-weight: 100 900; unicode-range: U+0100-024F; }
+@font-face { font-family: "JetBrains Mono"; src: url("../../../public/vendor/fonts/jetbrains-mono-latin.woff2") format("woff2"); }
+
+:root {
+  --acento: #27408b; --acento-2: #1d3168; --acento-claro: #e9eefb; --tinta: #1b2233; --suave: #5b6478;
+  --linea: #dde2ec; --fondo-codigo: #0f1730; --ok: #1f8a5b; --aviso: #b06b00; --peligro: #b3261e;
+}
+* { box-sizing: border-box; }
+html { font-size: 10.4pt; }
+body { margin: 0; font-family: Inter, system-ui, sans-serif; color: var(--tinta); line-height: 1.55;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; font-feature-settings: "cv11", "ss01"; }
+
+/* ---------- tapa (se imprime aparte, sin márgenes) ---------- */
+.tapa { width: 210mm; height: 297mm; position: relative; overflow: hidden; color: #fff;
+  background: linear-gradient(160deg, #101a3a 0%, #1b2c63 58%, #27408b 100%); }
+.tapa .grilla { position: absolute; inset: 0; opacity: .12;
+  background-image: linear-gradient(#5d72b5 1px, transparent 1px), linear-gradient(90deg, #5d72b5 1px, transparent 1px);
+  background-size: 12mm 12mm; }
+.tapa .contenido { position: absolute; left: 22mm; right: 22mm; top: 62mm; }
+.tapa .marca { width: 30mm; height: 30mm; }
+.tapa .producto { font-size: 15pt; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; color: #b9c7ee; margin-top: 16mm; }
+.tapa h1 { font-size: 44pt; line-height: 1.02; letter-spacing: -.035em; font-weight: 800; margin: 5mm 0 0; color: #fff; }
+.tapa .bajada { font-size: 14pt; color: #c9d4f2; margin-top: 9mm; max-width: 140mm; line-height: 1.45; }
+.tapa .pie { position: absolute; left: 22mm; right: 22mm; bottom: 20mm; display: flex; justify-content: space-between;
+  font-size: 9.5pt; color: #9fb0dd; border-top: 1px solid rgba(255,255,255,.18); padding-top: 5mm; }
+.tapa .version { display: inline-block; margin-top: 12mm; padding: 2mm 5mm; border-radius: 99px; font-size: 10pt;
+  background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); font-family: "JetBrains Mono", monospace; }
+
+/* ---------- cuerpo ---------- */
+.cuerpo { padding: 0; }
+h1, h2, h3, h4 { color: #101828; letter-spacing: -.02em; line-height: 1.2; break-after: avoid; }
+h1.capitulo { font-size: 24pt; margin: 0 0 4mm; padding-top: 2mm; break-before: page; }
+h1.capitulo .num { display: block; font-size: 10pt; font-weight: 600; letter-spacing: .2em; color: var(--acento);
+  text-transform: uppercase; margin-bottom: 3mm; font-family: "JetBrains Mono", monospace; }
+.capitulo + .bajada { font-size: 12pt; color: var(--suave); margin: 0 0 8mm; max-width: 150mm; }
+h2 { font-size: 14.5pt; margin: 9mm 0 3mm; }
+h3 { font-size: 11.5pt; margin: 6mm 0 2mm; }
+p { margin: 0 0 3mm; }
+ul, ol { margin: 0 0 3.5mm; padding-left: 6mm; }
+li { margin: 0 0 1.4mm; }
+a { color: var(--acento); text-decoration: none; }
+strong { font-weight: 650; color: #0f172a; }
+code { font-family: "JetBrains Mono", monospace; font-size: .86em; background: var(--acento-claro); color: #1d3168;
+  padding: .2mm 1.2mm; border-radius: 1.2mm; }
+pre { font-family: "JetBrains Mono", monospace; font-size: 8.6pt; line-height: 1.55; background: var(--fondo-codigo);
+  color: #e3e9f8; padding: 4.5mm 5mm; border-radius: 3mm; margin: 0 0 4mm; white-space: pre-wrap; overflow-wrap: anywhere; break-inside: avoid; }
+pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+pre .c { color: #7d8bb3; } pre .k { color: #8fb0ff; } pre .s { color: #9be3c2; }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 4.5mm; font-size: 9.2pt; break-inside: auto; }
+thead { display: table-header-group; }
+th { text-align: left; font-weight: 650; color: #101828; background: #f3f5fa; border-bottom: 1.5px solid var(--linea); padding: 2.2mm 2.6mm; }
+td { border-bottom: 1px solid var(--linea); padding: 2.2mm 2.6mm; vertical-align: top; }
+tr { break-inside: avoid; }
+td code, th code { white-space: nowrap; }
+
+.nota, .aviso, .peligro, .tip { border-radius: 3mm; padding: 3.5mm 4.5mm; margin: 0 0 4.5mm; break-inside: avoid;
+  border: 1px solid; font-size: 9.6pt; }
+.nota { background: #eef2fc; border-color: #c8d3f1; }
+.tip { background: #ebf7f1; border-color: #bfe5d1; }
+.aviso { background: #fff6e8; border-color: #f1d5a8; }
+.peligro { background: #fdeceb; border-color: #f3c3bf; }
+.nota b:first-child, .tip b:first-child, .aviso b:first-child, .peligro b:first-child { display: block; margin-bottom: 1mm; }
+
+.pasos { counter-reset: paso; list-style: none; padding: 0; }
+.pasos > li { counter-increment: paso; position: relative; padding-left: 11mm; margin-bottom: 3.2mm; min-height: 7mm; }
+.pasos > li::before { content: counter(paso); position: absolute; left: 0; top: -.3mm; width: 7mm; height: 7mm; border-radius: 50%;
+  background: var(--acento); color: #fff; font-weight: 700; font-size: 9pt; display: flex; align-items: center; justify-content: center; }
+
+figure { margin: 1mm 0 6mm; break-inside: avoid; }
+figure img { width: 100%; border-radius: 2.5mm; border: 1px solid var(--linea); box-shadow: 0 2mm 6mm rgba(16,24,40,.08); display: block; }
+figcaption { font-size: 8.8pt; color: var(--suave); margin-top: 2mm; }
+
+.indice { list-style: none; padding: 0; margin: 4mm 0 0; columns: 1; }
+.indice li { display: flex; align-items: baseline; gap: 3mm; padding: 2.4mm 0; border-bottom: 1px solid var(--linea); font-size: 11pt; }
+.indice .n { font-family: "JetBrains Mono", monospace; color: var(--acento); font-size: 9.5pt; width: 9mm; }
+.indice .d { color: var(--suave); font-size: 9.2pt; margin-left: auto; text-align: right; }
+
+.tarjetas { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin: 0 0 5mm; }
+.tarjeta { border: 1px solid var(--linea); border-radius: 3mm; padding: 4mm 4.5mm; break-inside: avoid; }
+.tarjeta h4 { margin: 0 0 1.5mm; font-size: 10.5pt; }
+.tarjeta p { margin: 0; font-size: 9.2pt; color: var(--suave); }
+
+.diagrama { border: 1px solid var(--linea); border-radius: 3mm; padding: 6mm; margin: 0 0 5mm; background: #fafbfe; break-inside: avoid; }
+.diagrama svg { width: 100%; height: auto; display: block; }
+
+.etiqueta { display: inline-block; font-size: 8pt; font-weight: 650; padding: .4mm 2mm; border-radius: 99px; background: var(--acento-claro); color: var(--acento-2); }
+.dos-col { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+.sin-corte { break-inside: avoid; }
+.contratapa { break-before: page; height: 240mm; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: var(--suave); }
+.contratapa .marca { width: 22mm; height: 22mm; margin-bottom: 6mm; }
+.contratapa h2 { margin: 0 0 2mm; font-size: 18pt; }

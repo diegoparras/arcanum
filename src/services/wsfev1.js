@@ -25,7 +25,7 @@ function fmtDate(d) {
   if (/^\d{8}$/.test(s)) return s;
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}${m[2]}${m[3]}`;
-  throw new SoapError(`Fecha invalida: ${d} (use YYYY-MM-DD)`, 400);
+  throw new SoapError(`Fecha inválida: ${d} (use YYYY-MM-DD)`, 400);
 }
 function todayYmd() {
   const d = new Date();
@@ -160,7 +160,7 @@ function validarImportes(inv) {
   if (Array.isArray(inv.alicuotasIva) && inv.alicuotasIva.length) {
     const sumIva = +inv.alicuotasIva.reduce((a, x) => a + Number(x.importe || 0), 0).toFixed(2);
     if (Math.abs(sumIva - iva) > 0.01) {
-      throw new SoapError(`La suma de IVA por alicuota (${sumIva}) no coincide con importeIva (${iva.toFixed(2)})`, 422);
+      throw new SoapError(`La suma de IVA por alícuota (${sumIva}) no coincide con importeIva (${iva.toFixed(2)})`, 422);
     }
   }
   // Moneda extranjera: la cotizacion es obligatoria y > 0 (ARCA la valida).
@@ -425,7 +425,7 @@ async function registrarAdoptado(cuit, consultado, cuerpo, idem) {
     'SELECT idempotency_key FROM comprobantes WHERE cuit = $1 AND entorno = $2 AND punto_venta = $3 AND tipo_cbte = $4 AND numero = $5',
     [c, config.env, consultado.puntoVenta, consultado.tipoComprobante, consultado.numero]);
   if (ya.rows[0] && ya.rows[0].idempotency_key !== idem) {
-    throw new SoapError(`El numero ${consultado.numero} ya esta registrado en Arcanum para otra venta: revisa antes de emitir`, 409);
+    throw new SoapError(`El número ${consultado.numero} ya está registrado en Arcanum para otra venta: revisá antes de emitir`, 409);
   }
   const raw = {
     ...cuerpo,
@@ -559,7 +559,7 @@ const PARAMS = {
 
 async function getParams(cuit, name) {
   const p = PARAMS[name];
-  if (!p) throw new SoapError(`Parametro desconocido: ${name}`, 404);
+  if (!p) throw new SoapError(`Parámetro desconocido: ${name}`, 404);
   return getParam(cuit, p.method, p.item);
 }
 

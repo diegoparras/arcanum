@@ -182,7 +182,7 @@ test('si ARCA rechaza el login, la credencial queda bloqueada y no se reintenta'
   const c = await s.sincronizar('20263630743', { tipo: 'ambos', desde: '2026-11-01', hasta: '2026-11-18' });
   await s.seguir(c.id);
   assert.strictEqual(repo.rechazo.cuit, '20263630743');
-  assert.match(repo.corridas[c.id].error, /ARCA rechazo el ingreso/);
+  assert.match(repo.corridas[c.id].error, /ARCA rechazó el ingreso/);
   assert.strictEqual(w.eventos.filter(([e]) => e === 'mis_comprobantes_fallo').length, 1);
   // ambos tipos: no siguio con "recibidos" despues del rechazo
   assert.strictEqual(Object.keys(repo.corridas).length, 1);
@@ -192,7 +192,7 @@ test('credencial rechazada frena sincronizar hasta que se vuelva a cargar la cla
   const repo = repoFalso({ credencial: { cuit: '20263630743', cuit_login: '20263630743', clave_cifrada: 'cif:x', rechazada_at: new Date(), rechazo_motivo: 'clave incorrecta' } });
   const { s } = servicio(repo, fisherboyFalso([TERMINADO]));
   await assert.rejects(s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' }),
-    (e) => e.httpStatus === 409 && /volve a cargar la clave/i.test(e.message));
+    (e) => e.httpStatus === 409 && /volvé a cargar la clave/i.test(e.message));
   const st = await s.estadoCredencial('20263630743');
   assert.ok(st.rechazada);
 });
@@ -242,7 +242,7 @@ test('al arrancar, las corridas vivas huerfanas quedan en error', async () => {
   repo.marcarHuerfanas = async (motivo) => { repo.huerfanas = motivo; return 2; };
   const { s } = servicio(repo, fisherboyFalso([TERMINADO]));
   assert.strictEqual(await s.marcarHuerfanas(), 2);
-  assert.match(repo.huerfanas, /reinicio/);
+  assert.match(repo.huerfanas, /reinició/);
 });
 
 // --- avance visible y corte por falta de avance --------------------------------
@@ -364,7 +364,7 @@ test('responderOk reenvia si/no a Fisherboy solo si la corrida esta esperando el
   await s.responderOk(c.id, false);
   assert.deepStrictEqual([fb.oks, fb.nos], [['tok-9'], ['tok-9']]);
   repo.corridas[c.id].estado = 'corriendo';
-  await assert.rejects(() => s.responderOk(c.id, true), /no esta esperando/i);
+  await assert.rejects(() => s.responderOk(c.id, true), /no está esperando/i);
 });
 
 test('Mis Comprobantes se abre por el buscador del portal, nunca por un link de la pagina', () => {

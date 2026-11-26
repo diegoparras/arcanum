@@ -22,12 +22,12 @@ function signTRA(traXml, certPem, keyPem) {
   try {
     cert = forge.pki.certificateFromPem(certPem);
   } catch (e) {
-    throw new Error('Certificado invalido o ilegible (PEM): ' + e.message);
+    throw new Error('Certificado inválido o ilegible (PEM): ' + e.message);
   }
   try {
     key = forge.pki.privateKeyFromPem(keyPem);
   } catch (e) {
-    throw new Error('Clave privada invalida o protegida por passphrase (PEM): ' + e.message);
+    throw new Error('Clave privada inválida o protegida por passphrase (PEM): ' + e.message);
   }
 
   const p7 = forge.pkcs7.createSignedData();

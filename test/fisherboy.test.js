@@ -41,7 +41,7 @@ test('iniciar manda Bearer y body', async () => {
 
 test('sin configurar da 503', async () => {
   const c = crearCliente({ leerConfig: async () => ({ url: '', token: '' }) });
-  await assert.rejects(c.estado('tok'), (e) => e.httpStatus === 503 && /no esta configurado/.test(e.message));
+  await assert.rejects(c.estado('tok'), (e) => e.httpStatus === 503 && /no está configurado/.test(e.message));
 });
 
 test('servidor caido da 503 con mensaje', async () => {
@@ -60,7 +60,7 @@ test('error de Fisherboy se propaga con su detalle', async () => {
   } finally { f.srv.close(); }
 });
 
-test('frame 204 se propaga', async () => {
+test('frame: un 204 (sin pantalla nueva) se propaga con el estado del agente', async () => {
   const f = await servidorFalso((req, res) => {
     res.writeHead(204, { 'X-Agent-Estado': 'corriendo', 'X-Agent-Seq': '7' });
     res.end();

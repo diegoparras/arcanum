@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Arcanum, portada</title>
+<style>
+  @font-face { font-family: Inter; src: url(../../../public/vendor/fonts/inter-var-latin.woff2) format('woff2'); font-weight: 100 900; }
+  @font-face { font-family: Inter; src: url(../../../public/vendor/fonts/inter-var-latin-ext.woff2) format('woff2'); font-weight: 100 900; unicode-range: U+0100-024F; }
+  @font-face { font-family: 'JetBrains Mono'; src: url(../../../public/vendor/fonts/jetbrains-mono-latin.woff2) format('woff2'); }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    font-family: Inter, sans-serif; color: #fff; position: relative;
+    background: linear-gradient(135deg, #101a3a 0%, #1b2c63 55%, #27408b 100%);
+  }
+  /* Grilla tenue de fondo: textura, no brillo. */
+  .grilla {
+    position: absolute; inset: 0; opacity: .09;
+    background-image: linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: linear-gradient(100deg, #000 0%, transparent 70%);
+  }
+  .texto { position: absolute; left: 80px; top: 112px; width: 560px; }
+  .marca { display: flex; align-items: center; gap: 18px; margin-bottom: 40px; }
+  .iso { width: 64px; height: 64px; border-radius: 16px; background: #fff; display: grid; place-items: center; }
+  .iso svg { width: 40px; height: 40px; }
+  .nombre { font-size: 40px; font-weight: 700; letter-spacing: -.02em; }
+  h1 { font-size: 54px; line-height: 1.06; font-weight: 750; letter-spacing: -.03em; }
+  h1 em { font-style: normal; color: #9fb4ea; }
+  p { margin-top: 24px; font-size: 21px; line-height: 1.5; color: #c9d3ef; }
+  .chips { display: flex; gap: 10px; margin-top: 34px; }
+  .chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #dbe3f7;
+    border: 1px solid rgba(255,255,255,.22); border-radius: 999px; padding: 7px 14px;
+  }
+  .pantalla {
+    position: absolute; left: 700px; top: 92px; width: 760px; border-radius: 14px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,.18); box-shadow: 0 30px 60px rgba(4,10,30,.55);
+    transform: perspective(1400px) rotateY(-14deg) rotateX(4deg); transform-origin: left center;
+  }
+  .pantalla img { display: block; width: 100%; }
+  .barra { height: 30px; background: #e9ebf0; display: flex; gap: 7px; align-items: center; padding-left: 12px; }
+  .barra i { width: 11px; height: 11px; border-radius: 50%; background: #c4c8d2; }
+</style>
+</head>
+<body>
+  <div class="grilla"></div>
+  <div class="texto">
+    <div class="marca">
+      <div class="iso"><svg viewBox="0 0 64 64" aria-hidden="true"><path fill="#27408b" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#27408b"/></svg></div>
+      <div class="nombre">Arcanum</div>
+    </div>
+    <h1>Todo ARCA,<br><em>en un solo lugar.</em></h1>
+    <p>El gateway self-hosted para los web services de ARCA. Una API REST limpia, firma local, sin intermediarios.</p>
+    <div class="chips"><span class="chip">REST</span><span class="chip">MCP</span><span class="chip">Docker</span><span class="chip">Open source</span></div>
+  </div>
+  <div class="pantalla"><div class="barra"><i></i><i></i><i></i></div><img src="../../media/capturas/panel.png" alt=""></div>
+</body>
+</html>

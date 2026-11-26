@@ -1,0 +1,57 @@
+name: Reportar un error
+description: Algo no funciona como debería.
+labels: ["error"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por tomarte el tiempo. Antes de enviar: **no pegues claves fiscales, certificados, claves privadas, tokens ni master keys**, y tachá los CUIT reales si no querés que queden públicos. Si es un problema de seguridad, no abras un issue: seguí [SECURITY.md](../blob/main/SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Versión de Arcanum
+      description: Está en el menú (los tres puntos) > Acerca de.
+      placeholder: "2.1.20"
+    validations:
+      required: true
+  - type: dropdown
+    id: entorno
+    attributes:
+      label: Entorno de ARCA
+      options:
+        - Homologación
+        - Producción
+    validations:
+      required: true
+  - type: dropdown
+    id: instalacion
+    attributes:
+      label: Cómo lo instalaste
+      options:
+        - Docker Compose
+        - EasyPanel u otro panel
+        - Desde el código (npm)
+        - Otro
+    validations:
+      required: true
+  - type: textarea
+    id: que-paso
+    attributes:
+      label: Qué pasó
+      description: Qué hiciste, qué esperabas y qué obtuviste.
+    validations:
+      required: true
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Cómo reproducirlo
+      placeholder: |
+        1. Ir a ...
+        2. Emitir ...
+        3. Ver el error ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs o respuesta de la API
+      description: Revisá que no tengan secretos antes de pegarlos.
+      render: text

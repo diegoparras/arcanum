@@ -17,7 +17,7 @@ const { config } = require('../config');
 // Este proceso trabaja SOLO en homologacion, sin importar el entorno del servidor.
 config.setEnv('homo');
 if (!/homo/.test(config.endpoints.wsfev1)) {
-  console.error('Abortado: el endpoint de WSFEv1 no es de homologacion.');
+  console.error('Abortado: el endpoint de WSFEv1 no es de homologación.');
   process.exit(2);
 }
 
@@ -43,17 +43,17 @@ async function main() {
   const lista = (await tenants.list('homo')).filter((t) => t.tieneCertificado && !t.certVencido);
   const cuit = tenants.normalizeCuit(arg('cuit', lista.length === 1 ? lista[0].cuit : ''));
   if (!cuit) {
-    console.error(`Indica --cuit. CUITs con certificado de homologacion: ${lista.map((t) => t.cuit).join(', ') || 'ninguno'}.`);
+    console.error(`Indicá --cuit. CUITs con certificado de homologación: ${lista.map((t) => t.cuit).join(', ') || 'ninguno'}.`);
     process.exit(2);
   }
-  if (!paso('Certificado de homologacion cargado', lista.some((t) => t.cuit === cuit), cuit)) return;
+  if (!paso('Certificado de homologación cargado', lista.some((t) => t.cuit === cuit), cuit)) return;
 
   const tipo = parseInt(arg('tipo', '11'), 10);
   const total = Number(arg('total', '100'));
   let pv = parseInt(arg('pv', '0'), 10);
 
   const d = await wsfev1.dummy();
-  if (!paso('ARCA homologacion responde (FEDummy)', [d.appServer, d.dbServer, d.authServer].every((x) => String(x).toUpperCase() === 'OK'), JSON.stringify(d))) return;
+  if (!paso('ARCA homologación responde (FEDummy)', [d.appServer, d.dbServer, d.authServer].every((x) => String(x).toUpperCase() === 'OK'), JSON.stringify(d))) return;
 
   if (!pv) {
     try {
@@ -65,7 +65,7 @@ async function main() {
     }
   }
   const ultimo = await wsfev1.lastAuthorized(cuit, pv, tipo);
-  paso('Ultimo numero autorizado (token WSAA + FECompUltimoAutorizado)', true, `pv ${pv}, tipo ${tipo}: ${ultimo.ultimoNumero}`);
+  paso('Último número autorizado (token WSAA + FECompUltimoAutorizado)', true, `pv ${pv}, tipo ${tipo}: ${ultimo.ultimoNumero}`);
 
   const esC = [11, 12, 13].includes(tipo);
   const neto = esC ? total : +(total / 1.21).toFixed(2);
@@ -80,11 +80,11 @@ async function main() {
   };
 
   const prev = await vistaPrevia.vistaPrevia(cuit, inv);
-  if (!paso('Vista previa sin problemas', prev.valido, prev.valido ? `numero propuesto ${prev.numeroPropuesto}` : prev.problemas.join(' | '))) return;
+  if (!paso('Vista previa sin problemas', prev.valido, prev.valido ? `número propuesto ${prev.numeroPropuesto}` : prev.problemas.join(' | '))) return;
 
   const emi = await wsfev1.authorizeInvoice(cuit, inv);
-  if (!paso('Emision aprobada con CAE', emi.aprobado && !!emi.cae, emi.aprobado ? `CAE ${emi.cae}, vence ${emi.caeVencimiento}, numero ${emi.numero}` : JSON.stringify({ errores: emi.errores, observaciones: emi.observaciones }))) return;
-  paso('El numero emitido es el que anticipo la vista previa', emi.numero === prev.numeroPropuesto, `${emi.numero} vs ${prev.numeroPropuesto}`);
+  if (!paso('Emisión aprobada con CAE', emi.aprobado && !!emi.cae, emi.aprobado ? `CAE ${emi.cae}, vence ${emi.caeVencimiento}, número ${emi.numero}` : JSON.stringify({ errores: emi.errores, observaciones: emi.observaciones }))) return;
+  paso('El número emitido es el que anticipó la vista previa', emi.numero === prev.numeroPropuesto, `${emi.numero} vs ${prev.numeroPropuesto}`);
 
   const cons = await wsfev1.consultar(cuit, pv, tipo, emi.numero);
   paso('ARCA devuelve el mismo CAE (FECompConsultar)', String(cons.cae) === String(emi.cae), `${cons.cae}`);
@@ -97,7 +97,7 @@ main()
   .catch((e) => paso('Error inesperado', false, e.message))
   .finally(async () => {
     const fallas = pasos.filter((p) => !p.ok).length;
-    console.log(`\n${fallas ? `PRUEBA FALLIDA: ${fallas} de ${pasos.length} pasos` : `PRUEBA OK: ${pasos.length} pasos`} (homologacion, nada se emitio en produccion)`);
+    console.log(`\n${fallas ? `PRUEBA FALLIDA: ${fallas} de ${pasos.length} pasos` : `PRUEBA OK: ${pasos.length} pasos`} (homologación, nada se emitió en producción)`);
     await db.pool.end().catch(() => {});
     process.exit(fallas ? 1 : 0);
   });

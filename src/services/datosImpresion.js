@@ -115,7 +115,7 @@ async function completarReceptor(cuitEmisor, datos = {}, { consultar = consultar
   try {
     const ficha = await Promise.race([
       consultarRecordandoFallas(consultar, normalizeCuit(cuitEmisor), nro, false),
-      new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('padron lento')), espera); }),
+      new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('padrón lento')), espera); }),
     ]);
     const out = {};
     if (!tieneNombre && ficha && ficha.nombre) out.receptorNombre = ficha.nombre;

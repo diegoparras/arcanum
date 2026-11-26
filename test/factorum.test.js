@@ -44,7 +44,7 @@ test('factorum: salud manda Bearer y devuelve version e IA', async () => {
 
 test('factorum: sin configurar da 503 con mensaje claro', async () => {
   const c = crearCliente({ leerConfig: async () => ({ url: '', token: '' }) });
-  await assert.rejects(c.comprobantes({}), (e) => e.httpStatus === 503 && /Factorum no esta configurado/.test(e.message));
+  await assert.rejects(c.comprobantes({}), (e) => e.httpStatus === 503 && /Factorum no está configurado/.test(e.message));
   await assert.rejects(c.salud(), (e) => e.httpStatus === 503);
 });
 

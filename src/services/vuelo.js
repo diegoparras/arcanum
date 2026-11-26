@@ -37,7 +37,7 @@ async function resolver(v, { consultar }) {
   } catch (e) {
     if (noExiste(e)) return { estado: 'libre' };
     throw new SoapError(
-      `No se pudo verificar en ARCA si el intento anterior (numero ${v.numero}) se emitio: no se emite otro hasta saberlo. ${e.message || ''}`.trim(),
+      `No se pudo verificar en ARCA si el intento anterior (número ${v.numero}) se emitió: no se emite otro hasta saberlo. ${e.message || ''}`.trim(),
       503, { tipo: 'verificacion' });
   }
   return coincide(v, c) ? { estado: 'adoptar', consultado: c } : { estado: 'libre' };

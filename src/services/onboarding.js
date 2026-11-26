@@ -20,8 +20,8 @@ const tenants = require('../auth/tenants');
  */
 async function crearCliente(cuit, nombre, entorno = config.env) {
   const c = tenants.normalizeCuit(cuit);
-  if (!c || c.length < 11) throw err('CUIT invalido (11 digitos)', 400);
-  if (!nombre || !String(nombre).trim()) throw err('Falta el nombre / razon social', 400);
+  if (!c || c.length < 11) throw err('CUIT inválido (11 dígitos)', 400);
+  if (!nombre || !String(nombre).trim()) throw err('Falta el nombre / razón social', 400);
   nombre = tenants.validarNombre(nombre); // antes del CSR: el nombre va en el subject
 
   const keys = forge.pki.rsa.generateKeyPair(2048);
@@ -62,14 +62,9 @@ async function getCsr(cuit, entorno = config.env) {
 /** Carga el certificado devuelto por ARCA (valida que case con la clave). */
 async function cargarCertificado(cuit, certPem, entorno = config.env) {
   if (!certPem || !/BEGIN CERTIFICATE/.test(certPem)) {
-    throw err('Pega el certificado en formato PEM (incluyendo -----BEGIN CERTIFICATE-----)', 400);
+    throw err('Pegá el certificado en formato PEM (incluyendo -----BEGIN CERTIFICATE-----)', 400);
   }
   return tenants.storeCert(cuit, entorno, certPem);
-}
-
-/** Permite cargar una clave privada propia (en vez de generar el CSR aca). */
-async function importarClave(cuit, nombre, keyPem, entorno = config.env) {
-  return tenants.storeKey(cuit, entorno, keyPem, nombre);
 }
 
 /** Importa un par existente (clave + certificado) en una sola operacion. */
@@ -92,4 +87,4 @@ function err(message, httpStatus) {
   return Object.assign(new Error(message), { httpStatus });
 }
 
-module.exports = { crearCliente, getCsr, cargarCertificado, importarClave, importarPar, eliminarCliente };
+module.exports = { crearCliente, getCsr, cargarCertificado, importarPar, eliminarCliente };

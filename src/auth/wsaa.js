@@ -79,14 +79,14 @@ async function getAccessTicket(cuit, service, entorno = config.env) {
     }
     const ret = body?.loginCmsResponse?.loginCmsReturn;
     if (!ret) {
-      throw new SoapError('WSAA no devolvio loginCmsReturn', 502, { body });
+      throw new SoapError('WSAA no devolvió loginCmsReturn', 502, { body });
     }
     // loginCmsReturn es el XML del TA (ya des-escapado por el parser).
     const ta = parser.parse(ret);
     const creds = ta?.loginTicketResponse?.credentials;
     const header = ta?.loginTicketResponse?.header;
     if (!creds?.token || !creds?.sign) {
-      throw new SoapError('WSAA no devolvio token/sign', 502, { ta });
+      throw new SoapError('WSAA no devolvió token/sign', 502, { ta });
     }
     return {
       token: creds.token,

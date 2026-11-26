@@ -71,7 +71,7 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
   const estadoVivo = (id) => { if (!vivo.has(id)) vivo.set(id, { url: null, control: null }); return vivo.get(id); };
 
   async function corridaOperable(principal, id) {
-    if (!/^\d+$/.test(String(id))) throw err('Corrida invalida', 400);
+    if (!/^\d+$/.test(String(id))) throw err('Corrida inválida', 400);
     const c = await servicio().corrida(Number(id));
     if (!c) throw err('No existe esa corrida', 404);
     puedeOperar(principal, c.cuit);
@@ -104,7 +104,7 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
     if (req.method === 'POST' && seg[1] === 'constatacion' && !seg[2]) {
       const b = await readJsonBody(req);
       const cuit = String(b.cuit || '').replace(/\D/g, '');
-      if (cuit.length !== 11) throw err('Falta "cuit": quien recibio los comprobantes (con certificado y WSCDC)', 400);
+      if (cuit.length !== 11) throw err('Falta "cuit": quien recibió los comprobantes (con certificado y WSCDC)', 400);
       // Solo consulta y no guarda nada: alcanza con cualquier rol, siempre dentro de sus CUITs.
       assertCuitAllowed(principal, cuit);
       req._cuit = cuit;
@@ -147,7 +147,7 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
         res.end(img);
         return true;
       }
-      if (!c.token_fb) throw err('La corrida todavia no tiene navegador', 409);
+      if (!c.token_fb) throw err('La corrida todavía no tiene navegador', 409);
       if (req.method === 'GET' && seg[4] === 'frame') {
         const fr = await fb().frame(c.token_fb, url.searchParams.get('desde') || 0);
         const cab = { 'Cache-Control': 'no-store' };

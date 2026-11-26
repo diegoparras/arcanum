@@ -89,14 +89,14 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
       // 1. Ventana de fecha: nunca re-fechar solo. (Si hubo un intento ambiguo, primero se deja
       //    que la emision resuelva ese vuelo: puede que el CAE ya exista con la fecha original.)
       if (!item.numero_intentado && fueraDeVentana(cuerpo.fecha, item.concepto, ahora())) {
-        const msg = `ARCA ya no acepta la fecha ${cuerpo.fecha} (${Number(item.concepto) === 1 ? '5' : '10'} dias como maximo). Decidi: emitir con fecha de hoy o cancelar.`;
+        const msg = `ARCA ya no acepta la fecha ${cuerpo.fecha} (${Number(item.concepto) === 1 ? '5' : '10'} días como máximo). Decidí: emitir con fecha de hoy o cancelar.`;
         return terminar(item, { estado: 'requiere_humano', ultimo_error: msg }, 'cola_requiere_humano', { id: item.id, cuit, motivo: msg });
       }
       // 2. Emitir. La emision resuelve primero cualquier intento anterior con esta clave
       //    (services/vuelo.js): si ARCA ya lo otorgo, lo adopta en vez de sacar otro CAE.
       const out = await wsfev1.authorizeInvoice(cuit, cuerpo);
       if (!out.aprobado && item.numero_intentado) {
-        const msg = 'ARCA rechazo el reintento de un comprobante cuyo primer intento quedo en duda: revisa en ARCA si ya tiene CAE antes de volver a emitirlo.';
+        const msg = 'ARCA rechazó el reintento de un comprobante cuyo primer intento quedó en duda: revisá en ARCA si ya tiene CAE antes de volver a emitirlo.';
         return terminar(item, { estado: 'requiere_humano', resultado: out, ultimo_error: msg }, 'cola_requiere_humano', { id: item.id, cuit, motivo: msg });
       }
       return terminar(item, { estado: out.aprobado ? 'emitido' : 'rechazado', resultado: out, ultimo_error: null }, null);
@@ -138,7 +138,7 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
   async function reintentar(id, { fechaHoy = false } = {}) {
     const item = await repo.obtener(id);
     if (!item) throw err('No existe ese item de la cola', 404);
-    if (!['pendiente', 'requiere_humano'].includes(item.estado)) throw err(`El item esta ${item.estado}: no se puede reintentar`, 409);
+    if (!['pendiente', 'requiere_humano'].includes(item.estado)) throw err(`El item está ${item.estado}: no se puede reintentar`, 409);
     const campos = { estado: 'pendiente', proximo_intento_at: ahora(), actualizado_at: ahora() };
     if (fechaHoy) {
       const hoy = ymdAr(ahora());
@@ -146,16 +146,16 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
       campos.fecha = hoy;
     }
     // Condicional: si el daemon lo tomo entre la lectura y aca, no se pisa (seria procesarlo dos veces).
-    if (!(await repo.reabrir(id, campos))) throw err('El item cambio de estado mientras tanto (lo esta procesando la cola): volve a mirarlo', 409);
+    if (!(await repo.reabrir(id, campos))) throw err('El item cambió de estado mientras tanto (lo está procesando la cola): volvé a mirarlo', 409);
     return procesar(id);
   }
 
   async function cancelar(id) {
     const item = await repo.obtener(id);
     if (!item) throw err('No existe ese item de la cola', 404);
-    if (!['pendiente', 'requiere_humano'].includes(item.estado)) throw err(`El item esta ${item.estado}: no se puede cancelar`, 409);
+    if (!['pendiente', 'requiere_humano'].includes(item.estado)) throw err(`El item está ${item.estado}: no se puede cancelar`, 409);
     const fin = await repo.reabrir(id, { estado: 'cancelado', actualizado_at: ahora() });
-    if (!fin) throw err('El item cambio de estado mientras tanto (lo esta procesando la cola): volve a mirarlo', 409);
+    if (!fin) throw err('El item cambió de estado mientras tanto (lo está procesando la cola): volvé a mirarlo', 409);
     return fin;
   }
 

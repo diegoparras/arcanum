@@ -14,7 +14,7 @@ const SESION = { via: 'sesion' };
 const CLAVE = { via: 'clave' };
 const status = (code) => (e) => e.httpStatus === code;
 
-test('GET nunca se frena', () => {
+test('un GET nunca se frena, aunque venga de otro sitio', () => {
   assert.doesNotThrow(() => chequearCsrf(req('GET', { 'sec-fetch-site': 'cross-site' }), SESION));
 });
 

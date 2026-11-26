@@ -1,35 +1,35 @@
 'use strict';
 
-// Catalogo declarativo de los Web Services de ARCA.
-// Cada descriptor define: como autenticar (wsaaService), donde pegar (endpoints),
-// como verificar que esta activo (dummyOp / authOp) y COMO ACTIVARLO (activacion:
+// Catálogo declarativo de los Web Services de ARCA.
+// Cada descriptor define: cómo autenticar (wsaaService), dónde pegar (endpoints),
+// cómo verificar que está activo (dummyOp / authOp) y CÓMO ACTIVARLO (activacion:
 // el nombre exacto a asociar en el Administrador de Relaciones de Clave Fiscal y
-// los pasos guiados). El motor generico (soap/engine.js) usa todo esto.
+// los pasos guiados). El motor genérico (soap/engine.js) usa todo esto.
 //
-// `rich: true` => existe un modulo dedicado con validaciones y mapeo REST fino.
-// `rich: false` => accesible via passthrough generico /api/ws/:id/:operacion.
+// `rich: true` => existe un módulo dedicado con validaciones y mapeo REST fino.
+// `rich: false` => accesible vía passthrough genérico /api/ws/:id/:operacion.
 
 const REL = 'https://serviciosweb.afip.gob.ar/clavefiscal/adminrel/main.aspx';
 const CERT_PORTAL = 'https://www.afip.gob.ar/ws/documentacion/certificados.asp';
 
 function pasosActivacion(nombreRelacion, extra = []) {
   return [
-    'Ingresa con Clave Fiscal al "Administrador de Relaciones de Clave Fiscal".',
-    'Elegi la empresa/persona (Representado) si corresponde.',
-    'Clic en "Nueva Relacion" > "Buscar" (Servicio).',
-    `Busca y selecciona: ${nombreRelacion}.`,
-    'En "Representante" elegi el Computador Fiscal (el certificado que cargaste en Arcanum).',
-    'Confirma. La relacion queda activa de inmediato (puede tardar unos minutos en propagar).',
+    'Ingresá con Clave Fiscal al "Administrador de Relaciones de Clave Fiscal".',
+    'Elegí la empresa/persona (Representado) si corresponde.',
+    'Clic en "Nueva Relación" > "Buscar" (Servicio).',
+    `Buscá y seleccioná: ${nombreRelacion}.`,
+    'En "Representante" elegí el Computador Fiscal (el certificado que cargaste en Arcanum).',
+    'Confirmá. La relación queda activa de inmediato (puede tardar unos minutos en propagar).',
     ...extra,
   ];
 }
 
 const SERVICES = [
-  // ---------------- FACTURACION ----------------
+  // ---------------- FACTURACIÓN ----------------
   {
     id: 'wsfev1',
-    nombre: 'Factura Electronica (WSFEv1)',
-    descripcion: 'Comprobantes A/B/C/M sin detalle, con CAE. El mas usado.',
+    nombre: 'Factura Electrónica (WSFEv1)',
+    descripcion: 'Comprobantes A/B/C/M sin detalle, con CAE. El más usado.',
     categoria: 'facturacion',
     wsaaService: 'wsfe',
     soapNamespace: 'http://ar.gov.afip.dif.FEV1/',
@@ -40,15 +40,15 @@ const SERVICES = [
     dummyOp: 'FEDummy',
     rich: true,
     activacion: {
-      relacionNombre: 'Facturacion Electronica - Web Service de Negocio (wsfe)',
-      pasos: pasosActivacion('Facturacion Electronica (ws_sr_padron / wsfe)'),
+      relacionNombre: 'Facturación Electrónica - Web Service de Negocio (wsfe)',
+      pasos: pasosActivacion('Facturación Electrónica (ws_sr_padron / wsfe)'),
       docs: 'https://www.afip.gob.ar/ws/documentacion/ws-factura-electronica.asp',
     },
   },
   {
     id: 'wsfexv1',
-    nombre: 'Factura de Exportacion (WSFEXv1)',
-    descripcion: 'Comprobantes E de exportacion, moneda extranjera, sin IVA.',
+    nombre: 'Factura de Exportación (WSFEXv1)',
+    descripcion: 'Comprobantes E de exportación, moneda extranjera, sin IVA.',
     categoria: 'facturacion',
     wsaaService: 'wsfex',
     soapNamespace: 'http://ar.gov.afip.dif.fexv1/',
@@ -59,14 +59,14 @@ const SERVICES = [
     dummyOp: 'FEXDummy',
     rich: true,
     activacion: {
-      relacionNombre: 'wsfex - Factura Electronica de Exportacion',
+      relacionNombre: 'wsfex - Factura Electrónica de Exportación',
       pasos: pasosActivacion('wsfex'),
     },
   },
   {
     id: 'wsmtxca',
     nombre: 'Factura con detalle (WSMTXCA)',
-    descripcion: 'Comprobantes A/B con detalle de items linea por linea.',
+    descripcion: 'Comprobantes A/B con detalle de ítems línea por línea.',
     categoria: 'facturacion',
     wsaaService: 'wsmtxca',
     soapNamespace: 'http://impl.service.wsmtxca.afip.gov.ar/service/',
@@ -111,8 +111,8 @@ const SERVICES = [
   },
   {
     id: 'wsfecred',
-    nombre: 'Factura de Credito MiPyME (WSFECRED)',
-    descripcion: 'Cuenta corriente de facturas de credito electronicas (FCE).',
+    nombre: 'Factura de Crédito MiPyME (WSFECRED)',
+    descripcion: 'Cuenta corriente de facturas de crédito electrónicas (FCE).',
     categoria: 'facturacion',
     wsaaService: 'wsfecred',
     soapNamespace: 'http://ar.gob.afip.wsfecred/FECredService/',
@@ -125,11 +125,11 @@ const SERVICES = [
     activacion: { relacionNombre: 'wsfecred', pasos: pasosActivacion('wsfecred') },
   },
 
-  // ---------------- CONSULTAS / PADRON ----------------
+  // ---------------- CONSULTAS / PADRÓN ----------------
   {
     id: 'padron_a5',
-    nombre: 'Constancia de Inscripcion (A5)',
-    descripcion: 'Constancia de inscripcion / datos fiscales del contribuyente.',
+    nombre: 'Constancia de Inscripción (A5)',
+    descripcion: 'Constancia de inscripción / datos fiscales del contribuyente.',
     categoria: 'consultas',
     wsaaService: 'ws_sr_constancia_inscripcion',
     soapNamespace: 'http://a5.soap.ws.server.puc.sr/',
@@ -142,8 +142,8 @@ const SERVICES = [
   },
   {
     id: 'padron_a13',
-    nombre: 'Padron Alcance 13 (Mi Categoria)',
-    descripcion: 'Datos de padron y categoria de monotributo.',
+    nombre: 'Padrón Alcance 13 (Mi Categoría)',
+    descripcion: 'Datos de padrón y categoría de monotributo.',
     categoria: 'consultas',
     wsaaService: 'ws_sr_padron_a13',
     soapNamespace: 'http://a13.soap.ws.server.puc.sr/',
@@ -156,8 +156,8 @@ const SERVICES = [
   },
   {
     id: 'padron_a4',
-    nombre: 'Padron Alcance 4',
-    descripcion: 'Datos basicos de un contribuyente (getPersona).',
+    nombre: 'Padrón Alcance 4',
+    descripcion: 'Datos básicos de un contribuyente (getPersona).',
     categoria: 'consultas',
     wsaaService: 'ws_sr_padron_a4',
     soapNamespace: 'http://a4.soap.ws.server.puc.sr/',
@@ -170,7 +170,7 @@ const SERVICES = [
   },
   {
     id: 'padron_a10',
-    nombre: 'Padron Alcance 10',
+    nombre: 'Padrón Alcance 10',
     descripcion: 'Datos de relaciones del contribuyente.',
     categoria: 'consultas',
     wsaaService: 'ws_sr_padron_a10',
@@ -184,8 +184,8 @@ const SERVICES = [
   },
   {
     id: 'wscdc',
-    nombre: 'Constatacion de Comprobantes (WSCDC)',
-    descripcion: 'Verifica que un CAE/comprobante emitido sea valido.',
+    nombre: 'Constatación de Comprobantes (WSCDC)',
+    descripcion: 'Verifica que un CAE/comprobante emitido sea válido.',
     categoria: 'consultas',
     wsaaService: 'wscdc',
     soapNamespace: 'http://servicios1.afip.gob.ar/wscdc/',
@@ -199,8 +199,8 @@ const SERVICES = [
   },
   {
     id: 'wsapoc',
-    nombre: 'Base de Apocrifos (WSAPOC)',
-    descripcion: 'Consulta si un CUIT figura en la base de facturas/contribuyentes apocrifos de ARCA.',
+    nombre: 'Base de Apócrifos (WSAPOC)',
+    descripcion: 'Consulta si un CUIT figura en la base de facturas/contribuyentes apócrifos de ARCA.',
     categoria: 'consultas',
     wsaaService: 'wsapoc',
     soapNamespace: 'http://tempuri.org/',
@@ -212,14 +212,14 @@ const SERVICES = [
     },
     rich: true,
     activacion: {
-      relacionNombre: 'wsapoc (Consulta de Apocrifos)',
+      relacionNombre: 'wsapoc (Consulta de Apócrifos)',
       pasos: pasosActivacion('wsapoc'),
     },
   },
   {
     id: 'eventanilla',
     nombre: 'e-Ventanilla (Comunicaciones)',
-    descripcion: 'Lista, lee y descarga las comunicaciones (y sus PDF) de la Ventanilla Electronica.',
+    descripcion: 'Lista, lee y descarga las comunicaciones (y sus PDF) de la Ventanilla Electrónica.',
     categoria: 'consultas',
     wsaaService: 'veconsumerws',
     soapNamespace: 'http://ve.tecno.afip.gov.ar/domain/service/ws/types',
@@ -230,7 +230,7 @@ const SERVICES = [
     dummyOp: 'dummy',
     rich: true,
     activacion: {
-      relacionNombre: 'veconsumerws (Ventanilla Electronica - Consulta)',
+      relacionNombre: 'veconsumerws (Ventanilla Electrónica - Consulta)',
       pasos: pasosActivacion('veconsumerws'),
       docs: 'https://www.afip.gob.ar/ws/WSCComu/vecuwsconcomunicaciones.pdf',
     },
@@ -239,8 +239,8 @@ const SERVICES = [
   // ---------------- AGRO Y REMITOS ----------------
   {
     id: 'wslpg',
-    nombre: 'Liquidacion de Granos (WSLPG)',
-    descripcion: 'Liquidacion primaria electronica de granos.',
+    nombre: 'Liquidación de Granos (WSLPG)',
+    descripcion: 'Liquidación primaria electrónica de granos.',
     categoria: 'agro',
     wsaaService: 'wslpg',
     soapNamespace: 'http://serviciosjava.afip.gob.ar/wslpg/',
@@ -254,8 +254,8 @@ const SERVICES = [
   },
   {
     id: 'wslsp',
-    nombre: 'Liquidacion Sector Pecuario (WSLSP)',
-    descripcion: 'Liquidacion electronica de hacienda/ganado.',
+    nombre: 'Liquidación Sector Pecuario (WSLSP)',
+    descripcion: 'Liquidación electrónica de hacienda/ganado.',
     categoria: 'agro',
     wsaaService: 'wslsp',
     soapNamespace: 'http://serviciosjava.afip.gob.ar/wslsp/',
@@ -269,8 +269,8 @@ const SERVICES = [
   },
   {
     id: 'wsremcarne',
-    nombre: 'Remito Electronico Carnico (WSREMCARNE)',
-    descripcion: 'Remito electronico de carnes y derivados.',
+    nombre: 'Remito Electrónico Cárnico (WSREMCARNE)',
+    descripcion: 'Remito electrónico de carnes y derivados.',
     categoria: 'agro',
     wsaaService: 'wsremcarne',
     soapNamespace: 'http://ar.gob.afip.wsremcarne/RemCarneService/',
@@ -284,8 +284,8 @@ const SERVICES = [
   },
   {
     id: 'wsremharina',
-    nombre: 'Remito Electronico Harina (WSREMHARINA)',
-    descripcion: 'Remito electronico de harina de trigo y subproductos.',
+    nombre: 'Remito Electrónico Harina (WSREMHARINA)',
+    descripcion: 'Remito electrónico de harina de trigo y subproductos.',
     categoria: 'agro',
     wsaaService: 'wsremharina',
     soapNamespace: 'http://ar.gob.afip.wsremharina/RemHarinaService/',
@@ -299,8 +299,8 @@ const SERVICES = [
   },
   {
     id: 'wsremazucar',
-    nombre: 'Remito Electronico Azucar (WSREMAZUCAR)',
-    descripcion: 'Remito electronico de azucar y derivados.',
+    nombre: 'Remito Electrónico Azúcar (WSREMAZUCAR)',
+    descripcion: 'Remito electrónico de azúcar y derivados.',
     categoria: 'agro',
     wsaaService: 'wsremazucar',
     soapNamespace: 'http://ar.gob.afip.wsremazucar/RemAzucarService/',
@@ -314,8 +314,8 @@ const SERVICES = [
   },
   {
     id: 'wscpe',
-    nombre: 'Carta de Porte Electronica (WSCPE)',
-    descripcion: 'Emision y gestion de la carta de porte para transporte de granos.',
+    nombre: 'Carta de Porte Electrónica (WSCPE)',
+    descripcion: 'Emisión y gestión de la carta de porte para transporte de granos.',
     categoria: 'agro',
     wsaaService: 'wscpe',
     soapNamespace: 'http://serviciosjava.arca.gob.ar/wscpe/',
@@ -329,7 +329,7 @@ const SERVICES = [
   },
   {
     id: 'wsctg',
-    nombre: 'Codigo Trazabilidad de Granos (WSCTG)',
+    nombre: 'Código Trazabilidad de Granos (WSCTG)',
     descripcion: 'Solicitud y consulta de CTG para el transporte de granos.',
     categoria: 'agro',
     wsaaService: 'wsctg',
@@ -344,8 +344,8 @@ const SERVICES = [
   },
   {
     id: 'wslum',
-    nombre: 'Liquidacion Unica Mensual Lechera (WSLUM)',
-    descripcion: 'Liquidacion electronica del sector lacteo.',
+    nombre: 'Liquidación Única Mensual Lechera (WSLUM)',
+    descripcion: 'Liquidación electrónica del sector lácteo.',
     categoria: 'agro',
     wsaaService: 'wslum',
     soapNamespace: 'http://serviciosjava.afip.gob.ar/wslum/',
@@ -359,8 +359,8 @@ const SERVICES = [
   },
   {
     id: 'wsltv',
-    nombre: 'Liquidacion Tabaco Virginia (WSLTV)',
-    descripcion: 'Liquidacion electronica del sector tabacalero.',
+    nombre: 'Liquidación Tabaco Virginia (WSLTV)',
+    descripcion: 'Liquidación electrónica del sector tabacalero.',
     categoria: 'agro',
     wsaaService: 'wsltv',
     soapNamespace: 'http://serviciosjava.afip.gob.ar/wsltv/',
@@ -376,8 +376,8 @@ const SERVICES = [
   // ---------------- ADUANA ----------------
   {
     id: 'wdigdepfiel',
-    nombre: 'Digitalizacion Depositario Fiel (wDigDepFiel)',
-    descripcion: 'Digitalizacion de documentacion del depositario fiel (aduana).',
+    nombre: 'Digitalización Depositario Fiel (wDigDepFiel)',
+    descripcion: 'Digitalización de documentación del depositario fiel (aduana).',
     categoria: 'aduana',
     wsaaService: 'wDigDepFiel',
     soapNamespace: 'ar.gov.afip.dia.serviciosWeb.wDigDepFiel',
@@ -392,7 +392,7 @@ const SERVICES = [
   {
     id: 'wgesinv',
     nombre: 'Aprobar/Denegar Despachos INV (WGESINV)',
-    descripcion: 'Aprobacion/denegacion de despachos de la industria vitivinicola (INV).',
+    descripcion: 'Aprobación/denegación de despachos de la industria vitivinícola (INV).',
     categoria: 'aduana',
     wsaaService: 'wgesinv',
     soapNamespace: 'ar.gov.afip.dia.serviciosweb.WGesINV',
@@ -407,7 +407,7 @@ const SERVICES = [
   {
     id: 'wdepmovimientos',
     nombre: 'Movimientos Ingreso/Egreso Terminales (WDEPMOVIMIENTOS)',
-    descripcion: 'Movimientos de ingreso/egreso en terminales y depositos (aduana).',
+    descripcion: 'Movimientos de ingreso/egreso en terminales y depósitos (aduana).',
     categoria: 'aduana',
     wsaaService: 'wdepmovimientos',
     soapNamespace: 'ar.gov.afip.dia.serviciosWeb.wdepMovimientos.wdepMovimientos',
@@ -421,7 +421,7 @@ const SERVICES = [
   },
 ];
 
-// Estos son los DEFAULTS (semilla). El catalogo efectivo vive en Postgres y se
+// Estos son los DEFAULTS (semilla). El catálogo efectivo vive en Postgres y se
 // puede editar en vivo desde la UI (ver src/catalog.js). pasosActivacion y las
 // constantes se exportan para reusar al construir servicios nuevos.
 module.exports = { DEFAULTS: SERVICES, REL, CERT_PORTAL, pasosActivacion };

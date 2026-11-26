@@ -1,334 +1,327 @@
 <div align="center">
 
+<img src="docs/media/portada.png" alt="Arcanum: toda ARCA en una API, en tu servidor" width="100%">
+
 # Arcanum
 
-**El gateway que convierte el kilombo de ARCA en una API REST que un contador instala en un minuto.**
+**Toda ARCA en una API. En tu servidor.**
 
-Self-hosted · Firma WSAA 100% local · Sin terceros · Sin suscripciones · Para automatizar con n8n
+Gateway REST self-hosted para los Web Services de ARCA (ex AFIP), con panel web, firma WSAA 100 % local y cero intermediarios.
 
-Parte de la suite **Escriba** · Licencia MIT
+[![Última versión](https://img.shields.io/github/v/release/diegoparras/arcanum?label=versi%C3%B3n&color=27408b)](https://github.com/diegoparras/arcanum/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/diegoparras/arcanum/docker-publish.yml?label=CI)](https://github.com/diegoparras/arcanum/actions)
+[![Imagen Docker](https://img.shields.io/badge/imagen-ghcr.io-27408b)](https://github.com/diegoparras/arcanum/pkgs/container/arcanum)
+[![Licencia MIT](https://img.shields.io/badge/licencia-MIT-27408b)](LICENSE)
+
+[**Ver el video**](docs/media/arcanum.mp4) · [**Guía de instalación (PDF)**](docs/guias/arcanum-guia-instalacion.pdf) · [**Guía de uso (PDF)**](docs/guias/arcanum-guia-uso.pdf) · [**Instalar ya**](#instalalo-en-minutos)
+
+<a href="docs/media/arcanum.mp4"><img src="docs/media/adelanto.gif" alt="Adelanto del video de presentación de Arcanum" width="100%"></a>
 
 </div>
 
 ---
 
-## El problema
+## La historia de siempre
 
-Integrarse con los Web Services de ARCA (ex-AFIP) es, sin vueltas, un dolor de cabeza:
+Son las nueve de la noche y hay que emitir la factura de un cliente desde el sistema propio. Nada del otro mundo, salvo que ARCA no tiene una API como las de ahora. Tiene **Web Services SOAP**, con WSDL que cambian sin aviso y namespaces caprichosos.
 
-- Todo es **SOAP/XML** con WSDLs frágiles y namespaces caprichosos.
-- Antes de pedir *cualquier* cosa tenés que pasar por **WSAA**: armar un *Ticket de Requerimiento de Acceso* (TRA), **firmarlo en formato CMS/PKCS#7** con tu certificado, mandarlo, y recién ahí recibís un *Token* y un *Sign*.
-- Ese token **dura 12 horas y NO podés pedir otro antes** — ARCA te rechaza. Así que tenés que **cachearlo** y renovarlo en el momento justo.
-- Hay **un certificado y endpoints distintos** para homologación y para producción, que no se pueden mezclar.
-- Y todo esto **multiplicado por cada CUIT** que manejás y por cada uno de los ~20 servicios de ARCA.
+Antes de pedir *cualquier cosa*, hay que pasar por **WSAA**. Se arma un ticket de requerimiento, se **firma en CMS/PKCS#7** con el certificado del contribuyente, se manda y se recibe un *token* y una *firma*. Ese ticket dura **doce horas y no se puede pedir otro antes**: si se pierde, ARCA no da otro. Hay **un certificado por CUIT**, **endpoints distintos** para homologación y producción, y **una veintena de servicios**, cada uno con sus manías. Y un martes cualquiera **ARCA no responde**, justo cuando la factura tenía que salir.
 
-Las alternativas existentes o cubren solo facturación, o son librerías que igual hay que programar, o —ojo— **mandan tu autenticación al servidor de un tercero**.
+Cada sistema que se integra con ARCA vuelve a pelear esta misma pelea. Algunas soluciones lo resuelven mandando **tu certificado y tu autenticación a un servidor de terceros**.
 
-## La solución
+## Lo que cambia con Arcanum
 
-Arcanum hace **todo ese trabajo sucio una sola vez, localmente**, y te expone una **API REST limpia** + una **interfaz web**. Tu clave privada **nunca sale del contenedor** ni pasa por nadie.
+Arcanum hace ese trabajo **una sola vez, en tu servidor**, y te deja una **API REST limpia** y un **panel web** para operarlo todo. La clave privada de cada certificado se usa solo para firmar, en memoria, y **nunca sale del contenedor**.
 
 ```
-  n8n / tu sistema  ──HTTP REST──►  Arcanum  ──SOAP──►  ARCA
-   (una llamada)                   (en tu server)      (homo o prod)
-                                   ├─ firma WSAA local (CMS/PKCS#7)
-                                   ├─ cachea Token+Sign 12h y los renueva solo
-                                   ├─ traduce SOAP ⇄ JSON
-                                   └─ Postgres (clientes, certs cifrados, auditoría)
+  n8n · ERP · IA · panel  ──REST──►  Arcanum  ──SOAP──►  ARCA
+                                     ├─ firma WSAA local (CMS/PKCS#7)
+                                     ├─ cachea el ticket 12 h y lo renueva solo
+                                     ├─ traduce SOAP ⇄ JSON, reintenta y no duplica
+                                     └─ PostgreSQL: clientes, certificados cifrados, auditoría
 ```
 
-Lo que para vos era *"armar el TRA, firmarlo, loguear a WSAA, cachear, armar el sobre SOAP, parsear el XML"* se transforma en:
+Lo que antes era armar el ticket, firmarlo, loguearse en WSAA, cachear, armar el sobre SOAP y parsear el XML, ahora es una llamada:
 
 ```bash
-curl -X POST https://tu-arcanum/api/ws/padron_a5/getPersona_v2 \
+curl -X POST https://arcanum.tuempresa.com/api/wsfev1/comprobantes \
   -H "X-API-Key: TU_CLAVE" -H "Content-Type: application/json" \
-  -d '{ "cuit": "20111111112", "params": { "idPersona": "20999999993" } }'
+  -d '{ "cuit": "30777777773", "puntoVenta": 4, "tipoComprobante": 11,
+        "importeTotal": 254100, "idempotencyKey": "venta-0042" }'
 ```
-…y te vuelve el JSON con los datos del contribuyente. Arcanum resolvió el WSAA, la firma, el caché y el SOAP por vos.
+
+Y vuelve el CAE, el número y el link al PDF con el QR de ARCA. Si la conexión se corta y el pedido se repite, Arcanum devuelve el mismo comprobante: **nunca emite dos veces**.
 
 ---
 
-## Cómo funciona (la magia, explicada)
+## Todo lo que hace
 
-### 1. Firma WSAA 100% local
-El corazón del problema —firmar el TRA en CMS/PKCS#7— lo resuelve Arcanum **en memoria, dentro de tu contenedor**, con `node-forge`. **No se usa ningún SDK que llame a servidores de terceros.** Tu clave privada se guarda **cifrada en reposo (AES-256-GCM)** en la base; la master key vive en una variable de entorno, nunca en la DB.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-### 2. Token cacheado y auto-recuperación
-El *Ticket de Acceso* (Token+Sign) se cachea por **CUIT + servicio + entorno** en Postgres, con *advisory locks* para que dos pedidos simultáneos no disparen dos logins. Un *daemon* lo **renueva antes de que venza**, y si ARCA alguna vez rechaza por token vencido, Arcanum **reintenta solo** de forma transparente.
+**Facturar sin sobresaltos**
+Factura A, B, C, M y de exportación. Vista previa que valida contra ARCA antes de pedir el CAE. PDF idéntico al de ARCA, con QR. Idempotencia para no duplicar nunca.
 
-### 3. Catálogo de servicios editable + motor genérico
-Todos los servicios de ARCA viven en un **catálogo declarativo** (endpoint, namespace, cómo autenticar, **guía de activación**). Esto da dos cosas:
-- **Motor genérico** `POST /api/ws/{servicio}/{operación}`: llamás **cualquier** operación de **cualquier** servicio mandando un JSON. Arcanum arma el sobre y resuelve la auth.
-- **Catálogo editable en vivo por el superadmin**: ARCA cambia endpoints seguido — los corregís desde la UI **sin redeployar** (se guardan en la base, auditado). Los endpoints solo pueden ser `https` de dominios de ARCA (`afip.gov.ar`, `afip.gob.ar`, `arca.gob.ar`): ahí viaja el Ticket de Acceso de cada CUIT. Se edita solo con sesión de superadmin, no con claves de API, y cada cambio avisa por el webhook `catalogo_cambiado`. Esto lo hace un tanque.
+</td>
+<td width="50%" valign="top">
 
-Sobre los más usados hay **módulos "ricos"** con validación y respuestas REST ergonómicas (ver más abajo).
+**Si ARCA se cae, vos seguís**
+Cola de contingencia con reintentos, adopción del CAE si la respuesta se perdió y CAEA opcional. La fecha nunca cambia sin tu decisión.
 
-### 4. Multi-cliente y multi-entorno
-Manejás **varios CUITs** desde la misma instancia. Y cambiás entre **homologación y producción** desde la propia interfaz (menú → Entorno ARCA), en caliente y persistido — sin tocar variables ni redeployar.
+</td>
+</tr>
+<tr>
+<td valign="top">
 
----
+**Mis Comprobantes, automático**
+Emitidos y recibidos del portal de ARCA, bajados todos los días con el navegador de Fisherboy. Captcha o segundo factor se resuelven en vivo desde el panel.
 
-## Instalación (un comando)
+</td>
+<td valign="top">
 
-Requisitos: Docker. Generá los secretos:
-```bash
-openssl rand -hex 24   # ARCANUM_API_KEY     (protege la API)
-openssl rand -hex 32   # ARCANUM_MASTER_KEY  (cifra las claves privadas — guardala bien)
-```
-Y levantá:
-```bash
-git clone <repo> arcanum && cd arcanum
-cp .env.example .env        # completá ARCANUM_API_KEY, ARCANUM_MASTER_KEY y ARCANUM_ADMIN_PASS
-docker compose up -d
-```
-Levanta Postgres + la app en el puerto **8094**. Entrá a **http://localhost:8094**.
+**Números que se entienden**
+Facturación, compras, IVA, principales clientes y proveedores. Un clic filtra todo. Topes de Monotributo con semáforo y recordatorio de recategorización.
 
-Para **EasyPanel / Dokploy / Portainer** y el despliegue con imagen publicada, ver [DESPLIEGUE.md](DESPLIEGUE.md).
+</td>
+</tr>
+<tr>
+<td valign="top">
 
----
+**Constatá lo que te facturan**
+Cada recibido contra ARCA (WSCDC) y su emisor contra la base de apócrifos, en segundo plano. Con Factorum, además, lectura de facturas en PDF o imagen.
 
-## La interfaz web
+</td>
+<td valign="top">
 
-Panel limpio (tema claro/oscuro, sin frameworks), con todo lo que un contador necesita:
+**Los 25 servicios de ARCA**
+Padrón A5 y A13, facturación, constatación, e-Ventanilla, agro y remitos, desde un catálogo editable en vivo y con guía de activación de cada servicio.
 
-- **Panel**: métricas en vivo — emisiones del día, monto, tokens vigentes, certificados por vencer, peticiones, y **estado de cada servicio de ARCA** (uptime + latencia, con monitoreo automático).
-- **Clientes**: alta de un CUIT generando el **CSR** del lado del server, pegando después el `.crt` de ARCA; o **importar un par clave+certificado** que ya tengas. Ves vigencia y estado.
-- **Servicios**: el catálogo completo, con **guía de activación paso a paso** por servicio (qué asociar en el Administrador de Relaciones de Clave Fiscal). El superadmin puede editar/agregar servicios acá.
-- **Emitir**: formulario para sacar un comprobante y obtener el CAE.
-- **Comprobantes**: listado, descarga del **PDF con QR de ARCA**, export CSV para Libro IVA.
-- **Facturas recibidas** (si [Factorum](#factorum-facturas-recibidas) está conectado): verificar si una factura es legal, subir lotes, revisar y aprobar lo leído, y bajar el Excel o el CSV.
-- **Generador**: armás la consulta y te genera el **nodo de n8n listo para pegar** + snippets en **cURL / JavaScript / Python**. Incluye un explorador que **lee el WSDL en vivo** y te lista operaciones y campos.
-- **Webhooks** y **Usuarios** (con roles).
+</td>
+</tr>
+<tr>
+<td valign="top">
 
----
+**Hecho para integrar**
+API REST documentada en `/docs`, motor genérico para cualquier operación, nodo de n8n listo para pegar, webhooks firmados y servidor MCP para asistentes de IA.
 
-## Servicios de ARCA cubiertos
+</td>
+<td valign="top">
 
-Todos accesibles vía el motor genérico (`/api/ws/...`). Los marcados **rico** tienen además endpoints REST dedicados con validación.
+**Seguro de verdad**
+Firma local, cifrado AES-256-GCM, roles y alcance por CUIT, sesiones revocables, auditoría, límites por clave. Con una auditoría de seguridad completa en noviembre de 2026.
 
-| Servicio | Para qué | Soporte |
-|---|---|---|
-| **WSFEv1** | Factura electrónica nacional (A/B/C/M, CAE) | **rico** |
-| WSFEXv1 | Factura de exportación | genérico |
-| WSMTXCA | Factura con detalle de ítems | genérico |
-| WSBFEv1 | Bonos fiscales | genérico |
-| WSCT | Comprobantes de turismo | genérico |
-| WSFECRED | Factura de Crédito MiPyME (FCE) | genérico |
-| **Padrón A5** | Constancia de inscripción / datos del contribuyente | **rico** |
-| **Padrón A13** | Mi Categoría / datos de monotributo | **rico** |
-| WSCDC | Constatación de comprobantes (validar CAE) | genérico |
-| WSCTG | Código de Trazabilidad de Granos | genérico |
-| WSLPG / WSLSP | Liquidación de granos / sector pecuario | genérico |
-| WSLUM / WSLTV | Liquidación lechera / tabaco | genérico |
-| WSREMCARNE / HARINA / AZUCAR | Remitos electrónicos | genérico |
+</td>
+</tr>
+</table>
 
-> Un servicio genérico se "asciende" a rico cuando hace falta. Y el superadmin puede sumar cualquier WS nuevo desde la UI sin tocar código.
-
----
-
-## Conectar a n8n
-
-Un solo nodo **HTTP Request**:
-- **Method** `POST`, **URL** `https://tu-arcanum/api/ws/padron_a5/getPersona_v2` (o el endpoint que necesites)
-- Credencial **Header Auth** → Name `X-API-Key`, Value tu clave
-- **Body (JSON)**: `{ "cuit": "20111111112", "params": { "idPersona": "{{ $json.cuit }}" } }`
-
-Listo: sin nodos de WSAA, sin firmar a mano. Y desde la pestaña **Generador** de la UI te sale el nodo ya armado para copiar y pegar.
-
-Arcanum también te puede avisar a vos: configurás **webhooks** (firmados con HMAC) que disparan ante eventos — `comprobante_emitido`, `cert_por_vencer`, `arca_caido`, etc.
-
----
-
-## Endpoints principales
+## Cómo se ve
 
 | | |
 |---|---|
-| `POST /api/wsfev1/comprobantes` | Emitir y obtener CAE (auto-numeración, idempotencia, validación de importes) |
-| `GET  /api/wsfev1/consultar` | Reimprimir / verificar un comprobante |
-| `GET  /api/padron/a5/{cuit}` · `a13` | Consulta de padrón (módulo rico) |
-| `POST /api/ws/{servicio}/{operación}` | Genérico: cualquier servicio del catálogo |
-| `GET  /api/services` · `/api/services/{id}/operaciones` | Catálogo + introspección de WSDL |
-| `GET  /api/comprobantes` · `/export.csv` · `/{…}/pdf` | Comprobantes, export y PDF con QR |
-| `GET  /api/metrics` · `/metrics` | Métricas (JSON y Prometheus) |
-| `GET /docs` | OpenAPI interactivo |
+| ![Panel](docs/media/capturas/panel.png) | ![Análisis](docs/media/capturas/analisis.png) |
+| **Panel.** Emisiones, certificados por vencer y el estado de cada servicio de ARCA. | **Análisis.** Facturación, compras, IVA y principales clientes, con un clic. |
+| ![Mis Comprobantes](docs/media/capturas/mis-comprobantes.png) | ![Contingencia](docs/media/capturas/contingencia.png) |
+| **Mis Comprobantes.** Emitidos y recibidos del portal, sincronizados solos. | **Contingencia.** La facturación sigue aunque ARCA no responda. |
 
-Toda la API se autentica con `X-API-Key`, con `Authorization: Bearer <clave>` o con la sesión del panel. Las emisiones aceptan el encabezado `Idempotency-Key` (o `idempotencyKey` en el cuerpo): un reintento devuelve el comprobante ya emitido, sin pedir otro CAE. La clave vale por CUIT y entorno: la misma clave en otro CUIT no devuelve nada de ese CUIT.
+<sub>Datos de demostración ficticios.</sub>
 
 ---
 
-## Claves de API
+## Instalalo en minutos
 
-Además de la clave maestra (`API_KEY` del entorno), en **Usuarios → Claves de API** se crean claves propias para cada integración:
+Necesitás un servidor con Docker y un dominio con HTTPS.
 
-- **Rol por clave**: `lectura` (solo consulta: ni por la API REST ni por MCP puede emitir ni modificar nada), `operador` (puede emitir) o `admin`.
-- **CUITs permitidos** opcionales: la clave queda limitada a esos contribuyentes.
-- **Baja individual**: dar de baja una clave la corta al instante sin tocar las demás.
-- **Vencimiento** opcional (en días) y **rotación**: rotar crea una clave nueva con los mismos permisos y deja la anterior andando los días de gracia que elijas (7 por defecto), así cambiás la integración sin cortes.
-- **Límite por minuto** por clave (120 por defecto, `ARCANUM_CLAVE_LIMITE_MIN`; 0 lo apaga). Al pasarse responde `429` con `Retry-After`.
-- **Uso por clave**: pedidos, errores, rechazos, CUITs consultados, operaciones y últimos pedidos (botón "Uso").
-- **Alertas de uso anómalo**: si una clave consulta muchos CUITs distintos en una hora (`ARCANUM_ANOMALIA_CUITS_HORA`, 50) o acumula rechazos por permiso o por límite (`ARCANUM_ANOMALIA_RECHAZOS_HORA`, 20), se dispara el evento `clave_anomala`.
-- La clave se muestra **una sola vez** al crearla; Arcanum guarda solo su hash SHA-256 y nunca la escribe en los logs.
+```bash
+git clone https://github.com/diegoparras/arcanum
+cd arcanum
+cp .env.example .env        # completá los secretos: ver la guía de instalación
+docker compose up -d
+```
 
-## Servidor MCP (solo consulta)
+Arcanum queda en `127.0.0.1:8094`, listo para poner detrás de tu proxy con HTTPS. También corre en **EasyPanel, Coolify, Dokploy y Portainer** con la imagen `ghcr.io/diegoparras/arcanum:latest`.
 
-`POST /mcp` publica un servidor [Model Context Protocol](https://modelcontextprotocol.io) sobre Streamable HTTP, sin estado, para asistentes como SecretarIA. Exige una clave (`Authorization: Bearer <clave>` o `X-API-Key`); sin clave o con una clave inválida responde `401`.
+La **[Guía de instalación (PDF)](docs/guias/arcanum-guia-instalacion.pdf)** lleva paso a paso del servidor vacío al primer comprobante autorizado: secretos, Docker y EasyPanel, certificados de ARCA, homologación, producción, integraciones, backups y solución de problemas. El detalle de cada panel está también en [DESPLIEGUE.md](DESPLIEGUE.md).
+
+> **Empezá por homologación.** Con `ARCANUM_ENV=homo` y un certificado de prueba, `node src/tools/prueba-homologacion.js` recorre todo el circuito contra los servidores de prueba de ARCA, sin riesgo.
+
+---
+
+## Referencia
+
+<details>
+<summary><b>Arquitectura</b></summary>
+
+```mermaid
+flowchart LR
+  subgraph Tus sistemas
+    A[n8n / ERP] --> API
+    B[Asistente de IA] --> MCP
+    C[Navegador] --> UI
+  end
+  subgraph Arcanum
+    UI[Panel web] --> N[Núcleo]
+    API[API REST] --> N
+    MCP[Servidor MCP] --> N
+    N --> W[Firma WSAA local]
+    N --> D[(PostgreSQL)]
+  end
+  W --> ARCA[Web Services de ARCA]
+  N -. opcional .-> F[Fisherboy: Mis Comprobantes]
+  N -. opcional .-> FA[Factorum: facturas recibidas]
+  N -. opcional .-> L[Lockatus: ingreso único]
+```
+
+- **Firma WSAA 100 % local:** el ticket de requerimiento se firma en CMS/PKCS#7 en memoria, con `node-forge`. Ningún SDK llama a terceros.
+- **Tickets cacheados:** por CUIT, servicio y entorno, cifrados en la base. Los pedidos simultáneos comparten un solo login; si ARCA rechaza por ticket vencido, Arcanum reintenta solo.
+- **Catálogo declarativo:** endpoints, namespaces, autenticación y guía de activación de cada servicio, editable en vivo por el superadmin. Las direcciones solo pueden ser `https` de dominios de ARCA.
+- **Multi-CUIT y multi-entorno:** varios contribuyentes en una instancia; homologación y producción se cambian desde el panel.
+
+</details>
+
+<details>
+<summary><b>Servicios de ARCA cubiertos</b></summary>
+
+Todos se llaman con el motor genérico (`POST /api/ws/{servicio}/{operación}`). Los marcados **dedicado** tienen además endpoints REST con validación.
+
+| Servicio | Para qué | Soporte |
+|---|---|---|
+| **WSFEv1** | Factura electrónica nacional (A, B, C, M), CAE y CAEA | **dedicado** |
+| WSFEXv1 | Factura de exportación | dedicado |
+| WSMTXCA | Factura con detalle de ítems | dedicado |
+| **Padrón A5** | Constancia de inscripción, datos del contribuyente | **dedicado** |
+| **Padrón A13** | Monotributo | **dedicado** |
+| WSCDC | Constatación de comprobantes | **dedicado** |
+| e-Ventanilla | Comunicaciones del domicilio fiscal electrónico | **dedicado** |
+| WSBFEv1, WSCT, WSFECRED | Bonos fiscales, turismo, factura de crédito MiPyME | genérico |
+| WSCTG, WSLPG, WSLSP, WSLUM, WSLTV | Granos, liquidaciones del agro | genérico |
+| WSREMCARNE, WSREMHARINA, WSREMAZUCAR | Remitos electrónicos | genérico |
+
+</details>
+
+<details>
+<summary><b>Endpoints principales</b></summary>
+
+| Endpoint | Qué hace |
+|---|---|
+| `POST /api/wsfev1/comprobantes` | Emite y devuelve el CAE (numeración automática, idempotencia, validación de importes) |
+| `POST /api/wsfev1/comprobantes/vista-previa` | Valida un comprobante sin emitirlo y devuelve el número que le tocaría |
+| `GET /api/wsfev1/consultar` | Consulta un comprobante en ARCA |
+| `GET /api/padron/a5/{cuit}` · `a13` | Padrón |
+| `POST /api/ws/{servicio}/{operación}` | Cualquier operación de cualquier servicio del catálogo |
+| `GET /api/services` · `/{id}/operaciones` | Catálogo e introspección del WSDL en vivo |
+| `GET /api/comprobantes` · `/export.csv` · `/{…}/pdf` | Comprobantes, CSV y PDF con QR |
+| `GET /api/mis-comprobantes/{cuit}` · `/analisis` | Mis Comprobantes y su análisis |
+| `POST /api/constatacion` | Constata una lista de comprobantes (WSCDC y apócrifos) |
+| `GET /api/monotributo/{cuit}` | Facturado en 12 meses contra el tope de la categoría |
+| `GET /api/metrics` · `/metrics` | Métricas en JSON y en formato Prometheus |
+| `GET /docs` | Documentación interactiva (OpenAPI) |
+
+La API se autentica con `X-API-Key`, con `Authorization: Bearer <clave>` o con la sesión del panel. Las emisiones aceptan `Idempotency-Key` (o `idempotencyKey` en el cuerpo); la clave vale por CUIT y entorno.
+
+</details>
+
+<details>
+<summary><b>Claves de API</b></summary>
+
+Además de la clave maestra, en **Usuarios → Claves de API** se crea una clave por integración:
+
+- **Rol:** `lectura` (solo consulta, ni por REST ni por MCP puede emitir), `operador` (emite) o `admin`.
+- **CUITs permitidos:** la clave queda limitada a esos contribuyentes. Un CUIT mal tipeado es un error, nunca "todos".
+- **Vencimiento y rotación** con días de gracia, para cambiar la clave sin cortes.
+- **Límite por minuto** (120 por defecto, `ARCANUM_CLAVE_LIMITE_MIN`); al pasarse responde `429` con `Retry-After`.
+- **Uso por clave:** pedidos, errores, rechazos, CUITs consultados y últimos pedidos.
+- **Aviso de uso anómalo** (`clave_anomala`) si consulta muchos CUITs o acumula rechazos.
+- La clave se muestra **una sola vez**; Arcanum guarda solo su hash SHA-256.
+
+</details>
+
+<details>
+<summary><b>Servidor MCP para asistentes de IA</b></summary>
+
+`POST /mcp` publica un servidor [Model Context Protocol](https://modelcontextprotocol.io) sin estado, con clave de API. **Todas las herramientas son de solo consulta**; un lote acepta hasta 10 llamadas y cada una cuenta para el límite de la clave.
 
 | Herramienta | Devuelve |
 |---|---|
-| `padron` | Razón social, condición frente al IVA, domicilio fiscal, actividades y estado de la clave (padrón A5) |
-| `comprobante` | Fecha, importes, CAE, vencimiento del CAE y receptor de un comprobante (ej. `0003-00000124`) |
-| `ultimo_comprobante` | Último número autorizado y próximo número para un punto de venta y tipo |
-| `puntos_de_venta` | Puntos de venta habilitados en ARCA para facturación electrónica |
-| `estado_arca` | Si ARCA responde ahora y el último estado conocido de cada servicio |
-| `riesgo_fiscal` | Semáforo (verde, amarillo, rojo) que cruza padrón A5 y base de apócrifos, con el comprobante sugerido |
-| `comprobantes_recientes` | Últimos comprobantes emitidos o importados por Arcanum, con filtros por fecha y receptor |
-| `comunicaciones_ventanilla` | Comunicaciones de e-Ventanilla de los últimos días (solo el listado: no las marca como leídas) |
-| `vencimiento_certificado` | Hasta cuándo sirve cada certificado cargado |
-| `vista_previa_comprobante` | Revisa un comprobante sin emitirlo: problemas, advertencias, número que le tocaría y el cuerpo listo para emitir |
-| `mis_comprobantes` | Emitidos y recibidos de Mis Comprobantes ya bajados: cantidades, neto (las NC restan), por tipo y los últimos 50 |
-| `topes_monotributo` | Facturado en 12 meses contra el tope de la categoría: porcentaje, alerta, margen y categoría sugerida |
-| `constatacion_recibidos` | Resultado guardado de constatar los recibidos (WSCDC + apócrifos) y los observados |
-| `facturas_recibidas` | Facturas recibidas leídas por Factorum (si está conectado): tipo, número, emisor, importes por alícuota, CAE, estado, hallazgos y constatación; hasta 50 |
-| `factura_recibida` | Una factura recibida por su id, con de dónde salió cada campo y las correcciones hechas a mano |
-| `resumen_facturas_recibidas` | Totales de las recibidas: neto, IVA por alícuota, otros tributos y total (las NC restan), por estado y por tipo |
-| `verificar_factura` | Veredicto de una factura en base64 (válida, inválida, apócrifa, con errores o no verificable) sin guardarla |
+| `padron` | Razón social, condición frente al IVA, domicilio y actividades |
+| `comprobante` · `comprobantes_recientes` | Un comprobante o los últimos, con filtros |
+| `ultimo_comprobante` · `puntos_de_venta` | Numeración y puntos de venta habilitados |
+| `estado_arca` | Si ARCA responde y el estado de cada servicio |
+| `riesgo_fiscal` | Semáforo que cruza padrón y base de apócrifos |
+| `comunicaciones_ventanilla` | Comunicaciones de e-Ventanilla (sin marcarlas como leídas) |
+| `vencimiento_certificado` | Hasta cuándo sirve cada certificado |
+| `vista_previa_comprobante` | Revisa un comprobante sin emitirlo |
+| `mis_comprobantes` · `topes_monotributo` · `constatacion_recibidos` | Datos de Mis Comprobantes |
+| `facturas_recibidas` · `factura_recibida` · `resumen_facturas_recibidas` · `verificar_factura` | Facturas recibidas (con Factorum) |
 
-Todas son de solo lectura: la emisión y el motor genérico `/api/ws/...` no se exponen por MCP. Para que un asistente facture, el flujo es: `vista_previa_comprobante`, la persona aprueba, y la emisión va por `POST /api/wsfev1/comprobantes` con una clave aparte de rol `operador` y el `idempotencyKey` que propone la vista previa. Cada llamada corta a los 80 s (`ARCANUM_MCP_TIMEOUT_MS`) con un error claro y las respuestas se recortan por debajo de 20.000 caracteres. Las respuestas son datos JSON, nunca texto dirigido al asistente.
+Para que un asistente facture: `vista_previa_comprobante`, una persona aprueba, y la emisión va por la API REST con una clave de rol `operador`.
 
-```bash
-curl -s -X POST https://tu-arcanum/mcp \
-  -H "content-type: application/json" -H "accept: application/json, text/event-stream" \
-  -H "authorization: Bearer ark_..." \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"prueba","version":"1"}}}'
-```
+</details>
 
-## Mis Comprobantes (con el navegador de Fisherboy)
+<details>
+<summary><b>Mis Comprobantes, constatación y Monotributo</b></summary>
 
-ARCA no publica Mis Comprobantes por Web Service, así que Arcanum lo baja **operando la página**, con la *sesión de agente* de [Fisherboy](https://github.com/diegoparras/fisherboy/blob/main/docs/AGENT.md) (Arcanum no trae navegador propio):
+ARCA no publica Mis Comprobantes como Web Service: Arcanum lo baja operando el portal con la sesión de agente de [Fisherboy](https://github.com/diegoparras/fisherboy) (1.12.1 o superior).
 
-1. Fisherboy corre una **receta** fija: login, portal, Mis Comprobantes (que se abre en otra pestaña), representado y la sección (Emitidos o Recibidos). Ahí pide los comprobantes **directo a ARCA**, con la misma llamada que hace la página al apretar Buscar, y los recibe en JSON: no maneja el calendario, la tabla ni el botón de exportar. ARCA exige que la consulta sea de la sección abierta y de 365 días como máximo; Arcanum parte los rangos largos en tramos. Requiere Fisherboy 1.12.0 o superior.
-2. **Por defecto es RPA puro:** si un paso falla, la corrida termina con el error del paso, sin IA. Con `ARCANUM_MC_IA=1`, si un paso falla y Fisherboy tiene IA configurada (cualquier proveedor compatible con OpenAI, incluido Ollama local), la IA intenta cumplir el **objetivo** de ese paso y la receta sigue. La IA ve la página como texto, con los CUIT y otros datos personales reemplazados por marcadores, y **nunca ve la clave**: la escribe por su marcador `{{secret:clave_fiscal}}`.
-3. Si ARCA pide un **captcha** o un segundo factor, la sesión se pausa y lo resolvés en la pestaña **Mis Comprobantes**, que muestra el navegador **en vivo**. Con **Tomar el control** manejás vos y con **Devolver a la receta** sigue sola. Un admin puede tomar el control en cualquier momento. Un operador solo cuando ARCA pide una persona, y solo en el login de ARCA o en Mis Comprobantes: el navegador ya entró con la clave fiscal y desde el portal se llega a cualquier servicio del contribuyente. Cada clic o tecla queda en la auditoría con el CUIT y la página, nunca con lo tipeado.
-4. El CSV se parsea y se guarda sin duplicar (re-sincronizar actualiza importes).
-5. Si una corrida falla, Arcanum guarda la **última pantalla** del navegador de Fisherboy antes de cerrar la sesión, y en Sincronizaciones aparece **Ver pantalla**: muestra qué vio el robot cuando falló (un cartel de ARCA, una tabla que no llegó). Se borra a los 30 días.
+- Una **receta** hace el login, abre Mis Comprobantes y pide los datos directo a ARCA en JSON. Los rangos largos se parten en tramos de un año; una sincronización abarca hasta 3 años.
+- Si ARCA pide **captcha o segundo factor**, la vista en vivo muestra el navegador y una persona lo resuelve. Un operador solo puede intervenir cuando ARCA pide una persona, y solo en el login o en Mis Comprobantes.
+- La **clave fiscal** se guarda cifrada y nunca vuelve por la API. Si ARCA la rechaza, Arcanum la bloquea y no reintenta, para no bloquear la cuenta.
+- La sincronización es **incremental** y puede ser **diaria** (`ARCANUM_MC_HORA`). Una corrida en curso se puede cancelar.
+- **Constatación masiva:** cada recibido contra WSCDC y su emisor contra apócrifos, en segundo plano y con reintento con CUIL, DNI y consumidor final.
+- **Topes de Monotributo:** 12 meses de emitidos contra el tope de la categoría, semáforo al 80 % y 100 %, categoría sugerida y recordatorio de recategorización.
 
-**Análisis** (ícono propio en la barra lateral, aparece cuando hay comprobantes bajados): indicadores del período (facturado con las notas de crédito restadas y su variación contra el período anterior, notas de crédito, comprado, IVA crédito y débito, resultado bruto), gráfico por mes, principales clientes y proveedores, totales por tipo y subtotales por mes y contraparte. Todo filtra con un clic (un mes, una contraparte, un tipo, un indicador), cada filtro queda como un chip y el listado y el CSV siguen los mismos filtros. Por API: `GET /api/mis-comprobantes/:cuit/analisis`, con los mismos parámetros que el listado (`tipo`, `desde`, `hasta`, `clase`, `cbte`, `contraparte`, `q`).
+</details>
 
-La **clave fiscal** se carga por CUIT (admin), se guarda cifrada con la master key y no vuelve nunca por la API ni queda en logs. Si **ARCA rechaza la clave**, la credencial queda bloqueada y no se reintenta (ni a mano ni en la sincronización diaria) hasta que la vuelvas a cargar: repetir una clave mala puede bloquear la clave fiscal. La sincronización es **incremental**: la primera trae los últimos 12 meses (o desde la fecha que elijas) y las siguientes arrancan en lo último bajado de cada tipo menos `ARCANUM_MC_SOLAPE_DIAS` (30 por defecto), porque ARCA muestra algunos comprobantes días después de su fecha; repetir días no duplica. Con **Sincronizar todos los días**, el daemon hace eso a las `ARCANUM_MC_HORA` (6 por defecto, hora argentina). Mientras corre, la vista en vivo muestra en qué paso va la receta, si la IA está reintentando uno que falló y hace cuánto fue el último avance; si el registro de Fisherboy no avanza en `ARCANUM_MC_SIN_AVANCE_MIN` minutos (5 por defecto) sin una persona al mando, la corrida se corta y el error dice en qué paso quedó. Si Fisherboy frena antes de tocar un botón que podría no deshacerse, Arcanum da el OK solo cuando es una consulta (Buscar, Consultar, Filtrar); para cualquier otro, la vista en vivo pide **Sí, dale** / **No** a una persona. Fisherboy solo navega a `afip.gob.ar` y `arca.gob.ar`.
+<details>
+<summary><b>Contingencia, PDF, backups y avisos</b></summary>
 
-La receta se edita en vivo (superadmin, menú **Fisherboy y Mis Comprobantes**) para cuando ARCA cambie la página. Conexión: `FISHERBOY_URL` + `FISHERBOY_TOKEN` (ver [DESPLIEGUE.md](DESPLIEGUE.md)). El token de Fisherboy (y el de Factorum) solo viaja al servidor para el que se cargó: si cambiás la URL a otro host, Arcanum pide el token de nuevo. Si la URL viene por entorno, no se cambia desde el panel. Cada cambio avisa por el webhook `conexion_cambiada`.
+**Contingencia.** Emitiendo con `"contingencia": true`, si ARCA no responde el comprobante queda en cola (`202`) y sale solo cuando vuelve. Si el pedido llegó pero la respuesta no, se consulta ese número y se adopta el CAE. Con CAEA (opcional por CUIT) se emite igual si ARCA sigue caído, y se informa todo al volver. **Traer lo emitido por fuera** suma lo facturado en la web de ARCA u otro sistema.
 
-**Lo que se hace con esos datos:**
+**PDF.** Por defecto, igual al de ARCA (original, duplicado y triplicado) y con su mismo nombre de archivo. Se puede elegir otro modelo y una plantilla de nombre. Los datos del emisor se completan del padrón y se editan en Clientes → Datos fiscales.
 
-- **Topes de Monotributo** (`GET /api/monotributo/:cuit`): suma 12 meses de emitidos (Mis Comprobantes + lo emitido por Arcanum que no esté ahí, sin contar dos veces), con las notas de crédito restando, contra el tope de la categoría del padrón. Semáforo 80% / 100%, categoría sugerida, aviso `tope_monotributo` y recordatorio de recategorización en enero y julio. Los topes se cargan en Arcanum con su vigencia: **verificá los vigentes** en arca.gob.ar.
-- **Constatación masiva** (`POST /api/constatacion` o el botón **Constatar recibidos**): cada recibido contra WSCDC y su emisor contra la base de apócrifos, hasta 500 por pedido. Si ARCA lo rechaza con tu CUIT como receptor, se reintenta con tu CUIL, tu DNI y como consumidor final (muchas facturas B y C se hacen así); el resultado dice con cuál dio OK. Corre en segundo plano y se puede **Detener**: lo constatado queda guardado y la próxima vez sigue desde lo pendiente.
+**Backups.** Diarios y cifrados, en `/data/backups` (se guardan los últimos 14). Necesitan `ARCANUM_MASTER_KEY` o `ARCANUM_BACKUP_KEY` por entorno. Se restauran con `src/tools/restaurar-backup.js`, primero en simulacro.
 
-## Factorum (facturas recibidas)
+**Avisos.** Webhooks firmados con HMAC y correo opcional: `comprobante_emitido`, `arca_caido`, `cert_por_vencer`, `clave_por_vencer`, `clave_anomala`, `comunicacion_nueva`, `tope_monotributo`, contingencia, CAEA, Mis Comprobantes, backups y cambios de configuración.
 
-**Factorum** es el lector de facturas de la suite: lee PDF e imágenes (QR de ARCA, texto, OCR y, si hay un modelo configurado, IA), corre los controles (que neto más IVA más otros dé el total, que el QR coincida con el texto, CUIT válidos, duplicados) y constata cada comprobante con ARCA. Es un servicio aparte, en Go; Arcanum le hace de puerta con sus propios usuarios, roles y scope por CUIT:
+</details>
 
-```
-  Arcanum (UI, API, MCP) ──token de servicio──► Factorum ──clave de API──► Arcanum
-  usuarios, roles, scope                        lee y controla              POST /api/constatacion
-                                                                            GET  /api/padron/a5/:cuit
-```
+<details>
+<summary><b>Seguridad</b></summary>
 
-1. **Verificar una factura** (`POST /api/factorum/verificar`, rol operador o más): ¿es legal? Devuelve el veredicto (`valida`, `invalida`, `apocrifa`, `con_errores` o `no_verificable`), los datos clave y los hallazgos. No deja nada guardado. Si no se indica `cuit_consultante` y el usuario tiene un único CUIT permitido, se constata con ese.
-2. **Lotes** (`POST /api/factorum/lotes`, rol operador o más): varias facturas o un ZIP, con el cliente del estudio, IA sí o no y constatar al terminar. Se procesan en segundo plano; la pestaña **Facturas recibidas** muestra el avance.
-3. **Revisión**: cada comprobante queda `ok`, `revisar`, `error` o `aprobado`. Desde la UI se corrigen campos y se aprueba (`PATCH /api/factorum/comprobantes/:id`; cada cambio queda registrado con el usuario de Arcanum), con el archivo original a un clic.
-4. **Excel y CSV** (`GET /api/factorum/export.xlsx` y `.csv`) con los mismos filtros, más `GET /api/factorum/resumen` con los totales por alícuota.
+- **Firma local** y **cifrado en reposo** (AES-256-GCM) de claves privadas, claves fiscales, tickets y tokens de servicio.
+- **Roles** (superadmin, admin, operador, lectura) y **alcance por CUIT**. El rol lectura falla cerrado: solo `GET` y dos `POST` que solo consultan.
+- **Sesiones revocables**, protección CSRF, CSP y cabeceras de seguridad, límite de intentos de ingreso por IP, usuario y global.
+- **Endpoints de ARCA validados**, protección SSRF con resolución DNS en webhooks, tokens de servicio atados a su destino.
+- **Auditoría** de pedidos con usuario e IP, imagen sin root y cadena de publicación verificada (tests, lint y `npm audit` antes de cada imagen).
 
-Leer (lotes, comprobantes, resumen, exportar) lo puede cualquier rol; con **scope por CUIT**, cada usuario o clave ve solo los clientes que tiene permitidos (y si tiene uno solo, se filtra por ese). Los archivos de hasta 20 MB (60 MB por lote) pasan por Arcanum sin quedar en ningún registro.
+Arcanum pasó una auditoría de seguridad completa en noviembre de 2026. Para reportar una vulnerabilidad, ver [SECURITY.md](SECURITY.md).
 
-Conexión: `FACTORUM_URL` + `FACTORUM_TOKEN`, o desde el menú **Factorum (facturas recibidas)** (superadmin), donde el token se guarda cifrado y no vuelve nunca por la API. La pestaña aparece solo cuando Factorum responde. Para la vuelta, Factorum necesita una clave de Arcanum de rol `operador` acotada a los CUITs con los que constata: ver [DESPLIEGUE.md](DESPLIEGUE.md).
+</details>
 
-## PDF del comprobante
+<details>
+<summary><b>Versiones y publicación</b></summary>
 
-Por defecto el PDF es **igual al de ARCA** ("Comprobantes en línea": original, duplicado y triplicado) y el archivo se llama como lo nombra ARCA, `CUIT_TIPO_PV_NUMERO.pdf`. Al facturar se puede elegir otro modelo (`arcanum`) y otro nombre con una plantilla (`{receptor}`, `{numero}`, `{pv}`, `{letra}`, `{tipo}`, `{fecha}`, `{cuit}`, `{total}`):
+Cada push a `main` corre los tests, el lint y `npm audit`, y si pasan publica la imagen multi-arquitectura (amd64 y arm64) en GHCR como `:latest` y `:X.Y.Z`, con su Release y sus notas. Cada versión dice qué cambia desde una sola fuente, el [CHANGELOG](CHANGELOG.md): aparece en el log del contenedor al arrancar, en el panel después de cada actualización (menú → Novedades) y en GitHub.
 
-```json
-{ "pdf": { "modelo": "arca", "nombreArchivo": "FACTURA {receptor} {letra}-{pv}-{numero}" } }
-```
-
-`GET /api/comprobantes/:cuit/:pv/:tipo/:nro/pdf` respeta lo elegido; `?modelo=`, `?nombre=` y `?copias=1..3` lo pisan para esa descarga.
-
-**Datos del encabezado.** Lo que ARCA expone por web service se completa solo desde el padrón (constancia de inscripción): razón social, domicilio y condición frente al IVA del emisor (botón **Traer de ARCA** en Clientes > Datos fiscales, o al generar el PDF si faltan), y nombre y domicilio del receptor con CUIT (al emitir, o al generar el PDF de uno ya emitido). Nunca se pisa lo cargado a mano. **Ingresos Brutos** y **fecha de inicio de actividades** no los da ARCA por web service: se cargan una vez en Datos fiscales; la vista previa avisa si faltan. Sin condición cargada, una factura C sale como "Responsable Monotributo", nunca como inscripto.
-
-## Contingencia: que la facturación no se corte
-
-- **Cola**: emitiendo con `"contingencia": true` (o con el tilde de Emitir), si ARCA no responde el comprobante queda en la cola (`202`) y sale solo cuando vuelve (el daemon reintenta con espera creciente y en el acto con `arca_restablecido`). Si el pedido llegó a ARCA pero la respuesta no volvió, antes de reintentar se consulta ese número: si ARCA lo otorgó, se **adopta ese CAE**. La fecha nunca cambia sola: si ARCA ya no la acepta, el comprobante espera tu decisión ("emitir con fecha de hoy" o cancelar). Todo en la pestaña **Contingencia**.
-- **CAEA (opcional por CUIT)**: se prende en Contingencia con un punto de venta de tipo CAEA. Arcanum pide el código de cada quincena, emite con CAEA solo si ARCA sigue caído pasados los minutos elegidos, e informa todo (y los "sin movimiento") cuando vuelve. Avisa (`caea_informe_pendiente`) a 2 días de la fecha tope. Pedir un CAEA obliga a informar: por eso está apagado por defecto.
-- **Lo emitido por fuera**: en Comprobantes, **Traer lo emitido por fuera** (o `POST /api/wsfev1/sincronizar`, y una vez por día) suma lo facturado en la web de ARCA u otro sistema, y avisa si algo no coincide.
-
-## Backups
-
-Diarios a las 3 (`ARCANUM_BACKUP_HORA`), cifrados con una clave derivada de la master key (o `ARCANUM_BACKUP_KEY`), en `/data/backups` (se guardan los últimos `ARCANUM_BACKUP_RETENER`, 14). El superadmin los ve y descarga en **Backups y master key**. Restaurar:
-
-```bash
-docker compose exec arcanum node src/tools/restaurar-backup.js /data/backups/arcanum-AAAAMMDD-HHMM.arcbak            # simulacro
-docker compose exec arcanum node src/tools/restaurar-backup.js /data/backups/arcanum-AAAAMMDD-HHMM.arcbak --confirmar
-```
-
-Sin la master key no se abren ni los certificados ni los backups: Arcanum muestra un aviso hasta que confirmes que la guardaste fuera del servidor.
-
-## Vista previa de emisión
-
-`POST /api/wsfev1/comprobantes/vista-previa` recibe el mismo cuerpo que la emisión y **no emite nada**: valida importes, IVA, tipo, receptor (con su padrón si es CUIT), condición de IVA, fecha y RG 5866, sugiere la letra según emisor y receptor, y devuelve el número que le tocaría. Junto con `POST /api/constatacion` (constatar una lista sin guardar nada), es una de las dos excepciones de `POST` permitidas a las claves de rol `lectura`. En la UI es el botón **Vista previa** de Emitir.
-
-## Avisos proactivos
-
-Arcanum avisa por webhook (firmado con HMAC) y por email si hay SMTP configurado:
-
-| Evento | Cuándo |
-|---|---|
-| `arca_caido` / `arca_restablecido` | WSFEv1 deja de responder o vuelve (monitor cada 5 min) |
-| `cert_por_vencer` | Un certificado vence en menos de 30 días |
-| `comunicacion_nueva` | ARCA publica una comunicación en la e-Ventanilla de un CUIT (revisión cada hora, `ARCANUM_VENTANILLA_MIN`; la primera vez toma línea de base sin avisar lo viejo) |
-| `clave_por_vencer` | Una clave de API vence en menos de 7 días |
-| `clave_anomala` | Uso anómalo de una clave |
-| `comprobante_emitido` / `comprobante_rechazado` | Cada emisión |
-| `mis_comprobantes_sincronizado` / `mis_comprobantes_fallo` | Terminó una bajada de Mis Comprobantes, falló, o ARCA pide a una persona (captcha) |
-| `tope_monotributo` | Un monotributista pasó el 80% o el 100% de su categoría, o toca recategorizar (enero y julio) |
-
-En **Webhooks**, el botón **Probar** manda un evento `prueba` y muestra qué contestó el destino.
-
-## Caché del padrón
-
-Las consultas de padrón se guardan en memoria una hora (`ARCANUM_PADRON_CACHE_S`, 0 lo apaga): ARCA se pone lenta en horas pico y los datos de un CUIT cambian poco. `?fresco=1` en `/api/padron` y `/api/contribuyente` (o `actualizar: true` en la herramienta MCP `padron`) fuerza la consulta a ARCA. Los errores nunca se guardan.
+</details>
 
 ---
 
-## Seguridad
+## Parte del Ecosistema Escriba
 
-- **Firma local**: la clave privada se usa solo para firmar el TRA, en memoria, dentro del contenedor. No se transmite a ningún lado.
-- **Cifrado en reposo**: claves privadas cifradas con AES-256-GCM; la master key vive fuera de la base.
-- **Roles**: superadmin / admin / operador / lectura. Las operaciones sensibles (clientes, webhooks, usuarios, catálogo) exigen rol. El rol `lectura` (usuario o clave) solo puede hacer `GET`, más dos `POST` que solo consultan (vista previa y constatación de una lista): la regla falla cerrada, para cualquier ruta nueva también.
-- **Scope por CUIT** opcional: un usuario puede quedar limitado a ciertos CUITs (cierra el acceso cruzado).
-- **Anti fuerza bruta** en el login, **anti-SSRF** en los webhooks, comparaciones en tiempo constante, imagen sin root, auditoría de peticiones (usuario + IP).
-- En producción: `ARCANUM_ENV=prod`, secretos propios y detrás de HTTPS.
+Arcanum se usa solo, y se potencia con el resto de la suite: **[Fisherboy](https://github.com/diegoparras/fisherboy)** baja Mis Comprobantes, **Factorum** lee las facturas recibidas y **Lockatus** da el ingreso único a todas las aplicaciones.
 
----
+## Contribuir
 
-## Versionado y CI
+Los aportes son bienvenidos. [CONTRIBUTING.md](CONTRIBUTING.md) explica cómo correr el proyecto, los tests y la convención de commits.
 
-Cada `git push` dispara **GitHub Actions**, que **buildea y publica la imagen multi-arch** (amd64 + arm64) en GHCR — sin tokens manuales. En cada deploy se sube el *patch* de la versión, que se ve en el menú **Acerca de**, para confirmar de un vistazo que el deploy tomó.
-
-Cada versión dice qué cambia, desde una sola fuente: la sección `## [X.Y.Z]` del `CHANGELOG.md` (sin ella el build no sale). Esas notas aparecen en:
-
-- **Los registros del contenedor** (EasyPanel, pestaña Resumen): lo primero que escribe al levantar es un cartel `ARCANUM vX.Y.Z (fecha)` con lo que cambia, cortado a 80 columnas. El historial de *Implementaciones* de EasyPanel no admite texto propio (siempre dice "Deploy service").
-- **La interfaz**: al entrar después de una actualización avisa "Arcanum se actualizó a la vX.Y.Z" con todo lo que cambió desde la última versión que viste en ese navegador. El historial queda en el menú, **Novedades**.
-- **GitHub**: la imagen se etiqueta también `:X.Y.Z` (además de `:latest`), se crea el Release `vX.Y.Z` con las notas y el resumen de la corrida de Actions las muestra. Si se publica dos veces la misma versión, el CI avisa que no se subió el patch.
-
-## Estado y roadmap
-
-Operativo y verificado **end-to-end contra ARCA producción** (firma WSAA, consulta de padrón con datos reales, monitoreo de servicios). Roadmap: promover WSFEX/MTXCA/agro a módulos ricos, lotes y CAEA, federación con Lockatus (SSO de la suite). Ver [CHANGELOG.md](CHANGELOG.md).
-
-## Tests
 ```bash
-npm install && npm test
+npm install
+npm test
 ```
 
 ## Licencia
-[MIT](LICENSE): podés usarlo, modificarlo, redistribuirlo y venderlo, también como parte de un producto o servicio propio, siempre que mantengas el aviso de copyright y la licencia. Arcanum no está afiliado ni respaldado por ARCA/AFIP.
 
-Hasta la versión 2.1.0 Arcanum se publicó con licencia Apache-2.0. `src/services/apoc.js` incluye un aporte de un tercero hecho bajo esa licencia; el detalle está al final de [LICENSE](LICENSE).
+[MIT](LICENSE): podés usarlo, modificarlo, redistribuirlo y venderlo, también dentro de un producto o servicio propio, manteniendo el aviso de copyright y la licencia. Hasta la versión 2.1.0 Arcanum se publicó con licencia Apache-2.0; `src/services/apoc.js` incluye un aporte de un tercero bajo esa licencia, detallado al final de [LICENSE](LICENSE).
+
+<sub>Arcanum es un proyecto independiente, sin relación con ARCA ni respaldo de ARCA. Diego Parras · Ecosistema Escriba.</sub>

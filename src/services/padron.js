@@ -40,10 +40,10 @@ async function consultarPersona(alcance, cuitRepresentada, idPersona, opts = {})
  * @returns {Promise<{datos, cache: {usado: boolean, consultado: string}}>}
  */
 async function consultarPersonaConMeta(alcance, cuitRepresentada, idPersona, opts = {}) {
-  if (!PADRONES[alcance]) throw new SoapError(`Alcance de padron desconocido: ${alcance}`, 404);
+  if (!PADRONES[alcance]) throw new SoapError(`Alcance de padrón desconocido: ${alcance}`, 404);
   const repre = normalizeCuit(cuitRepresentada);
   const target = normalizeCuit(idPersona);
-  if (!target) throw new SoapError('idPersona (CUIT a consultar) invalido', 400);
+  if (!target) throw new SoapError('idPersona (CUIT a consultar) inválido', 400);
   const clave = `${config.env}:${alcance}:${repre}:${target}`;
   if (!opts.fresco) {
     const e = cache.leer(clave);
@@ -75,7 +75,7 @@ async function consultarArca(alcance, repre, target) {
   const body = await post(cfg.endpoint(), '', envelope);
   const r = body?.[`${cfg.op}Response`];
   const resp = r?.personaReturn || r;
-  if (!resp) throw new SoapError('Padron no devolvio datos de persona', 502, { body });
+  if (!resp) throw new SoapError('Padrón no devolvió datos de persona', 502, { body });
   return resp;
 }
 

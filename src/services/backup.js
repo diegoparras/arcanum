@@ -68,10 +68,10 @@ function desempaquetar(buf, k) {
   const b = Buffer.from(buf);
   if (b.slice(0, MAGIA.length).toString() !== MAGIA) throw e422('No es un backup de Arcanum');
   const fin = b.indexOf(0x0a, MAGIA.length);
-  if (fin < 0) throw e422('Backup danado (sin cabecera)');
+  if (fin < 0) throw e422('Backup dañado (sin cabecera)');
   const cabeceraTxt = b.slice(MAGIA.length, fin).toString();
   let meta;
-  try { meta = JSON.parse(cabeceraTxt); } catch { throw e422('Backup danado (cabecera ilegible)'); }
+  try { meta = JSON.parse(cabeceraTxt); } catch { throw e422('Backup dañado (cabecera ilegible)'); }
   const iv = b.slice(fin + 1, fin + 13);
   const tag = b.slice(fin + 13, fin + 29);
   const cifrado = b.slice(fin + 29);
@@ -89,7 +89,7 @@ function desempaquetar(buf, k) {
 }
 
 function ruta(dir, nombre) {
-  if (!NOMBRE.test(String(nombre || ''))) throw Object.assign(new Error('Nombre de backup invalido'), { httpStatus: 400 });
+  if (!NOMBRE.test(String(nombre || ''))) throw Object.assign(new Error('Nombre de backup inválido'), { httpStatus: 400 });
   return path.join(dir, nombre);
 }
 

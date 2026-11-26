@@ -24,7 +24,7 @@ function ymd(d) {
   if (/^\d{8}$/.test(s)) return s;
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}${m[2]}${m[3]}`;
-  throw new SoapError(`Fecha invalida: ${d} (use YYYY-MM-DD)`, 400);
+  throw new SoapError(`Fecha inválida: ${d} (use YYYY-MM-DD)`, 400);
 }
 function todayYmd() {
   const d = new Date();
@@ -49,7 +49,7 @@ async function authEl(cuit, extra = '') {
 async function post_(method, inner) {
   const body = await post(config.endpoints.wsfex, `${NS}${method}`, envelope(`<ar:${method}>${inner}</ar:${method}>`));
   const r = body?.[`${method}Response`]?.[`${method}Result`];
-  if (r === undefined) throw new SoapError(`WSFEX no devolvio ${method}Result`, 502, { body });
+  if (r === undefined) throw new SoapError(`WSFEX no devolvió ${method}Result`, 502, { body });
   // FEXErr con codigo != 0 => error de negocio.
   const err = r.FEXErr;
   if (err && String(err.ErrCode) !== '0' && err.ErrCode !== undefined) {
@@ -179,8 +179,8 @@ async function authorize(cuit, inv) {
     if (prev) return prev;
   }
   if (inv.pdf) require('./pdf').preferencias(inv.pdf); // validar ANTES de pedir el CAE
-  if (!inv.cliente) throw new SoapError('Falta `cliente` (razon social del cliente del exterior)', 422);
-  if (!inv.paisDestino) throw new SoapError('Falta `paisDestino` (codigo de pais destino, ver FEXGetPARAM_DST_pais)', 422);
+  if (!inv.cliente) throw new SoapError('Falta `cliente` (razón social del cliente del exterior)', 422);
+  if (!inv.paisDestino) throw new SoapError('Falta `paisDestino` (código de país destino, ver FEXGetPARAM_DST_pais)', 422);
   const ptoVta = parseInt(inv.puntoVenta, 10);
   if (!ptoVta) throw new SoapError('Falta `puntoVenta`', 422);
 

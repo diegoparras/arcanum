@@ -35,7 +35,7 @@ function listaCuits(v, campo = 'cuits') {
   for (const c of v) {
     const n = normalizeCuit(c);
     if (!/^\d{11}$/.test(n)) {
-      throw Object.assign(new Error(`CUIT invalido en "${campo}": ${String(c).slice(0, 20)} (tienen que ser 11 digitos)`), { httpStatus: 400 });
+      throw Object.assign(new Error(`CUIT inválido en "${campo}": ${String(c).slice(0, 20)} (tienen que ser 11 dígitos)`), { httpStatus: 400 });
     }
     if (!out.includes(n)) out.push(n);
   }
@@ -45,7 +45,7 @@ function listaCuits(v, campo = 'cuits') {
 /** Admin y superadmin ven todos los CUITs: una lista para ellos no se aplicaria. */
 function sinCuitsParaAdmin(rol, cuits) {
   if (cuits && ['admin', 'superadmin'].includes(rol)) {
-    throw Object.assign(new Error('El rol admin ve todos los CUITs: para limitar a algunos, usa operador o lectura'), { httpStatus: 400 });
+    throw Object.assign(new Error('El rol admin ve todos los CUITs: para limitar a algunos, usá operador o lectura'), { httpStatus: 400 });
   }
 }
 

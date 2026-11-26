@@ -1,7 +1,8 @@
 'use strict';
 
-// Sesiones de la UI: token firmado (HMAC-SHA256) guardado en cookie. Sin estado
-// en servidor, igual que el patron de Lockatus/Selega.
+// Cookie de sesion de la UI: token firmado (HMAC-SHA256) con usuario, rol, CUITs y vencimiento.
+// La firma prueba que la cookie la emitio Arcanum; si sigue vigente lo decide la tabla
+// `sesiones` (ver auth/sesiones.js).
 
 const crypto = require('crypto');
 const { config } = require('../config');
@@ -35,7 +36,7 @@ function secret() {
   const nuevo = crypto.randomBytes(32).toString('hex');
   try {
     secretos.guardarSecreto(config.dataDir, ARCHIVO_SECRETO, nuevo);
-    console.log('[arcanum] Sin ARCANUM_SESSION_SECRET: se genero un secreto de sesion en el volumen (no se muestra en el log).');
+    console.log('[arcanum] Sin ARCANUM_SESSION_SECRET: se generó un secreto de sesión en el volumen (no se muestra en el log).');
   } catch (e) {
     console.warn(`[arcanum] Sin ARCANUM_SESSION_SECRET y no se pudo guardar uno generado (${e.message}): las sesiones se cierran al reiniciar.`);
   }

@@ -22,7 +22,7 @@ function isoDate(d) {
   const s = String(d);
   const m = s.match(/^(\d{4})-?(\d{2})-?(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  throw new SoapError(`Fecha invalida: ${d} (use YYYY-MM-DD)`, 400);
+  throw new SoapError(`Fecha inválida: ${d} (use YYYY-MM-DD)`, 400);
 }
 function todayIso() {
   const d = new Date();
@@ -57,7 +57,7 @@ async function callAuth(cuit, method, params = '') {
   const resp = body?.[`${method}Response`] ?? body;
   const errs = asArray(deepFind(resp, 'codigoDescripcion') || deepFind(resp, 'arrayErrores'));
   const errMsg = errs.map((e) => (e && (e.descripcion || e.Msg)) || '').filter(Boolean).join(' | ');
-  if (errMsg) throw new SoapError(`WSMTXCA rechazo: ${errMsg}`, 422, { resp });
+  if (errMsg) throw new SoapError(`WSMTXCA rechazó: ${errMsg}`, 422, { resp });
   return resp;
 }
 

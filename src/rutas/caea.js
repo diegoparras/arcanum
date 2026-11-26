@@ -49,7 +49,7 @@ function crearRutas({ caea, wsfev1 } = {}) {
         const pv = pvs.find((p) => Number(p.Nro) === puntoVenta);
         if (!pv) throw err(`ARCA no tiene el punto de venta ${puntoVenta} para este CUIT`, 400);
         if (!/CAEA/i.test(String(pv.EmisionTipo || ''))) throw err(`El punto de venta ${puntoVenta} es de tipo ${pv.EmisionTipo || '?'}: para contingencia tiene que ser de tipo CAEA`, 400);
-        if (String(pv.Bloqueado || 'N').toUpperCase() === 'S') throw err(`El punto de venta ${puntoVenta} esta bloqueado en ARCA`, 400);
+        if (String(pv.Bloqueado || 'N').toUpperCase() === 'S') throw err(`El punto de venta ${puntoVenta} está bloqueado en ARCA`, 400);
       }
       const config = await servicio().guardarConfig(cuit, { activo, puntoVenta, minutosEspera }, principal.username);
       let advertencia = null;

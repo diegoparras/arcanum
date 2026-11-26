@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Arcanum, guía de instalación</title>
+<link rel="stylesheet" href="guia.css">
+</head>
+<body>
+
+<section class="tapa">
+  <div class="grilla"></div>
+  <div class="contenido">
+    <svg class="marca" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#27408b"/><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg>
+    <div class="producto">Arcanum</div>
+    <h1>Guía de instalación</h1>
+    <div class="bajada">Del servidor vacío al primer comprobante autorizado por ARCA: requisitos, despliegue con Docker o EasyPanel, certificados, integraciones y operación diaria.</div>
+    <div class="version">versión {{VERSION}}</div>
+  </div>
+  <div class="pie"><span>Diego Parras · Ecosistema Escriba</span><span>github.com/diegoparras/arcanum</span></div>
+</section>
+
+<main class="cuerpo">
+
+<h1 class="capitulo" style="break-before:auto"><span class="num">Contenido</span>En esta guía</h1>
+<ol class="indice">
+  <li><span class="n">01</span>Antes de empezar<span class="d">qué es Arcanum y qué vas a necesitar</span></li>
+  <li><span class="n">02</span>Los secretos<span class="d">las claves que protegen la instalación</span></li>
+  <li><span class="n">03</span>Instalación con Docker Compose<span class="d">servidor propio, Dokploy, Coolify, Portainer</span></li>
+  <li><span class="n">04</span>Instalación en EasyPanel<span class="d">dos servicios, paso a paso</span></li>
+  <li><span class="n">05</span>Primer ingreso<span class="d">verificar, entrar y asegurar la cuenta</span></li>
+  <li><span class="n">06</span>Tu primer CUIT<span class="d">certificado digital y servicios de ARCA</span></li>
+  <li><span class="n">07</span>De homologación a producción<span class="d">probar sin riesgo y después facturar</span></li>
+  <li><span class="n">08</span>Integraciones opcionales<span class="d">Lockatus, Fisherboy, Factorum, n8n, IA</span></li>
+  <li><span class="n">09</span>Operación<span class="d">backups, actualizaciones, monitoreo y avisos</span></li>
+  <li><span class="n">10</span>Referencia de variables<span class="d">todas las opciones de configuración</span></li>
+  <li><span class="n">11</span>Solución de problemas<span class="d">los errores más comunes y cómo salir</span></li>
+</ol>
+
+<!-- 01 -->
+<h1 class="capitulo"><span class="num">01</span>Antes de empezar</h1>
+<p class="bajada">Arcanum es un gateway que corre en tu servidor y convierte los Web Services de ARCA (ex AFIP) en una API REST simple, con una interfaz web para operarlo todo.</p>
+
+<h2>Qué resuelve</h2>
+<p>Hablar con ARCA exige SOAP y XML, firmar un ticket de acceso en formato CMS con el certificado de cada CUIT, guardar ese ticket doce horas sin pedir otro, usar endpoints distintos para homologación y producción, y repetir todo para cada uno de los servicios. Arcanum hace ese trabajo una sola vez, dentro de tu servidor, y te deja una API REST y un panel web. La clave privada de cada certificado se usa solo para firmar, en memoria, y nunca sale del contenedor.</p>
+
+<div class="diagrama">
+<svg viewBox="0 0 640 210" xmlns="http://www.w3.org/2000/svg" font-family="Inter" font-size="12">
+  <defs><marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#27408b"/></marker></defs>
+  <rect x="6" y="66" width="150" height="78" rx="10" fill="#fff" stroke="#c8d3f1"/>
+  <text x="81" y="98" text-anchor="middle" font-weight="700" font-size="14" fill="#101828">Tus sistemas</text>
+  <text x="81" y="118" text-anchor="middle" fill="#5b6478">n8n · ERP · IA · panel</text>
+  <line x1="160" y1="105" x2="236" y2="105" stroke="#27408b" stroke-width="2" marker-end="url(#f)"/>
+  <text x="198" y="96" text-anchor="middle" fill="#5b6478" font-size="10">REST</text>
+  <rect x="240" y="40" width="170" height="130" rx="12" fill="#27408b"/>
+  <text x="325" y="84" text-anchor="middle" font-weight="800" font-size="17" fill="#fff">Arcanum</text>
+  <text x="325" y="106" text-anchor="middle" fill="#dbe4fb" font-size="10.5">firma WSAA local</text>
+  <text x="325" y="122" text-anchor="middle" fill="#dbe4fb" font-size="10.5">tickets y reintentos</text>
+  <text x="325" y="138" text-anchor="middle" fill="#dbe4fb" font-size="10.5">SOAP a JSON</text>
+  <line x1="414" y1="105" x2="490" y2="105" stroke="#27408b" stroke-width="2" marker-end="url(#f)"/>
+  <text x="452" y="96" text-anchor="middle" fill="#5b6478" font-size="10">SOAP</text>
+  <rect x="494" y="66" width="140" height="78" rx="10" fill="#fff" stroke="#c8d3f1"/>
+  <text x="564" y="98" text-anchor="middle" font-weight="700" font-size="14" fill="#101828">ARCA</text>
+  <text x="564" y="118" text-anchor="middle" fill="#5b6478">homo · prod</text>
+  <rect x="270" y="182" width="110" height="24" rx="6" fill="#eef2fc" stroke="#c8d3f1"/>
+  <text x="325" y="198" text-anchor="middle" fill="#1d3168" font-size="10.5">PostgreSQL</text>
+  <line x1="325" y1="170" x2="325" y2="182" stroke="#27408b" stroke-width="1.5"/>
+</svg>
+</div>
+
+<h2>Qué vas a necesitar</h2>
+<table>
+  <thead><tr><th style="width:32%">Requisito</th><th>Detalle</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Un servidor con Docker</strong></td><td>Linux con Docker y Docker Compose, o un panel que los use (EasyPanel, Dokploy, Coolify, Portainer). Con 1 vCPU y 1 GB de RAM alcanza para empezar.</td></tr>
+    <tr><td><strong>Un dominio con HTTPS</strong></td><td>Arcanum no termina TLS: va detrás de un proxy (el de tu panel, Traefik, Caddy o Nginx). Sin HTTPS no lo publiques.</td></tr>
+    <tr><td><strong>Clave fiscal del contribuyente</strong></td><td>Nivel 3 o superior, para crear el certificado digital y asociar los servicios en ARCA.</td></tr>
+    <tr><td><strong>Un gestor de contraseñas</strong></td><td>Para guardar la master key y las claves de API fuera del servidor.</td></tr>
+  </tbody>
+</table>
+
+<!-- 02 -->
+<h1 class="capitulo"><span class="num">02</span>Los secretos</h1>
+<p class="bajada">Cuatro valores protegen la instalación. Generalos antes de desplegar y guardalos en tu gestor de contraseñas.</p>
+
+<table>
+  <thead><tr><th style="width:30%">Variable</th><th>Para qué sirve</th></tr></thead>
+  <tbody>
+    <tr><td><code>ARCANUM_MASTER_KEY</code></td><td>Cifra en reposo (AES-256-GCM) las claves privadas de los certificados, las claves fiscales, los tokens de servicios y los backups. <strong>Sin ella no se recupera nada.</strong> En producción es obligatoria.</td></tr>
+    <tr><td><code>ARCANUM_SESSION_SECRET</code></td><td>Firma las sesiones del panel. Si falta, Arcanum genera uno en el volumen; conviene fijarlo.</td></tr>
+    <tr><td><code>ARCANUM_API_KEY</code></td><td>La clave maestra de la API, con rol admin. Para integraciones conviene crear claves propias desde el panel, con rol y CUITs acotados.</td></tr>
+    <tr><td><code>POSTGRES_PASSWORD</code></td><td>La contraseña de la base de datos (solo con el compose oficial).</td></tr>
+  </tbody>
+</table>
+
+<h3>Generarlos</h3>
+<p>En Linux o macOS:</p>
+<pre><span class="k">openssl</span> rand -hex 32   <span class="c"># ARCANUM_MASTER_KEY</span>
+<span class="k">openssl</span> rand -hex 32   <span class="c"># ARCANUM_SESSION_SECRET</span>
+<span class="k">openssl</span> rand -hex 24   <span class="c"># ARCANUM_API_KEY</span>
+<span class="k">openssl</span> rand -hex 16   <span class="c"># POSTGRES_PASSWORD</span></pre>
+<p>En Windows, con PowerShell (cambiá 32 por la cantidad de bytes de cada una):</p>
+<pre>$b = [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+[Convert]::ToHexString($b).ToLower()</pre>
+<div class="peligro"><b>La master key no se cambia</b>Si cambiás <code>ARCANUM_MASTER_KEY</code> después de cargar datos, Arcanum ya no puede descifrar los certificados ni las claves fiscales guardadas. Guardala fuera del servidor y respaldala junto con los backups.</div>
+
+<!-- 03 -->
+<h1 class="capitulo"><span class="num">03</span>Instalación con Docker Compose</h1>
+<p class="bajada">El camino más corto: un servidor con Docker, o un panel que importe archivos compose (Dokploy, Coolify, Portainer).</p>
+
+<ol class="pasos">
+  <li><strong>Bajá el proyecto.</strong>
+<pre><span class="k">git</span> clone https://github.com/diegoparras/arcanum
+<span class="k">cd</span> arcanum</pre></li>
+  <li><strong>Creá el archivo de configuración</strong> a partir del ejemplo y completá los cuatro secretos del capítulo anterior, más <code>ARCANUM_ADMIN_USER</code> y <code>ARCANUM_ADMIN_PASS</code> para el primer superadmin.
+<pre><span class="k">cp</span> .env.example .env</pre></li>
+  <li><strong>Levantá los servicios.</strong> Se crean la base de datos y la aplicación, ya conectadas entre sí.
+<pre><span class="k">docker</span> compose up -d</pre></li>
+  <li><strong>Poné el proxy con HTTPS delante.</strong> Arcanum queda publicado solo en <code>127.0.0.1:8094</code>: apuntá ahí tu proxy (Caddy, Nginx, Traefik) con el dominio y el certificado TLS.</li>
+</ol>
+
+<div class="nota"><b>Imagen oficial</b>Cada versión se publica en <code>ghcr.io/diegoparras/arcanum</code> con la etiqueta <code>:latest</code> y con su número (<code>:{{VERSION}}</code>). La imagen corre sin root, trae healthcheck y no incluye npm.</div>
+<h3>Ejemplo mínimo con Caddy</h3>
+<pre>arcanum.tuempresa.com {
+    reverse_proxy 127.0.0.1:8094
+}</pre>
+<div class="nota"><b>Paneles con editor de compose</b>Pegá el contenido de <code>docker-compose.yml</code> en el editor del panel y cargá las variables en su sección de entorno: todas las de <code>.env.example</code> llegan al contenedor. <code>POSTGRES_PASSWORD</code> es obligatoria.</div>
+
+<!-- 04 -->
+<h1 class="capitulo"><span class="num">04</span>Instalación en EasyPanel</h1>
+<p class="bajada">Dos servicios en el mismo proyecto: la base de datos y la aplicación. EasyPanel resuelve el dominio y el HTTPS.</p>
+
+<h2>Servicio de base de datos</h2>
+<ol class="pasos">
+  <li>En el proyecto: <strong>+ Service → Postgres</strong>, con el nombre <code>arcanum-db</code>.</li>
+  <li>Anotá el usuario, la contraseña y la base que genera EasyPanel. El host interno es el nombre del servicio.</li>
+</ol>
+
+<h2>Servicio de la aplicación</h2>
+<ol class="pasos">
+  <li><strong>+ Service → App</strong>, con origen <strong>imagen</strong>: <code>ghcr.io/diegoparras/arcanum:latest</code>.</li>
+  <li>En <strong>Environment</strong>, cargá:
+<pre>ARCANUM_ENV=homo
+ARCANUM_MASTER_KEY=<span class="s">&lt;64 caracteres hex&gt;</span>
+ARCANUM_SESSION_SECRET=<span class="s">&lt;64 caracteres hex&gt;</span>
+ARCANUM_API_KEY=<span class="s">&lt;48 caracteres hex&gt;</span>
+ARCANUM_ADMIN_USER=admin
+ARCANUM_ADMIN_PASS=<span class="s">&lt;una contraseña larga&gt;</span>
+DATABASE_URL=postgres://USUARIO:CLAVE@arcanum-db:5432/BASE
+PORT=8094</pre></li>
+  <li>En <strong>Mounts</strong>, un volumen en <code>/data</code>: guarda los archivos que Arcanum genera (claves, capturas, backups).</li>
+  <li>En <strong>Domains</strong>, el dominio apuntando al puerto <code>8094</code>, con HTTPS.</li>
+  <li><strong>Deploy.</strong> Al terminar, el log del servicio muestra un cartel con la versión y sus novedades.</li>
+</ol>
+<div class="tip"><b>Si no fijás la contraseña inicial</b>Sin <code>ARCANUM_ADMIN_PASS</code>, Arcanum genera una y la guarda en <code>/data/admin-clave-inicial</code> (nunca en el log). Leela desde la consola del servicio; en el primer ingreso Arcanum te pide cambiarla y borra ese archivo.</div>
+
+<!-- 05 -->
+<h1 class="capitulo"><span class="num">05</span>Primer ingreso</h1>
+<p class="bajada">Comprobá que Arcanum responde, entrá con el superadmin y dejá la cuenta en orden.</p>
+
+<ol class="pasos">
+  <li><strong>Verificá que está arriba.</strong> Tiene que responder <code>{"ok": true}</code>:
+<pre><span class="k">curl</span> https://arcanum.tuempresa.com/api/health</pre></li>
+  <li><strong>Entrá al panel</strong> en <code>https://arcanum.tuempresa.com</code> con el usuario y la contraseña del superadmin.</li>
+  <li><strong>Revisá la versión</strong> en el menú de tres puntos, <strong>Acerca de Arcanum</strong>.</li>
+  <li><strong>Guardá la master key fuera del servidor</strong> y confirmalo en <strong>Backups y master key</strong>: el panel muestra su huella para comprobar tu copia.</li>
+  <li><strong>Creá los usuarios</strong> del equipo en <strong>Usuarios</strong>, con el rol justo para cada uno (ver la guía de uso).</li>
+</ol>
+<figure><img src="../../media/capturas/login.png" alt=""><figcaption>Pantalla de ingreso. Con Lockatus configurado, el ingreso es solo por SSO.</figcaption></figure>
+
+<!-- 06 -->
+<h1 class="capitulo"><span class="num">06</span>Tu primer CUIT</h1>
+<p class="bajada">Para hablar con ARCA en nombre de un contribuyente, Arcanum necesita su certificado digital y que los servicios estén asociados a ese certificado.</p>
+
+<h2>1. Generar la clave y el pedido de certificado</h2>
+<ol class="pasos">
+  <li>En <strong>Clientes → Nuevo cliente</strong>, cargá el CUIT y la razón social.</li>
+  <li>Arcanum genera la clave privada (queda cifrada en la base y nunca sale) y el pedido de certificado (<strong>CSR</strong>). Descargalo con <strong>CSR</strong>.</li>
+</ol>
+
+<h2>2. Obtener el certificado en ARCA</h2>
+<table>
+  <thead><tr><th style="width:24%">Entorno</th><th>Dónde se crea</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Homologación</strong></td><td>Servicio <strong>WSASS - Autogestión Certificados Homologación</strong>: <em>Nuevo certificado</em>, pegás el CSR y copiás el certificado que devuelve.</td></tr>
+    <tr><td><strong>Producción</strong></td><td>Servicio <strong>Administración de Certificados Digitales</strong>: agregás un alias, subís el CSR y descargás el <code>.crt</code>.</td></tr>
+  </tbody>
+</table>
+<p>Si el servicio no aparece en tu clave fiscal, adheríalo desde <strong>Administrador de Relaciones de Clave Fiscal</strong>.</p>
+
+<h2>3. Cargar el certificado</h2>
+<p>En <strong>Clientes</strong>, <strong>Pegar .crt</strong> en ese CUIT. Arcanum comprueba que el certificado corresponda a la clave privada guardada y muestra la vigencia. Si ya tenés un par de clave y certificado de otro sistema, usá <strong>Importar certificado</strong>.</p>
+
+<h2>4. Asociar los servicios</h2>
+<p>Cada Web Service se habilita por separado en el <strong>Administrador de Relaciones</strong>, asociándolo al certificado. En la sección <strong>Servicios</strong> de Arcanum, cada uno trae su guía de activación paso a paso y un botón <strong>Verificar</strong> que confirma si quedó asociado.</p>
+<table>
+  <thead><tr><th style="width:30%">Servicio</th><th>Para qué</th></tr></thead>
+  <tbody>
+    <tr><td><code>wsfe</code></td><td>Factura electrónica (A, B, C, M), CAE y CAEA.</td></tr>
+    <tr><td><code>ws_sr_padron_a5</code></td><td>Datos del contribuyente: razón social, domicilio, condición frente al IVA.</td></tr>
+    <tr><td><code>wscdc</code></td><td>Constatación de comprobantes recibidos.</td></tr>
+    <tr><td><code>wsfex</code>, <code>wsmtxca</code></td><td>Exportación y factura con detalle de ítems.</td></tr>
+    <tr><td><code>veconsumerws</code></td><td>e-Ventanilla: comunicaciones del domicilio fiscal electrónico.</td></tr>
+  </tbody>
+</table>
+<figure><img src="../../media/capturas/clientes.png" alt=""><figcaption>Clientes con su certificado, la vigencia y el aviso de los que están por vencer.</figcaption></figure>
+
+<!-- 07 -->
+<h1 class="capitulo"><span class="num">07</span>De homologación a producción</h1>
+<p class="bajada">Probá todo el circuito contra los servidores de prueba de ARCA antes de emitir un comprobante real.</p>
+
+<h2>Prueba completa en homologación</h2>
+<p>Con <code>ARCANUM_ENV=homo</code>, un CUIT con certificado de homologación y <code>wsfe</code> asociado, corré:</p>
+<pre><span class="k">docker</span> compose exec arcanum node src/tools/prueba-homologacion.js --cuit 20111111112</pre>
+<p>Saca un CAE de prueba y comprueba que ARCA responde, que la vista previa da bien, que ARCA devuelve el mismo CAE al consultarlo y que un reintento con la misma clave de idempotencia no emite otro. Termina con <code>PRUEBA OK</code> o con el paso que falló. Nunca toca producción.</p>
+<p>Opciones: <code>--pv 1</code> (punto de venta), <code>--tipo 11</code> (11 Factura C, 6 Factura B, 1 Factura A) y <code>--total 100</code>.</p>
+
+<h2>Pasar a producción</h2>
+<ol class="pasos">
+  <li>Cargá los certificados <strong>de producción</strong> de cada CUIT (son distintos de los de homologación).</li>
+  <li>Asociá los servicios en el Administrador de Relaciones de producción.</li>
+  <li>Poné <code>ARCANUM_ENV=prod</code> y redesplegá. Un admin también puede cambiar el entorno desde el menú, con confirmación.</li>
+  <li>Emití un primer comprobante chico y revisalo en ARCA.</li>
+</ol>
+<div class="aviso"><b>Producción es real</b>Con el entorno en producción, cada comprobante emitido tiene validez fiscal. Usá la <strong>vista previa</strong> antes de emitir y una clave de idempotencia por venta.</div>
+
+<!-- 08 -->
+<h1 class="capitulo"><span class="num">08</span>Integraciones opcionales</h1>
+<p class="bajada">Arcanum funciona solo. Estas piezas suman ingreso único, descarga de Mis Comprobantes, lectura de facturas recibidas e integración con automatizaciones y asistentes.</p>
+
+<h2>Lockatus: ingreso único (OIDC)</h2>
+<p>Con estas variables, el panel ingresa con Lockatus y el ingreso local queda bloqueado en el servidor:</p>
+<pre>ARCANUM_OIDC_ISSUER=https://lockatus.tuempresa.com
+ARCANUM_OIDC_CLIENT_ID=arcanum
+ARCANUM_OIDC_CLIENT_SECRET=<span class="s">&lt;secreto del cliente&gt;</span>
+ARCANUM_OIDC_REDIRECT_URI=https://arcanum.tuempresa.com/api/auth/oidc/callback
+ARCANUM_OIDC_ROLE_CLAIM=role</pre>
+<p>Los roles de Lockatus (<code>superadmin</code>, <code>admin</code>, <code>operador</code>, <code>lectura</code>) se aplican tal cual. Un rol desconocido entra como <code>lectura</code>.</p>
+
+<h2>Fisherboy: Mis Comprobantes</h2>
+<p>ARCA no publica Mis Comprobantes como Web Service. Arcanum lo baja operando el portal con la sesión de agente de Fisherboy, en tu red. En Fisherboy: <code>API_TOKEN</code>, <code>API_TOKEN_ROLE=angel</code> y <code>AGENT_ALLOWED_DOMAINS=afip.gob.ar,arca.gob.ar</code>. En Arcanum:</p>
+<pre>FISHERBOY_URL=http://fisherboy:8000
+FISHERBOY_TOKEN=<span class="s">&lt;el API_TOKEN de Fisherboy&gt;</span></pre>
+<p>Con compose: <code>docker compose -f docker-compose.yml -f docker-compose.fisherboy.yml up -d</code>. El token solo viaja al servidor para el que se cargó.</p>
+
+<h2>Factorum: facturas recibidas</h2>
+<p>Factorum lee facturas (QR, texto, OCR e IA opcional) y las constata a través de Arcanum. En Arcanum creá una clave de API con rol <code>lectura</code> y los CUITs que constatan, y pasásela a Factorum. Después conectalo:</p>
+<pre>FACTORUM_URL=http://factorum:8095
+FACTORUM_TOKEN=<span class="s">&lt;el FACTORUM_API_KEY de Factorum&gt;</span></pre>
+
+<h2>n8n y otros sistemas</h2>
+<p>Creá una clave en <strong>Usuarios → Claves de API</strong> con el rol mínimo necesario y los CUITs que va a usar. La sección <strong>Generador</strong> arma el nodo de n8n listo para pegar y los ejemplos en cURL, JavaScript y Python.</p>
+
+<h2>Asistentes de IA (MCP)</h2>
+<p>Arcanum expone un servidor MCP de solo consulta en <code>POST /mcp</code>, con una clave de API en <code>Authorization: Bearer</code>. Un asistente puede consultar padrón, comprobantes, Mis Comprobantes y el estado de ARCA, y preparar una vista previa; no puede emitir.</p>
+
+<!-- 09 -->
+<h1 class="capitulo"><span class="num">09</span>Operación</h1>
+<p class="bajada">Lo que conviene tener resuelto desde el primer día.</p>
+
+<h2>Backups</h2>
+<ul>
+  <li>Arcanum hace un backup cifrado por día (3 de la mañana, hora argentina) y guarda los últimos 14 en <code>/data/backups</code>. También se crea a mano desde <strong>Backups y master key</strong>.</li>
+  <li>Necesita <code>ARCANUM_MASTER_KEY</code> o <code>ARCANUM_BACKUP_KEY</code> <strong>por entorno</strong>: si la clave quedara en el mismo volumen que los backups, no protegerían nada, así que no se crean.</li>
+  <li>Bajá los backups a otro lugar con regularidad. Restaurar (primero en simulacro):
+<pre><span class="k">docker</span> compose exec arcanum node src/tools/restaurar-backup.js /data/backups/ARCHIVO
+<span class="k">docker</span> compose exec arcanum node src/tools/restaurar-backup.js /data/backups/ARCHIVO --confirmar</pre></li>
+  <li>Además, respaldá el volumen de Postgres con <code>pg_dump</code>.</li>
+</ul>
+
+<h2>Actualizaciones</h2>
+<ul>
+  <li><strong>Compose:</strong> <code>docker compose pull &amp;&amp; docker compose up -d</code>.</li>
+  <li><strong>EasyPanel:</strong> botón <strong>Deploy</strong> del servicio.</li>
+  <li>El esquema de la base se migra solo al arrancar. El log y el panel muestran las novedades de la versión nueva.</li>
+</ul>
+
+<h2>Monitoreo y avisos</h2>
+<ul>
+  <li><code>GET /api/health</code> para el healthcheck; <code>GET /metrics</code> en formato Prometheus (con <code>ARCANUM_METRICS_TOKEN</code> exige ese token).</li>
+  <li>El panel controla cada servicio de ARCA cada 5 minutos y avisa si alguno se cae o vuelve.</li>
+  <li><strong>Webhooks</strong> (firmados con HMAC) y correo opcional para: comprobantes emitidos o rechazados, ARCA caído, certificados y claves por vencer, uso anómalo de claves, topes de Monotributo, contingencia, CAEA, backups y cambios de configuración.</li>
+</ul>
+
+<!-- 10 -->
+<h1 class="capitulo"><span class="num">10</span>Referencia de variables</h1>
+<p class="bajada">Todas las opciones se configuran por variables de entorno. Las marcadas como esenciales conviene fijarlas siempre.</p>
+
+<h2>Esenciales</h2>
+<table>
+  <thead><tr><th style="width:36%">Variable</th><th style="width:18%">Por defecto</th><th>Descripción</th></tr></thead>
+  <tbody>
+    <tr><td><code>ARCANUM_ENV</code></td><td><code>homo</code></td><td>Entorno de ARCA: <code>homo</code> o <code>prod</code>.</td></tr>
+    <tr><td><code>DATABASE_URL</code></td><td>(compose)</td><td>Conexión a PostgreSQL.</td></tr>
+    <tr><td><code>ARCANUM_MASTER_KEY</code></td><td>generada en homo</td><td>64 hex. Cifra todo lo sensible. Obligatoria en producción.</td></tr>
+    <tr><td><code>ARCANUM_SESSION_SECRET</code></td><td>generado</td><td>Firma de las sesiones del panel.</td></tr>
+    <tr><td><code>ARCANUM_API_KEY</code></td><td>generada</td><td>Clave maestra de la API (rol admin).</td></tr>
+    <tr><td><code>ARCANUM_ADMIN_USER</code> / <code>_PASS</code></td><td><code>admin</code> / generada</td><td>Primer superadmin, solo con la base vacía.</td></tr>
+    <tr><td><code>PORT</code></td><td><code>8094</code></td><td>Puerto HTTP.</td></tr>
+  </tbody>
+</table>
+
+<h2>Seguridad y red</h2>
+<table>
+  <thead><tr><th style="width:36%">Variable</th><th style="width:18%">Por defecto</th><th>Descripción</th></tr></thead>
+  <tbody>
+    <tr><td><code>ARCANUM_PROXIES</code></td><td><code>1</code></td><td>Proxies de confianza delante; define la IP del cliente para límites y auditoría.</td></tr>
+    <tr><td><code>ARCANUM_COOKIE_SECURE</code></td><td>automático</td><td><code>1</code> fuerza la cookie <code>Secure</code> (si no, se decide por HTTPS).</td></tr>
+    <tr><td><code>ARCANUM_CLAVE_LIMITE_MIN</code></td><td><code>120</code></td><td>Pedidos por minuto de cada clave de API (0 lo apaga).</td></tr>
+    <tr><td><code>ARCANUM_ANOMALIA_CUITS_HORA</code></td><td><code>50</code></td><td>CUITs distintos por hora que disparan el aviso de uso anómalo.</td></tr>
+    <tr><td><code>ARCANUM_ANOMALIA_RECHAZOS_HORA</code></td><td><code>20</code></td><td>Rechazos por hora que disparan el aviso de uso anómalo.</td></tr>
+    <tr><td><code>ARCANUM_METRICS_TOKEN</code></td><td>vacío</td><td>Token para <code>/metrics</code>.</td></tr>
+    <tr><td><code>ARCANUM_AUDITORIA_DIAS</code></td><td><code>90</code></td><td>Retención de la auditoría de pedidos.</td></tr>
+    <tr><td><code>ARCANUM_REQUEST_TIMEOUT_MS</code></td><td><code>120000</code></td><td>Tiempo máximo para recibir un pedido.</td></tr>
+    <tr><td><code>ARCANUM_MAX_CONEXIONES</code></td><td><code>1000</code></td><td>Conexiones simultáneas.</td></tr>
+    <tr><td><code>ARCANUM_ALLOW_LOCAL_LOGIN</code></td><td>apagado</td><td>Con OIDC, permite además el ingreso local (acceso de emergencia).</td></tr>
+  </tbody>
+</table>
+
+<h2>Integraciones</h2>
+<table>
+  <thead><tr><th style="width:36%">Variable</th><th style="width:18%">Por defecto</th><th>Descripción</th></tr></thead>
+  <tbody>
+    <tr><td><code>ARCANUM_OIDC_ISSUER</code>, <code>_CLIENT_ID</code>, <code>_CLIENT_SECRET</code>, <code>_REDIRECT_URI</code></td><td>vacío</td><td>Ingreso único con Lockatus u otro proveedor OIDC.</td></tr>
+    <tr><td><code>ARCANUM_OIDC_ROLE_CLAIM</code> / <code>_DEFAULT_ROLE</code></td><td><code>role</code> / <code>lectura</code></td><td>De dónde sale el rol y cuál se usa si no viene.</td></tr>
+    <tr><td><code>FISHERBOY_URL</code> / <code>FISHERBOY_TOKEN</code></td><td>vacío</td><td>Conexión con Fisherboy (Mis Comprobantes).</td></tr>
+    <tr><td><code>FACTORUM_URL</code> / <code>FACTORUM_TOKEN</code></td><td>vacío</td><td>Conexión con Factorum (facturas recibidas).</td></tr>
+    <tr><td><code>ARCANUM_SMTP_HOST</code>, <code>_PORT</code>, <code>_USER</code>, <code>_PASS</code>, <code>_FROM</code></td><td>vacío</td><td>Correo para avisos y para el Facturador.</td></tr>
+    <tr><td><code>ARCANUM_NOTIFY_EMAIL</code></td><td>vacío</td><td>Destinatario de los avisos por correo.</td></tr>
+    <tr><td><code>ARCANUM_MCP_TIMEOUT_MS</code></td><td><code>80000</code></td><td>Tiempo máximo de cada herramienta MCP.</td></tr>
+  </tbody>
+</table>
+
+<h2>Tareas automáticas</h2>
+<table>
+  <thead><tr><th style="width:36%">Variable</th><th style="width:18%">Por defecto</th><th>Descripción</th></tr></thead>
+  <tbody>
+    <tr><td><code>ARCANUM_BACKUP_HORA</code> / <code>_RETENER</code></td><td><code>3</code> / <code>14</code></td><td>Hora del backup diario y cuántos se guardan. <code>ARCANUM_BACKUP_DIARIO=0</code> lo apaga.</td></tr>
+    <tr><td><code>ARCANUM_BACKUP_KEY</code></td><td>derivada</td><td>Clave propia de los backups (64 hex).</td></tr>
+    <tr><td><code>ARCANUM_MC_HORA</code></td><td>apagado</td><td>Hora de la sincronización diaria de Mis Comprobantes.</td></tr>
+    <tr><td><code>ARCANUM_MC_MAX_DIAS</code></td><td>3 años</td><td>Rango máximo de una sincronización.</td></tr>
+    <tr><td><code>ARCANUM_SYNC_HORA</code> / <code>_DIAS</code></td><td><code>5</code> / <code>90</code></td><td>Traer lo emitido por fuera de Arcanum, una vez por día.</td></tr>
+    <tr><td><code>ARCANUM_VENTANILLA_MIN</code></td><td><code>60</code></td><td>Cada cuántos minutos se revisa e-Ventanilla.</td></tr>
+    <tr><td><code>ARCANUM_SOAP_TIMEOUT_MS</code></td><td><code>15000</code></td><td>Espera máxima de cada llamada a ARCA.</td></tr>
+    <tr><td><code>ARCANUM_PADRON_CACHE_S</code> / <code>_MAX</code></td><td>1 hora / <code>2000</code></td><td>Caché de consultas al padrón.</td></tr>
+  </tbody>
+</table>
+<p>Para el PDF de los comprobantes, los datos del emisor se cargan en <strong>Clientes → Datos fiscales</strong>; las variables <code>ARCANUM_EMISOR_*</code> sirven de valor por defecto en instalaciones de un solo emisor.</p>
+
+<!-- 11 -->
+<h1 class="capitulo"><span class="num">11</span>Solución de problemas</h1>
+<p class="bajada">Los errores más frecuentes y cómo resolverlos.</p>
+<table>
+  <thead><tr><th style="width:34%">Síntoma</th><th>Qué hacer</th></tr></thead>
+  <tbody>
+    <tr><td>El contenedor no arranca: «En producción ARCANUM_MASTER_KEY es obligatoria»</td><td>Definí la master key por entorno. Si venías de una instalación que la había generado en el volumen, copiala desde <code>/data/.masterkey</code>.</td></tr>
+    <tr><td>«El CEE ya posee un TA válido»</td><td>ARCA no entrega otro ticket mientras el anterior esté vigente. Arcanum reutiliza el guardado; si lo invalidaste a mano, esperá a que venza.</td></tr>
+    <tr><td>«Computador no autorizado a acceder al servicio»</td><td>Falta asociar ese servicio al certificado en el Administrador de Relaciones. En <strong>Servicios</strong>, usá <strong>Verificar</strong> después de asociarlo.</td></tr>
+    <tr><td>El certificado no se acepta al pegarlo</td><td>No corresponde a la clave privada de ese CUIT (por ejemplo, es de otro CSR). Generá el certificado con el CSR que descargaste de Arcanum.</td></tr>
+    <tr><td>ARCA no responde</td><td>Emití con <strong>contingencia</strong>: el comprobante queda en cola y sale solo cuando ARCA vuelve, sin duplicarse. El panel muestra el estado de cada servicio.</td></tr>
+    <tr><td>No aparecen los backups</td><td>Faltan <code>ARCANUM_MASTER_KEY</code> o <code>ARCANUM_BACKUP_KEY</code> por entorno. El panel y el aviso <code>backup_fallo</code> lo explican.</td></tr>
+    <tr><td>«Demasiados intentos»</td><td>El límite de ingreso frena después de varios fallos. Esperá unos minutos; si fue un ataque, quedó registrado en la auditoría con la IP.</td></tr>
+    <tr><td>Mis Comprobantes no aparece en el menú</td><td>Falta conectar Fisherboy (URL y token) desde el menú <strong>Fisherboy y Mis Comprobantes</strong> o por entorno.</td></tr>
+  </tbody>
+</table>
+
+<div class="contratapa">
+  <svg class="marca" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#27408b"/><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg>
+  <h2>Arcanum</h2>
+  <p>Gateway REST self-hosted para los Web Services de ARCA.<br>Open source, licencia MIT. Parte del Ecosistema Escriba.</p>
+  <p style="margin-top:6mm"><code>github.com/diegoparras/arcanum</code></p>
+  <p style="margin-top:10mm;font-size:8.5pt">Arcanum es un proyecto independiente, sin relación con ARCA.</p>
+</div>
+</main>
+</body>
+</html>

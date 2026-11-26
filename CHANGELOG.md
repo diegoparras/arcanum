@@ -1,7 +1,42 @@
 # Changelog
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
-Versionado semantico.
+Versionado semántico ([SemVer](https://semver.org/lang/es/)).
+
+## [2.1.20] - 2026-11-26
+
+### Documentación
+- **README nuevo:** qué es Arcanum, qué problema resuelve y cómo instalarlo en minutos, con
+  portada, galería de pantallas y la referencia técnica completa en secciones desplegables.
+- **Video de presentación** (`docs/media/arcanum.mp4`) con música original, y un adelanto animado
+  en el README.
+- **Dos guías en PDF:** instalación (del servidor vacío al primer CAE, con EasyPanel, homologación,
+  producción y solución de problemas) y uso (cada pantalla y cada integración).
+- **Todo se regenera con scripts** (`docs/fuentes/`): una demo con datos ficticios y sin salida a
+  internet, las capturas, la portada, las guías y el video. Nada se edita a mano.
+- `CONTRIBUTING.md` con la convención de commits y de versiones; plantillas de issues y de pull
+  requests.
+- Ortografía al día en la documentación, los comentarios de configuración, el catálogo de
+  servicios y la referencia de la API.
+
+### Cambiado
+- **Textos del panel y de la API con tildes:** unos 300 mensajes visibles que estaban sin acentos.
+- **Importes con el mismo formato en todo el panel** (`$ 180.000,00`): Facturador, Comprobantes,
+  Contingencia y Verificar factura mostraban `$180000.00`.
+- **Comprobantes:** número con punto de venta y relleno (`0004-00001258`) y el nombre del tipo
+  (Factura A, NC A) en vez del código.
+- **Servicios y Generador:** las categorías se muestran con su nombre (Facturación, Agro y remitos)
+  en vez de la clave interna.
+- Los botones de acción de las tablas (Clientes, Facturador, Contingencia, Webhooks, Claves de API)
+  quedan espaciados y en una sola línea; fechas, importes y etiquetas de estado ya no se cortan.
+- Los títulos de sección respetan las mayúsculas del español ("Nuevo usuario", no "Nuevo Usuario").
+
+### Corregido
+- `openapi.yaml`: la descripción del parámetro `q` de Factorum tenía una coma sin comillas que
+  creaba una clave falsa en el esquema.
+
+### Interno
+- Se quitó código sin uso (`renovarTokens`, `importarClave`) y se ordenaron comentarios.
 
 ## [2.1.19] - 2026-11-26
 

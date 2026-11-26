@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-arcanum}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defini POSTGRES_PASSWORD en .env (si la base ya existia con la clave por defecto, usa POSTGRES_PASSWORD=arcanum)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definí POSTGRES_PASSWORD en .env (si la base ya existía con la clave por defecto, usá POSTGRES_PASSWORD=arcanum)}
       POSTGRES_DB: ${POSTGRES_DB:-arcanum}
     volumes:
       - arcanum-pg:/var/lib/postgresql/data
@@ -39,9 +39,9 @@ services:
       - "${ARCANUM_BIND:-127.0.0.1}:8094:8094"
     environment:
       ARCANUM_ENV: ${ARCANUM_ENV:-homo}            # homo | prod
-      ARCANUM_API_KEY: ${ARCANUM_API_KEY:-}         # vacio => se genera en el volumen (no va al log)
+      ARCANUM_API_KEY: ${ARCANUM_API_KEY:-}         # vacío => se genera en el volumen (no va al log)
       ARCANUM_MASTER_KEY: ${ARCANUM_MASTER_KEY:-}   # 32 bytes hex; cifra las claves privadas
-      ARCANUM_SESSION_SECRET: ${ARCANUM_SESSION_SECRET:-}  # vacio => se genera en el volumen
+      ARCANUM_SESSION_SECRET: ${ARCANUM_SESSION_SECRET:-}  # vacío => se genera en el volumen
       ARCANUM_ADMIN_USER: ${ARCANUM_ADMIN_USER:-}
       ARCANUM_ADMIN_PASS: ${ARCANUM_ADMIN_PASS:-}
       ARCANUM_PROXIES: ${ARCANUM_PROXIES:-1}
@@ -70,7 +70,7 @@ services:
       FISHERBOY_TOKEN: ${FISHERBOY_TOKEN:-}
       FACTORUM_URL: ${FACTORUM_URL:-}
       FACTORUM_TOKEN: ${FACTORUM_TOKEN:-}
-      DATABASE_URL: postgres://${POSTGRES_USER:-arcanum}:${POSTGRES_PASSWORD:?Defini POSTGRES_PASSWORD en .env (si la base ya existia con la clave por defecto, usa POSTGRES_PASSWORD=arcanum)}@arcanum-db:5432/${POSTGRES_DB:-arcanum}
+      DATABASE_URL: postgres://${POSTGRES_USER:-arcanum}:${POSTGRES_PASSWORD:?Definí POSTGRES_PASSWORD en .env (si la base ya existía con la clave por defecto, usá POSTGRES_PASSWORD=arcanum)}@arcanum-db:5432/${POSTGRES_DB:-arcanum}
       PORT: 8094
     volumes:
       - arcanum-data:/data                          # master key autogenerada + artefactos

@@ -44,7 +44,7 @@ const config = {
   get endpoints() { return ENDPOINTS[activeEnv]; },
   setEnv(e) {
     const v = String(e).toLowerCase();
-    if (v !== 'homo' && v !== 'prod') throw Object.assign(new Error('Entorno invalido (homo|prod)'), { httpStatus: 400 });
+    if (v !== 'homo' && v !== 'prod') throw Object.assign(new Error('Entorno inválido (homo|prod)'), { httpStatus: 400 });
     activeEnv = v;
     return activeEnv;
   },

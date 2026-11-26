@@ -26,7 +26,7 @@ const leerConfigDeBase = () => conexion.leer();
 function pedir(cfg, method, ruta, { cuerpo, timeoutMs = TIMEOUT_MS, binario = false } = {}) {
   return new Promise((resolve, reject) => {
     let base;
-    try { base = new URL(cfg.url); } catch { return reject(err('Fisherboy no esta configurado (URL invalida)', 503)); }
+    try { base = new URL(cfg.url); } catch { return reject(err('Fisherboy no está configurado (URL inválida)', 503)); }
     const lib = base.protocol === 'https:' ? https : http;
     const datos = cuerpo === undefined ? null : Buffer.from(JSON.stringify(cuerpo));
     const req = lib.request(new URL(ruta, base), {
@@ -47,7 +47,7 @@ function pedir(cfg, method, ruta, { cuerpo, timeoutMs = TIMEOUT_MS, binario = fa
       });
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(partes) }));
     });
-    req.on('timeout', () => req.destroy(err('Fisherboy no respondio a tiempo', 504)));
+    req.on('timeout', () => req.destroy(err('Fisherboy no respondió a tiempo', 504)));
     req.on('error', (e) => reject(e.httpStatus ? e : err(`No se pudo contactar a Fisherboy (${e.code || e.message})`, 503)));
     if (datos) req.write(datos);
     req.end();
@@ -57,7 +57,7 @@ function pedir(cfg, method, ruta, { cuerpo, timeoutMs = TIMEOUT_MS, binario = fa
 function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
   async function cfg() {
     const c = await leerConfig();
-    if (!c || !c.url || !c.token) throw err('Fisherboy no esta configurado: carga FISHERBOY_URL y FISHERBOY_TOKEN', 503);
+    if (!c || !c.url || !c.token) throw err('Fisherboy no está configurado: cargá FISHERBOY_URL y FISHERBOY_TOKEN', 503);
     return c;
   }
 
@@ -66,7 +66,7 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
     let datos = {};
     try { datos = r.body.length ? JSON.parse(r.body.toString('utf8')) : {}; } catch { datos = {}; }
     if (r.status >= 400) {
-      throw err(`Fisherboy: ${datos.detail || datos.error || `respondio ${r.status}`}`, r.status === 401 || r.status === 403 ? 502 : r.status);
+      throw err(`Fisherboy: ${datos.detail || datos.error || `respondió ${r.status}`}`, r.status === 401 || r.status === 403 ? 502 : r.status);
     }
     return datos;
   }

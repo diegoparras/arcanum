@@ -28,13 +28,13 @@ function resolveKey() {
     // En produccion no se genera una nueva (B-15): quedaria en el mismo volumen que los backups y
     // los datos cifrados. Una ya generada por una instalacion previa se sigue leyendo (arriba).
     if (process.env.ARCANUM_ENV === 'prod' || config.isProd) {
-      throw new Error('En produccion ARCANUM_MASTER_KEY es obligatoria (64 hex: openssl rand -hex 32). Guardala fuera del servidor.');
+      throw new Error('En producción ARCANUM_MASTER_KEY es obligatoria (64 hex: openssl rand -hex 32). Guardala fuera del servidor.');
     }
     const buf = crypto.randomBytes(32);
     fs.mkdirSync(config.dataDir, { recursive: true });
     fs.writeFileSync(keyFile, buf.toString('hex'), { mode: 0o600 });
-    console.warn('[arcanum] ATENCION: ARCANUM_MASTER_KEY no definida. Se genero una en', keyFile);
-    console.warn('[arcanum] En produccion fijala por entorno y respalda esa clave: sin ella no se pueden descifrar los certificados.');
+    console.warn('[arcanum] ATENCIÓN: ARCANUM_MASTER_KEY no definida. Se generó una en', keyFile);
+    console.warn('[arcanum] En producción fijala por entorno y respaldá esa clave: sin ella no se pueden descifrar los certificados.');
     return buf;
   }
 }
@@ -61,7 +61,7 @@ function encrypt(plaintext) {
  */
 function decrypt(payload) {
   const parts = String(payload).split(':');
-  if (parts.length !== 4 || parts[0] !== 'v1') throw new Error('Formato de cifrado invalido');
+  if (parts.length !== 4 || parts[0] !== 'v1') throw new Error('Formato de cifrado inválido');
   const iv = Buffer.from(parts[1], 'base64');
   const tag = Buffer.from(parts[2], 'base64');
   const data = Buffer.from(parts[3], 'base64');

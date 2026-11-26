@@ -58,7 +58,7 @@ function readJsonBody(req, { max = MAX_BODY } = {}) {
       try {
         resolve(JSON.parse(raw));
       } catch {
-        reject(Object.assign(new Error('JSON invalido en el body'), { httpStatus: 400 }));
+        reject(Object.assign(new Error('JSON inválido en el body'), { httpStatus: 400 }));
       }
     });
     req.on('error', reject);

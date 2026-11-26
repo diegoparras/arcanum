@@ -98,7 +98,7 @@ function assertSafeUrl(raw, opts = {}) {
   try {
     u = new URL(raw);
   } catch {
-    throw err('URL invalida');
+    throw err('URL inválida');
   }
   if (u.protocol !== 'https:' && !(opts.allowHttp !== false && u.protocol === 'http:')) {
     throw err('Solo se permiten URLs http(s)');

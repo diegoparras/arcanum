@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Arcanum, presentación</title>
+<!--
+  Video de presentación de Arcanum. Cada escena está atada a los compases de la música
+  (musica.py, 124 BPM): render(t) dibuja el cuadro del segundo t. video.py lo recorre a 30 cuadros
+  por segundo y arma el MP4.
+-->
+<style>
+  @font-face { font-family: Inter; src: url("../../../public/vendor/fonts/inter-var-latin.woff2") format("woff2"); font-weight: 100 900; }
+  @font-face { font-family: Inter; src: url("../../../public/vendor/fonts/inter-var-latin-ext.woff2") format("woff2"); font-weight: 100 900; unicode-range: U+0100-024F; }
+  @font-face { font-family: "JetBrains Mono"; src: url("../../../public/vendor/fonts/jetbrains-mono-latin.woff2") format("woff2"); }
+  :root { --acento: #27408b; --acento-2: #6b8bd6; --fondo: #070b18; --tinta: #eef2fb; --suave: #9aa7c7; --ok: #3fbf8f; --mal: #e0605a; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--fondo); }
+  body { font-family: Inter, system-ui, sans-serif; color: var(--tinta); -webkit-font-smoothing: antialiased; }
+  #lienzo { position: absolute; inset: 0; overflow: hidden;
+    background: radial-gradient(1200px 800px at 70% 20%, #16244f 0%, transparent 60%),
+                radial-gradient(900px 700px at 10% 90%, #121a3a 0%, transparent 60%), var(--fondo); }
+  .grilla { position: absolute; inset: -200px; opacity: .14;
+    background-image: linear-gradient(#3a4a7a 1px, transparent 1px), linear-gradient(90deg, #3a4a7a 1px, transparent 1px);
+    background-size: 80px 80px; }
+  .escena { position: absolute; inset: 0; opacity: 0; }
+  .centro { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .marca { width: 220px; height: 220px; }
+  .titulo { font-weight: 800; letter-spacing: -.035em; line-height: 1.02; }
+  .sub { color: var(--suave); font-weight: 500; }
+  .mono { font-family: "JetBrains Mono", monospace; }
+  .letra { display: inline-block; }
+  .chip { position: absolute; padding: 18px 30px; border-radius: 999px; font-size: 34px; font-weight: 650;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); white-space: nowrap; }
+  .chip.mal { border-color: rgba(224,96,90,.55); color: #ffd9d6; }
+  .tachado { position: absolute; left: -6%; right: -6%; top: 50%; height: 5px; background: var(--mal); transform-origin: left center; border-radius: 4px; }
+  .caja { position: absolute; border-radius: 28px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .caja .t { font-size: 44px; font-weight: 750; letter-spacing: -.02em; }
+  .caja .d { font-size: 24px; color: var(--suave); margin-top: 8px; }
+  .flecha { position: absolute; height: 6px; background: linear-gradient(90deg, var(--acento-2), #fff); border-radius: 4px; transform-origin: left center; }
+  .pildora { position: absolute; padding: 12px 22px; border-radius: 12px; font-size: 26px; font-weight: 600;
+    background: rgba(107,139,214,.12); border: 1px solid rgba(107,139,214,.4); color: #dfe7fb; white-space: nowrap; }
+  .tarjeta { position: absolute; border-radius: 22px; background: #0d1430; border: 1px solid rgba(255,255,255,.1);
+    box-shadow: 0 40px 120px rgba(0,0,0,.55); overflow: hidden; }
+  .tarjeta .barra { height: 54px; background: #121b3d; display: flex; align-items: center; gap: 10px; padding: 0 22px; }
+  .tarjeta .barra i { width: 14px; height: 14px; border-radius: 50%; background: #2a355f; display: block; }
+  .tarjeta .barra span { margin-left: 18px; font-size: 20px; color: var(--suave); }
+  .codigo { padding: 34px 40px; font-family: "JetBrains Mono", monospace; font-size: 27px; line-height: 1.6; white-space: pre; }
+  .k { color: #8fb0ff; } .s { color: #9be3c2; } .n { color: #ffcf8a; } .c { color: #6f7ca3; }
+  .ventana { position: absolute; border-radius: 18px; overflow: hidden; background: #fff;
+    box-shadow: 0 50px 140px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08); }
+  .ventana .barra { height: 46px; background: #eef1f7; display: flex; align-items: center; gap: 9px; padding: 0 18px; }
+  .ventana .barra i { width: 13px; height: 13px; border-radius: 50%; display: block; }
+  .ventana .barra span { margin-left: 16px; font-size: 18px; color: #6b7280; background: #fff; border-radius: 8px; padding: 5px 16px; }
+  .ventana .vista { position: relative; overflow: hidden; }
+  .ventana .vista img { position: absolute; left: 0; top: 0; width: 100%; transform-origin: 30% 20%; }
+  .rotulo { position: absolute; left: 120px; width: 600px; }
+  .rotulo .n { font-family: "JetBrains Mono", monospace; font-size: 26px; color: var(--acento-2); }
+  .rotulo h2 { font-size: 72px; line-height: 1.04; font-weight: 800; letter-spacing: -.03em; margin: 18px 0 26px; }
+  .rotulo p { font-size: 32px; line-height: 1.4; color: var(--suave); }
+  .linea { font-size: 50px; font-weight: 700; letter-spacing: -.02em; }
+  .icono { width: 150px; height: 150px; }
+  .cifra { position: absolute; width: 380px; height: 260px; border-radius: 28px; background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.1); display: flex; flex-direction: column; justify-content: center; padding: 0 36px; }
+  .cifra b { font-size: 84px; font-weight: 800; letter-spacing: -.04em; color: #fff; }
+  .cifra span { font-size: 28px; color: var(--suave); margin-top: 6px; }
+  .flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+  .progreso { position: absolute; left: 0; bottom: 0; height: 6px; background: linear-gradient(90deg, var(--acento), var(--acento-2)); }
+</style>
+</head>
+<body>
+<div id="lienzo">
+  <div class="grilla" id="grilla"></div>
+
+  <!-- 1. Intro -->
+  <section class="escena centro" id="e1">
+    <svg class="marca" id="e1marca" viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="15" fill="#27408b"/>
+      <path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/>
+      <rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/>
+    </svg>
+    <div class="titulo" id="e1nombre" style="font-size:150px;margin-top:46px"></div>
+    <div class="sub" id="e1tag" style="font-size:44px;margin-top:22px">Toda ARCA en una API. En tu servidor.</div>
+  </section>
+
+  <!-- 2. El problema -->
+  <section class="escena" id="e2">
+    <div class="titulo" id="e2t" style="position:absolute;left:0;right:0;top:150px;text-align:center;font-size:84px">Integrarse con ARCA es un laberinto</div>
+    <div id="e2chips"></div>
+    <div class="sub" id="e2sub" style="position:absolute;left:0;right:0;bottom:120px;text-align:center;font-size:40px">Y cada sistema vuelve a pelearse con lo mismo.</div>
+  </section>
+
+  <!-- 3. La solución -->
+  <section class="escena" id="e3">
+    <div class="titulo" id="e3t" style="position:absolute;left:0;right:0;top:120px;text-align:center;font-size:96px">Arcanum lo resuelve.</div>
+    <div class="caja" id="e3a" style="left:150px;top:420px;width:420px;height:230px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14)">
+      <div class="t">Tu sistema</div><div class="d">n8n · ERP · asistentes de IA</div></div>
+    <div class="flecha" id="e3f1" style="left:590px;top:532px;width:170px"></div>
+    <div class="caja" id="e3b" style="left:780px;top:380px;width:360px;height:310px;background:linear-gradient(160deg,#2f4ea6,#1c2f6d);box-shadow:0 30px 90px rgba(39,64,139,.5)">
+      <svg viewBox="0 0 64 64" style="width:96px;height:96px"><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg>
+      <div class="t" style="margin-top:14px">Arcanum</div><div class="d" style="color:#cfd9f5">en tu servidor</div></div>
+    <div class="flecha" id="e3f2" style="left:1160px;top:532px;width:170px"></div>
+    <div class="caja" id="e3c" style="left:1350px;top:420px;width:420px;height:230px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14)">
+      <div class="t">ARCA</div><div class="d">homologación y producción</div></div>
+    <div id="e3p" style="position:absolute;left:0;right:0;top:790px;display:flex;justify-content:center;gap:22px"></div>
+  </section>
+
+  <!-- 4. El código -->
+  <section class="escena" id="e4">
+    <div class="titulo" id="e4t" style="position:absolute;left:0;right:0;top:90px;text-align:center;font-size:80px">Una llamada. Un JSON. Un CAE.</div>
+    <div class="tarjeta" id="e4req" style="left:150px;top:260px;width:900px;height:560px">
+      <div class="barra"><i></i><i></i><i></i><span>pedido</span></div>
+      <div class="codigo" id="e4reqtxt"></div>
+    </div>
+    <div class="tarjeta" id="e4res" style="left:1090px;top:330px;width:680px;height:520px">
+      <div class="barra"><i></i><i></i><i></i><span>respuesta</span></div>
+      <div class="codigo" id="e4restxt"></div>
+    </div>
+  </section>
+
+  <!-- 5. Funciones: montaje de capturas reales -->
+  <section class="escena" id="e5">
+    <div class="rotulo" id="e5r"><div class="n" id="e5n"></div><h2 id="e5h"></h2><p id="e5p"></p></div>
+    <div class="ventana" id="e5v" style="left:780px;top:150px;width:1040px;height:780px">
+      <div class="barra"><i style="background:#ef6b5e"></i><i style="background:#f4bf4f"></i><i style="background:#61c454"></i><span id="e5url">arcanum.tuempresa.com</span></div>
+      <div class="vista" style="height:734px"><img id="e5img" alt=""></div>
+    </div>
+  </section>
+
+  <!-- 6. Seguridad -->
+  <section class="escena centro" id="e6">
+    <svg class="icono" id="e6i" viewBox="0 0 24 24" fill="none" stroke="#6b8bd6" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+    <div class="titulo" id="e6t" style="font-size:86px;margin-top:40px">Tu clave privada nunca sale de tu servidor.</div>
+    <div id="e6l" style="margin-top:50px;display:flex;flex-direction:column;gap:22px"></div>
+  </section>
+
+  <!-- 7. Instalación -->
+  <section class="escena" id="e7">
+    <div class="titulo" id="e7t" style="position:absolute;left:0;right:0;top:110px;text-align:center;font-size:92px">Instalalo en minutos.</div>
+    <div class="tarjeta" id="e7term" style="left:360px;top:300px;width:1200px;height:440px">
+      <div class="barra"><i></i><i></i><i></i><span>terminal</span></div>
+      <div class="codigo" id="e7txt" style="font-size:32px"></div>
+    </div>
+    <div class="sub" id="e7sub" style="position:absolute;left:0;right:0;top:800px;text-align:center;font-size:36px">Docker · EasyPanel · Coolify · Dokploy · Portainer</div>
+  </section>
+
+  <!-- 8. Cifras -->
+  <section class="escena" id="e8">
+    <div class="titulo" id="e8t" style="position:absolute;left:0;right:0;top:220px;text-align:center;font-size:84px">Todo ARCA, en un solo lugar.</div>
+    <div class="cifra" id="e8a" style="left:155px;top:430px"><b>25</b><span>servicios de ARCA</span></div>
+    <div class="cifra" id="e8b" style="left:565px;top:430px"><b>Multi</b><span>CUIT y multi usuario</span></div>
+    <div class="cifra" id="e8c" style="left:975px;top:430px"><b>0</b><span>terceros en el medio</span></div>
+    <div class="cifra" id="e8d" style="left:1385px;top:430px"><b>MIT</b><span>open source</span></div>
+  </section>
+
+  <!-- 9. Cierre -->
+  <section class="escena centro" id="e9">
+    <svg class="marca" id="e9marca" viewBox="0 0 64 64" style="width:180px;height:180px" aria-hidden="true">
+      <rect width="64" height="64" rx="15" fill="#27408b"/>
+      <path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/>
+      <rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/>
+    </svg>
+    <div class="titulo" style="font-size:120px;margin-top:36px">Arcanum</div>
+    <div class="mono" id="e9url" style="font-size:40px;margin-top:26px;color:#cfd9f5">github.com/diegoparras/arcanum</div>
+    <div class="sub" id="e9es" style="font-size:30px;margin-top:40px">Self-hosted · Open source · Parte del Ecosistema Escriba</div>
+    <div class="sub" id="e9leg" style="font-size:20px;margin-top:70px;opacity:.7">Proyecto independiente, sin relación con ARCA. Datos de las capturas: ficticios.</div>
+  </section>
+
+  <div class="flash" id="flash"></div>
+  <div class="progreso" id="progreso"></div>
+</div>
+
+<script>
+// ---------- tiempo y utilidades ----------
+const BAR = 4 * 60 / 124;           // un compás, en segundos
+const DUR = 43 * BAR + 2.5;
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+const easeInOut = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const back = (x) => { const c = 1.6; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+function ver(el, o, tx = 0, ty = 0, s = 1, extra = '') {
+  el.style.opacity = o; el.style.transform = `translate(${tx}px,${ty}px) scale(${s}) ${extra}`;
+}
+// Ventana de una escena: aparece en [a, a+ent], desaparece en [b-sal, b].
+function ventana(t, a, b, ent = .5, sal = .4) {
+  if (t < a || t > b) return 0;
+  return Math.min(easeOut(prog(t, a, a + ent)), 1 - easeInOut(prog(t, b - sal, b)));
+}
+const C = (n) => n * BAR;
+
+// ---------- contenido ----------
+const nombre = 'ARCANUM';
+$('e1nombre').innerHTML = [...nombre].map((l) => `<span class="letra">${l}</span>`).join('');
+
+const problemas = ['SOAP y XML', 'WSDL frágiles', 'Firma CMS / PKCS#7', 'Ticket WSAA de 12 horas',
+  'Un certificado por CUIT', 'Homologación y producción', '25 servicios distintos', 'Caídas sin aviso'];
+const posChips = [[170, 330], [1250, 320], [260, 470], [1100, 470], [140, 620], [1080, 620], [420, 770], [1160, 770]];
+$('e2chips').innerHTML = problemas.map((p, i) =>
+  `<div class="chip mal" id="ch${i}" style="left:${posChips[i][0]}px;top:${posChips[i][1]}px">${p}<div class="tachado" id="tch${i}"></div></div>`).join('');
+
+const pilares = ['Firma WSAA local', 'Tickets cacheados y renovados', 'SOAP a JSON', 'Reintentos y contingencia'];
+$('e3p').innerHTML = pilares.map((p, i) => `<div class="pildora" id="pi${i}" style="position:static">${p}</div>`).join('');
+
+const REQ = [
+  '<span class="k">POST</span> /api/wsfev1/comprobantes',
+  '<span class="c">X-API-Key: ••••••••••••••••</span>',
+  '',
+  '{',
+  '  <span class="s">"cuit"</span>: <span class="s">"30777777773"</span>,',
+  '  <span class="s">"puntoVenta"</span>: <span class="n">4</span>,',
+  '  <span class="s">"tipoComprobante"</span>: <span class="n">11</span>,',
+  '  <span class="s">"importeTotal"</span>: <span class="n">254100</span>,',
+  '  <span class="s">"idempotencyKey"</span>: <span class="s">"venta-0042"</span>',
+  '}'];
+const RES = [
+  '{',
+  '  <span class="s">"aprobado"</span>: <span class="k">true</span>,',
+  '  <span class="s">"cae"</span>: <span class="s">"76123456789012"</span>,',
+  '  <span class="s">"numero"</span>: <span class="n">1043</span>,',
+  '  <span class="s">"caeVencimiento"</span>: <span class="s">"2026-12-06"</span>,',
+  '  <span class="s">"pdf"</span>: <span class="s">"…/1043/pdf"</span>',
+  '}'];
+
+const funciones = [
+  ['panel', 'Panel en vivo', 'Emisiones del día, certificados por vencer y el estado de cada servicio de ARCA.', '/panel'],
+  ['comprobantes', 'Emití y bajá el PDF con QR', 'Factura A, B, C, M y E. Vista previa antes de pedir el CAE, sin duplicados.', '/comprobantes'],
+  ['mis-comprobantes', 'Mis Comprobantes, solo', 'Emitidos y recibidos del portal de ARCA, bajados todos los días.', '/mis-comprobantes'],
+  ['analisis', 'Números que se entienden', 'Facturación, compras, IVA y principales clientes. Un clic filtra todo.', '/analisis'],
+  ['constatacion', 'Constatá lo que te facturan', 'Cada recibido contra ARCA y contra la base de apócrifos.', '/mis-comprobantes'],
+  ['contingencia', 'Si ARCA se cae, vos seguís', 'Cola con reintentos, adopción de CAE y CAEA. Nada se emite dos veces.', '/contingencia'],
+  ['usuarios', 'Para integraciones y para IA', 'Claves de API con rol y CUITs, servidor MCP y nodo listo para n8n.', '/usuarios'],
+  ['servicios', 'Los 25 servicios de ARCA', 'Padrón, facturación, e-Ventanilla, constatación y más, con guía de activación.', '/servicios'],
+];
+
+const seguridad = ['Firma local · cifrado AES-256-GCM', 'Roles, CUITs por usuario y auditoría', 'Sin terceros. Sin suscripciones.'];
+$('e6l').innerHTML = seguridad.map((s, i) => `<div class="linea sub" id="se${i}" style="color:#cfd9f5">${s}</div>`).join('');
+
+const TERM = ['<span class="c">$</span> git clone https://github.com/diegoparras/arcanum',
+  '<span class="c">$</span> cd arcanum && cp .env.example .env',
+  '<span class="c">$</span> docker compose up -d',
+  '', '<span class="s">Arcanum escuchando en :8094</span>'];
+
+// Imagenes de las funciones: precargadas.
+const imgs = {};
+for (const [k] of funciones) { const im = new Image(); im.src = `../../media/capturas/${k}.png`; imgs[k] = im; }
+window.listo = () => Object.values(imgs).every((i) => i.complete) && document.fonts.status === 'loaded';
+
+// Texto que se escribe: n caracteres visibles (cuenta solo texto, no etiquetas).
+function escribir(lineas, n) {
+  let out = [], resta = n;
+  for (const l of lineas) {
+    if (resta <= 0) break;
+    const plano = l.replace(/<[^>]+>/g, '');
+    if (plano.length <= resta) { out.push(l); resta -= Math.max(plano.length, 1); continue; }
+    let vis = 0, html = '', i = 0;
+    while (i < l.length && vis < resta) {
+      if (l[i] === '<') { const j = l.indexOf('>', i); html += l.slice(i, j + 1); i = j + 1; } else { html += l[i]; vis++; i++; }
+    }
+    const abiertas = (html.match(/<span/g) || []).length - (html.match(/<\/span>/g) || []).length;
+    out.push(html + '</span>'.repeat(Math.max(0, abiertas)) + '<span style="opacity:.8">▍</span>');
+    resta = 0;
+  }
+  return out.join('\n');
+}
+
+// ---------- el cuadro ----------
+function render(t) {
+  // Fondo: la grilla deriva lento; en los drops late con el bombo.
+  const latido = (t >= C(10) && t < C(31)) || (t >= C(35) && t < C(41)) ? Math.exp(-((t % (BAR / 4)) / (BAR / 4)) * 5) : 0;
+  $('grilla').style.transform = `translate(${-(t * 14) % 80}px,${-(t * 9) % 80}px) scale(${1 + latido * .015})`;
+  $('grilla').style.opacity = .1 + latido * .08;
+  $('progreso').style.width = `${(t / DUR) * 100}%`;
+  // Flash blanco en cada golpe de drop.
+  let fl = 0;
+  for (const g of [C(10), C(35), C(41)]) fl = Math.max(fl, t >= g ? .55 * Math.exp(-(t - g) * 7) : 0);
+  $('flash').style.opacity = fl;
+
+  // 1. Intro (0-4)
+  let o = ventana(t, 0, C(4), .6, .5);
+  $('e1').style.opacity = o;
+  if (o) {
+    const pm = easeOut(prog(t, .3, 1.8));
+    ver($('e1marca'), pm, 0, (1 - pm) * 40, .6 + .4 * back(prog(t, .3, 1.6)), `rotate(${(1 - pm) * -12}deg)`);
+    [...$('e1nombre').children].forEach((el, i) => { const p = easeOut(prog(t, 1.6 + i * .12, 2.3 + i * .12)); ver(el, p, 0, (1 - p) * 60); });
+    const pt = easeOut(prog(t, 3.4, 4.6)); ver($('e1tag'), pt, 0, (1 - pt) * 24);
+  }
+
+  // 2. Problema (4-10)
+  o = ventana(t, C(4), C(10), .4, .25);
+  $('e2').style.opacity = o;
+  if (o) {
+    const p0 = easeOut(prog(t, C(4), C(4) + .7)); ver($('e2t'), p0, 0, (1 - p0) * -30);
+    problemas.forEach((_, i) => {
+      const a = C(4.5) + i * BAR * .55;
+      const p = back(prog(t, a, a + .5));
+      const sacudida = Math.sin(t * 9 + i) * 3;
+      ver($('ch' + i), clamp(p), sacudida, (1 - clamp(p)) * 40, .85 + .15 * clamp(p));
+      $('tch' + i).style.transform = `scaleX(${easeOut(prog(t, C(8.6) + i * .07, C(8.6) + i * .07 + .3))})`;
+    });
+    const ps = easeOut(prog(t, C(8.8), C(9.3))); ver($('e2sub'), ps, 0, (1 - ps) * 20);
+  }
+
+  // 3. Solución (10-14)
+  o = ventana(t, C(10), C(14), .15, .35);
+  $('e3').style.opacity = o;
+  if (o) {
+    const p0 = back(prog(t, C(10), C(10) + .6)); ver($('e3t'), clamp(p0), 0, 0, .7 + .3 * p0);
+    const pa = easeOut(prog(t, C(10.5), C(10.5) + .5)); ver($('e3a'), pa, (1 - pa) * -80);
+    const pb = back(prog(t, C(11), C(11) + .6)); ver($('e3b'), clamp(pb), 0, 0, .6 + .4 * pb);
+    const pc = easeOut(prog(t, C(11.5), C(11.5) + .5)); ver($('e3c'), pc, (1 - pc) * 80);
+    $('e3f1').style.transform = `scaleX(${easeOut(prog(t, C(11.2), C(11.2) + .4))})`;
+    $('e3f2').style.transform = `scaleX(${easeOut(prog(t, C(11.7), C(11.7) + .4))})`;
+    // Un pulso viaja por las flechas.
+    const pulso = (t * 1.2) % 1;
+    $('e3f1').style.boxShadow = $('e3f2').style.boxShadow = `0 0 ${10 + 20 * Math.sin(pulso * Math.PI)}px rgba(107,139,214,.8)`;
+    pilares.forEach((_, i) => { const p = back(prog(t, C(12.2) + i * .25, C(12.2) + i * .25 + .5)); ver($('pi' + i), clamp(p), 0, (1 - clamp(p)) * 30); });
+  }
+
+  // 4. Código (14-17)
+  o = ventana(t, C(14), C(17), .35, .35);
+  $('e4').style.opacity = o;
+  if (o) {
+    const p0 = easeOut(prog(t, C(14), C(14) + .5)); ver($('e4t'), p0, 0, (1 - p0) * -20);
+    const pr = easeOut(prog(t, C(14.2), C(14.2) + .5)); ver($('e4req'), pr, (1 - pr) * -60);
+    $('e4reqtxt').innerHTML = escribir(REQ, Math.floor(prog(t, C(14.4), C(15.6)) * 260));
+    const ps = back(prog(t, C(15.7), C(15.7) + .55)); ver($('e4res'), clamp(ps), 0, 0, .8 + .2 * ps);
+    $('e4restxt').innerHTML = escribir(RES, Math.floor(prog(t, C(15.8), C(16.5)) * 200));
+  }
+
+  // 5. Funciones (17-31): 8 tarjetas de 1.75 compases
+  o = ventana(t, C(17), C(31), .3, .3);
+  $('e5').style.opacity = o;
+  if (o) {
+    const dur = 14 / funciones.length;
+    const k = Math.min(funciones.length - 1, Math.floor((t - C(17)) / C(dur)));
+    const a = C(17 + k * dur), b = a + C(dur);
+    const [clave, titulo, texto, ruta] = funciones[k];
+    if ($('e5img').dataset.k !== clave) { $('e5img').src = imgs[clave].src; $('e5img').dataset.k = clave; }
+    $('e5n').textContent = `0${k + 1} / 0${funciones.length}`;
+    $('e5h').textContent = titulo; $('e5p').textContent = texto; $('e5url').textContent = 'arcanum.tuempresa.com' + ruta;
+    const en = easeOut(prog(t, a, a + .45)), sa = easeInOut(prog(t, b - .3, b));
+    const ultima = k === funciones.length - 1;
+    ver($('e5r'), en * (ultima ? 1 : 1 - sa), (1 - en) * -50 - (ultima ? 0 : sa * 40), 0);
+    $('e5r').style.top = '300px';
+    ver($('e5v'), en * (ultima ? 1 : 1 - sa), (1 - en) * 140 + (ultima ? 0 : sa * -60), 0, .94 + .06 * en);
+    // Ken Burns: zoom lento dentro de la ventana.
+    const kb = prog(t, a, b);
+    $('e5img').style.transform = `scale(${1.02 + kb * .06}) translate(${-kb * 14}px,${-kb * 22}px)`;
+  }
+
+  // 6. Seguridad (31-35): quiebre, calma
+  o = ventana(t, C(31), C(35), .6, .3);
+  $('e6').style.opacity = o;
+  if (o) {
+    const pi = easeOut(prog(t, C(31), C(31) + .9)); ver($('e6i'), pi, 0, (1 - pi) * 30, .8 + .2 * pi);
+    const pt = easeOut(prog(t, C(31.5), C(31.5) + .9)); ver($('e6t'), pt, 0, (1 - pt) * 24);
+    seguridad.forEach((_, i) => { const p = easeOut(prog(t, C(32.4) + i * .7, C(32.4) + i * .7 + .6)); ver($('se' + i), p, 0, (1 - p) * 18); });
+  }
+
+  // 7. Instalación (35-39)
+  o = ventana(t, C(35), C(39), .15, .3);
+  $('e7').style.opacity = o;
+  if (o) {
+    const p0 = back(prog(t, C(35), C(35) + .55)); ver($('e7t'), clamp(p0), 0, 0, .75 + .25 * p0);
+    const pt = easeOut(prog(t, C(35.3), C(35.3) + .5)); ver($('e7term'), pt, 0, (1 - pt) * 40);
+    $('e7txt').innerHTML = escribir(TERM, Math.floor(prog(t, C(35.6), C(37.6)) * 150));
+    const ps = easeOut(prog(t, C(37.7), C(38.2))); ver($('e7sub'), ps, 0, (1 - ps) * 16);
+  }
+
+  // 8. Cifras (39-41)
+  o = ventana(t, C(39), C(41), .2, .25);
+  $('e8').style.opacity = o;
+  if (o) { const pt = easeOut(prog(t, C(39), C(39) + .5)); ver($('e8t'), pt, 0, (1 - pt) * -20); }
+  if (o) ['e8a', 'e8b', 'e8c', 'e8d'].forEach((id, i) => {
+    const p = back(prog(t, C(39) + i * .18, C(39) + i * .18 + .5)); ver($(id), clamp(p), 0, (1 - clamp(p)) * 60, .85 + .15 * p);
+  });
+
+  // 9. Cierre (41-fin)
+  o = ventana(t, C(41), DUR + 1, .25, .01) * (1 - easeInOut(prog(t, DUR - 1.2, DUR)));
+  $('e9').style.opacity = o;
+  if (o) {
+    const pm = back(prog(t, C(41), C(41) + .7)); ver($('e9marca'), clamp(pm), 0, 0, .7 + .3 * pm);
+    const pu = easeOut(prog(t, C(41.6), C(41.6) + .6)); ver($('e9url'), pu, 0, (1 - pu) * 16);
+    const pe = easeOut(prog(t, C(42.2), C(42.2) + .6)); ver($('e9es'), pe);
+    const pl = easeOut(prog(t, C(42.6), C(42.6) + .6)); ver($('e9leg'), pl * .7);
+  }
+}
+window.render = render;
+window.DURACION = DUR;
+render(0);
+</script>
+</body>
+</html>

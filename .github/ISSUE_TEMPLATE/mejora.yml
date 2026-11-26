@@ -1,0 +1,27 @@
+name: Proponer una mejora
+description: Una idea, un web service de ARCA que falta o algo que haría la vida más fácil.
+labels: ["mejora"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qué problema resuelve
+      description: Contanos la situación de todos los días que esto mejoraría.
+    validations:
+      required: true
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Cómo te lo imaginás
+      description: Cómo debería funcionar, desde el panel o desde la API.
+    validations:
+      required: true
+  - type: input
+    id: servicio
+    attributes:
+      label: Web service de ARCA involucrado (si aplica)
+      placeholder: "wsfev1, ws_sr_padron_a5, wscdc..."
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas que consideraste

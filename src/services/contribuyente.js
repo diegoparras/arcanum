@@ -95,7 +95,7 @@ function analizarPadron(datos = {}) {
 async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
   const repre = normalizeCuit(cuitRepresentada);
   const target = normalizeCuit(cuitConsulta);
-  if (!target) throw new SoapError('CUIT a consultar invalido', 400);
+  if (!target) throw new SoapError('CUIT a consultar inválido', 400);
 
   // Las dos consultas en paralelo. APOC es best-effort: si falla, no abortamos.
   const [pRes, aRes] = await Promise.allSettled([
@@ -121,7 +121,7 @@ async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
   if (esApocrifo) {
     semaforo = 'ROJO';
     motivoRiesgo =
-      'CUIT en base de apocrifos de ARCA' +
+      'CUIT en base de apócrifos de ARCA' +
       (apocData.fechaCondicion ? ` desde ${apocData.fechaCondicion}` : '');
   } else if (estadoClave && estadoClave !== 'ACTIVO') {
     semaforo = 'ROJO';
@@ -130,12 +130,12 @@ async function consolidar(cuitRepresentada, cuitConsulta, opts = {}) {
     semaforo = 'AMARILLO';
     motivoRiesgo = !estadoClave
       ? 'No se pudo determinar el estado de la clave fiscal'
-      : 'No se pudo determinar la condicion frente al IVA';
+      : 'No se pudo determinar la condición frente al IVA';
   } else {
     semaforo = 'VERDE';
   }
 
-  if (!apocOk) advertencias.push('No se pudo consultar la base de apocrifos (WSAPOC).');
+  if (!apocOk) advertencias.push('No se pudo consultar la base de apócrifos (WSAPOC).');
 
   // Sugerencia de comprobante a emitir (requiere condicion del emisor configurada).
   const receptorCondicionId = reglas.idDesdeTipoContribuyente(tipoContribuyente);

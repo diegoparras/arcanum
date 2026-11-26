@@ -121,15 +121,15 @@ const e400 = (m) => Object.assign(new Error(m), { httpStatus: 400 });
 
 /** Las 11 categorias, positivas y creciendo de A a K (ataja un error de tipeo). Devuelve numeros. */
 function validarTopes(topes) {
-  if (!topes || typeof topes !== 'object') throw e400('Faltan los topes por categoria (topes: { A: ..., B: ... })');
+  if (!topes || typeof topes !== 'object') throw e400('Faltan los topes por categoría (topes: { A: ..., B: ... })');
   const limpio = {};
   for (const [k, v] of Object.entries(topes)) {
-    if (!LETRAS.includes(k)) throw e400(`Categoria invalida: ${k} (van de la A a la K)`);
-    if (!(Number(v) > 0)) throw e400(`Tope invalido para ${k}`);
+    if (!LETRAS.includes(k)) throw e400(`Categoría inválida: ${k} (van de la A a la K)`);
+    if (!(Number(v) > 0)) throw e400(`Tope inválido para ${k}`);
     limpio[k] = Math.round(Number(v) * 100) / 100;
   }
   const faltan = LETRAS.filter((l) => limpio[l] === undefined);
-  if (faltan.length) throw e400(`Falta el tope de ${faltan.length === 1 ? 'la categoria' : 'las categorias'} ${faltan.join(', ')}`);
+  if (faltan.length) throw e400(`Falta el tope de ${faltan.length === 1 ? 'la categoría' : 'las categorías'} ${faltan.join(', ')}`);
   for (let i = 1; i < LETRAS.length; i += 1) {
     const a = LETRAS[i - 1];
     const b = LETRAS[i];
@@ -159,7 +159,7 @@ function topesDesdeCsv(texto) {
     if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(crudo)) n = Number(crudo.replace(/\./g, '').replace(',', '.'));
     else if (/^\d+,\d+$/.test(crudo)) n = Number(crudo.replace(',', '.'));
     else if (/^\d+(\.\d+)?$/.test(crudo)) n = Number(crudo);
-    else throw e400(`No se entiende el tope de la categoria ${letra}: "${resto.join(sep).slice(0, 30)}"`);
+    else throw e400(`No se entiende el tope de la categoría ${letra}: "${resto.join(sep).slice(0, 30)}"`);
     topes[letra] = n;
   }
   return validarTopes(topes);
@@ -181,7 +181,7 @@ async function categoriaDelPadron(cuit) {
   const tenants = require('../auth/tenants');
   const padron = require('./padron');
   const lista = (await tenants.list(config.env)).filter((t) => t.tieneCertificado);
-  if (!lista.length) return { letra: null, esMonotributo: null, motivo: 'No hay ningun CUIT con certificado para consultar el padron' };
+  if (!lista.length) return { letra: null, esMonotributo: null, motivo: 'No hay ningún CUIT con certificado para consultar el padrón' };
   const repre = lista.find((t) => t.cuit === cuit) ? cuit : lista[0].cuit;
   const { datos } = await padron.consultarPersonaConMeta('a5', repre, cuit, {});
   const cat = datos && datos.datosMonotributo && datos.datosMonotributo.categoriaMonotributo;
@@ -191,11 +191,11 @@ async function categoriaDelPadron(cuit) {
 async function topes(cuit, { categoria, hasta = new Date() } = {}) {
   const db = require('../db');
   const c = String(cuit || '').replace(/\D/g, '');
-  if (c.length !== 11) throw Object.assign(new Error('CUIT invalido'), { httpStatus: 400 });
+  if (c.length !== 11) throw Object.assign(new Error('CUIT inválido'), { httpStatus: 400 });
   let padron = { letra: null, esMonotributo: null };
   if (!categoria) {
     try { padron = await categoriaDelPadron(c); } catch (e) { padron = { letra: null, esMonotributo: null, motivo: e.message }; }
-    if (padron.esMonotributo === false) return { cuit: c, aplica: false, motivo: 'El padron no lo muestra como monotributista' };
+    if (padron.esMonotributo === false) return { cuit: c, aplica: false, motivo: 'El padrón no lo muestra como monotributista' };
   }
   const v = ventana(hasta);
   const { rows: filas } = await db.query(

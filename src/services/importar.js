@@ -28,7 +28,7 @@ function parseQr(qr) {
   try {
     json = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
   } catch {
-    throw new SoapError('El QR no es un QR de ARCA valido (no se pudo decodificar)', 422);
+    throw new SoapError('El QR no es un QR de ARCA válido (no se pudo decodificar)', 422);
   }
   if (!json || !json.cuit || !json.codAut) {
     throw new SoapError('El QR no tiene los campos esperados (cuit / codAut)', 422);
@@ -55,16 +55,16 @@ function parseQr(qr) {
  * el CUIT se guardan y se muestran en el panel (auditoria 2026-11-26, A-06).
  */
 function validarComprobante(d) {
-  const mal = (campo) => { throw new SoapError(`El comprobante tiene ${campo} con formato invalido`, 422); };
-  if (!/^\d{11}$/.test(String(d.cuitEmisor))) mal('un CUIT emisor (deben ser 11 digitos)');
-  if (!/^\d{14}$/.test(String(d.cae))) mal('un CAE/CAEA (deben ser 14 digitos)');
+  const mal = (campo) => { throw new SoapError(`El comprobante tiene ${campo} con formato inválido`, 422); };
+  if (!/^\d{11}$/.test(String(d.cuitEmisor))) mal('un CUIT emisor (deben ser 11 dígitos)');
+  if (!/^\d{14}$/.test(String(d.cae))) mal('un CAE/CAEA (deben ser 14 dígitos)');
   if (!/^\d{8}$/.test(String(d.fecha))) mal('una fecha (AAAA-MM-DD)');
   if (!/^\d{1,20}$/.test(String(d.docNro))) mal('un documento del receptor');
-  for (const [k, campo] of [['puntoVenta', 'un punto de venta'], ['tipoComprobante', 'un tipo'], ['numero', 'un numero']]) {
+  for (const [k, campo] of [['puntoVenta', 'un punto de venta'], ['tipoComprobante', 'un tipo'], ['numero', 'un número']]) {
     if (!Number.isInteger(d[k]) || d[k] <= 0) mal(campo);
   }
   if (!Number.isFinite(d.importeTotal)) mal('un importe');
-  if (!['E', 'A'].includes(d.tipoCodAut || 'E')) mal('un tipo de autorizacion (E o A)');
+  if (!['E', 'A'].includes(d.tipoCodAut || 'E')) mal('un tipo de autorización (E o A)');
   if (!/^[A-Z0-9$]{1,4}$/.test(String(d.moneda || 'PES'))) mal('una moneda');
   return d;
 }
@@ -127,13 +127,13 @@ async function importar(cuitConsultante, input = {}) {
     tipoCodAut: input.tipoCodAut || 'E',
   });
   if (!d.cuitEmisor || !d.cae || !d.numero) {
-    throw new SoapError('Faltan datos del comprobante (cuitEmisor, cae, numero). Pasa `qr` o los campos.', 422);
+    throw new SoapError('Faltan datos del comprobante (cuitEmisor, cae, número). Pasá `qr` o los campos.', 422);
   }
 
   // 1) Whitelist de emisores (opcional): bloquea comprobantes de emisores no habilitados.
   const permitidos = emisoresPermitidos();
   if (permitidos.length && !permitidos.includes(d.cuitEmisor)) {
-    throw new SoapError(`El emisor ${d.cuitEmisor} no esta en la lista de emisores habilitados`, 403);
+    throw new SoapError(`El emisor ${d.cuitEmisor} no está en la lista de emisores habilitados`, 403);
   }
 
   // 2) Dedup por CAE (no re-ingresar el mismo comprobante).
@@ -154,13 +154,13 @@ async function importar(cuitConsultante, input = {}) {
     // Falla cerrado (auditoria 2026-11-26, M-09): si ARCA no pudo constatarlo, no se guarda. Antes se
     // importaba igual y quedaba como "Autorizado" sin que nadie lo hubiera validado.
     throw new SoapError(
-      `No se pudo constatar el comprobante con ARCA, asi que no se importo: ${e.message}. Proba de nuevo cuando ARCA responda, o revisa que el certificado tenga asociado WSCDC.`,
+      `No se pudo constatar el comprobante con ARCA, así que no se importó: ${e.message}. Probá de nuevo cuando ARCA responda, o revisá que el certificado tenga asociado WSCDC.`,
       503,
     );
   }
   if (constatacion.consultado && !constatacion.valido) {
     throw new SoapError(
-      `ARCA NO valida este comprobante (resultado ${constatacion.resultado || 'R'}). Podria ser apocrifo o tener datos mal cargados.`,
+      `ARCA NO valida este comprobante (resultado ${constatacion.resultado || 'R'}). Podría ser apócrifo o tener datos mal cargados.`,
       422,
       { constatacion },
     );

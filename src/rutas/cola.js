@@ -34,8 +34,8 @@ async function emitirOEncolar(cuit, inv, { contingencia = false, usuario = null,
     if (ya) {
       if (ya.estado === 'emitido') return { status: 200, body: { ok: true, comprobante: ya.resultado, desdeCola: ya.id } };
       if (ya.estado === 'rechazado') return { status: 422, body: { ok: false, comprobante: ya.resultado || { aprobado: false }, error: ya.ultimo_error || 'Rechazado', desdeCola: ya.id } };
-      if (ya.estado === 'cancelado') throw Object.assign(new Error(`Ese comprobante se cancelo en la cola (item ${ya.id}): usa otra idempotencyKey para emitirlo de nuevo`), { httpStatus: 409 });
-      return { status: 202, body: { ok: true, encolado: true, mensaje: 'Ya esta en la cola.', cola: { id: ya.id, estado: ya.estado, idempotencyKey: ya.idempotency_key } } };
+      if (ya.estado === 'cancelado') throw Object.assign(new Error(`Ese comprobante se canceló en la cola (item ${ya.id}): usá otra idempotencyKey para emitirlo de nuevo`), { httpStatus: 409 });
+      return { status: 202, body: { ok: true, encolado: true, mensaje: 'Ya está en la cola.', cola: { id: ya.id, estado: ya.estado, idempotencyKey: ya.idempotency_key } } };
     }
   }
   try {
@@ -49,7 +49,7 @@ async function emitirOEncolar(cuit, inv, { contingencia = false, usuario = null,
       body: {
         ok: true,
         encolado: true,
-        mensaje: 'ARCA no responde: el comprobante quedo en la cola y sale solo cuando vuelva.',
+        mensaje: 'ARCA no responde: el comprobante quedó en la cola y sale solo cuando vuelva.',
         cola: { id: item.id, estado: item.estado, idempotencyKey: item.idempotency_key },
       },
     };

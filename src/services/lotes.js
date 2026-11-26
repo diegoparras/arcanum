@@ -68,7 +68,7 @@ function emailItem(v) {
   if (v == null || String(v).trim() === '') return null;
   const e = String(v).trim().toLowerCase();
   if (e.length > 254 || !/^[^\s@<>,;:"()[\]\\]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(e)) {
-    throw Object.assign(new Error(`Email invalido: tiene que ser una sola direccion (${String(v).slice(0, 40)})`), { httpStatus: 422 });
+    throw Object.assign(new Error(`Email inválido: tiene que ser una sola dirección (${String(v).slice(0, 40)})`), { httpStatus: 422 });
   }
   return e;
 }
@@ -197,7 +197,7 @@ async function emitirItem(loteId, itemId, extra = {}) {
       receptorNombre: it.nombre,
     };
     const r = await wsfev1.authorizeInvoice(lote.cuit, inv);
-    if (!r.aprobado) throw Object.assign(new Error('ARCA rechazo la emision: ' + (r.errores?.[0]?.message || r.observaciones?.[0]?.message || 'ver detalle')), { httpStatus: 422, extra: r });
+    if (!r.aprobado) throw Object.assign(new Error('ARCA rechazó la emisión: ' + (r.errores?.[0]?.message || r.observaciones?.[0]?.message || 'ver detalle')), { httpStatus: 422, extra: r });
     await db.query(
       `UPDATE lote_items SET estado='emitido', cae=$1, numero=$2, cae_vto=to_date($3,'YYYYMMDD'), resuelto_at=now() WHERE id=$4`,
       [r.cae, r.numero, r.caeVencimiento, itemId],
@@ -231,7 +231,7 @@ function validarRecibido(datos = {}) {
   const limpio = (v, campo, max) => {
     const s = v == null ? '' : String(v).trim();
     if (!s) return null;
-    if (!/^\d+$/.test(s) || s.length > max) throw Object.assign(new Error(`El ${campo} solo puede tener digitos`), { httpStatus: 422 });
+    if (!/^\d+$/.test(s) || s.length > max) throw Object.assign(new Error(`El ${campo} solo puede tener dígitos`), { httpStatus: 422 });
     return s;
   };
   return { cae: limpio(datos.cae, 'CAE', 14), numero: limpio(datos.numero, 'numero', 8) };
@@ -254,12 +254,12 @@ async function solicitarItem(loteId, itemId) {
   if (!it.email) throw Object.assign(new Error('El item no tiene email'), { httpStatus: 422 });
   // Un recordatorio por dia por item (B-12): sin esto se podia mandar una y otra vez.
   if (it.solicitado_at && Date.now() - new Date(it.solicitado_at).getTime() < 24 * 3600 * 1000) {
-    throw Object.assign(new Error('Ya se solicito en las ultimas 24 horas: se puede volver a pedir manana'), { httpStatus: 429 });
+    throw Object.assign(new Error('Ya se solicitó en las últimas 24 horas: se puede volver a pedir mañana'), { httpStatus: 429 });
   }
   await mailer.send(
     it.email,
     `Solicitud de comprobante${it.periodo ? ' — ' + it.periodo : ''}`,
-    `Hola ${it.nombre || ''},\n\nTe solicitamos el comprobante correspondiente${it.periodo ? ' al periodo ' + it.periodo : ''}${it.importe_total ? ' por $' + Number(it.importe_total).toFixed(2) : ''}.\n\nGracias.`,
+    `Hola ${it.nombre || ''},\n\nTe solicitamos el comprobante correspondiente${it.periodo ? ' al período ' + it.periodo : ''}${it.importe_total ? ' por $' + Number(it.importe_total).toFixed(2) : ''}.\n\nGracias.`,
   );
   await db.query("UPDATE lote_items SET estado=CASE WHEN estado='pendiente' THEN 'solicitado' ELSE estado END, solicitado_at=now() WHERE id=$1", [itemId]);
   return getItem(loteId, itemId);

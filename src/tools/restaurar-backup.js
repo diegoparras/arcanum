@@ -25,8 +25,8 @@ async function main() {
   console.log(`Backup del ${r.creado} (Arcanum ${r.version || '?'})`);
   for (const [t, n] of Object.entries(r.tablas)) console.log(`  ${t.padEnd(24)} ${n}`);
   console.log(r.simulacro
-    ? '\nSIMULACRO: no se cambio nada. Para reemplazar los datos actuales, agrega --confirmar.'
-    : '\nRESTAURADO: los datos actuales se reemplazaron por los del backup. Reinicia Arcanum.');
+    ? '\nSIMULACRO: no se cambió nada. Para reemplazar los datos actuales, agregá --confirmar.'
+    : '\nRESTAURADO: los datos actuales se reemplazaron por los del backup. Reiniciá Arcanum.');
 }
 
 main()

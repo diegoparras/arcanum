@@ -107,7 +107,7 @@ function variantesReceptor(it) {
  *  `antes(i)` y `alItem(fila, i)` permiten seguir el progreso y guardar cada resultado al toque.
  *  `detener()` se consulta antes de cada comprobante: si da true, corta ahi (lo hecho queda). */
 async function constatarLista(cuitConsultante, items, { pausaMs = 400, deps = depsPorDefecto(), antes, alItem, detener } = {}) {
-  if (!Array.isArray(items) || !items.length) throw err('La lista de comprobantes esta vacia', 400);
+  if (!Array.isArray(items) || !items.length) throw err('La lista de comprobantes está vacía', 400);
   if (items.length > MAX_ITEMS) throw err(`Hasta ${MAX_ITEMS} comprobantes por pedido`, 413);
   const apocPorEmisor = new Map();
   const resultados = [];
@@ -179,7 +179,7 @@ function repoPorDefecto() {
       const f = filtrosExtra(filtros);
       for (const k of ['desde', 'hasta']) {
         if (!filtros[k]) continue;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(filtros[k]))) throw err(`Fecha invalida: ${filtros[k]} (use AAAA-MM-DD)`, 400);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(filtros[k]))) throw err(`Fecha inválida: ${filtros[k]} (use AAAA-MM-DD)`, 400);
         f[k] = filtros[k];
       }
       const { where, vals } = condicionesListado(cuit, { ...f, tipo: 'recibido' });
@@ -215,7 +215,7 @@ async function iniciarConstatacion(cuit, { filtros = {}, limite = MAX_ITEMS, pau
   const c = String(cuit || '').replace(/\D/g, '');
   const previo = trabajos.get(c);
   if (previo && previo.estado === 'corriendo') {
-    throw Object.assign(err(`Ya se estan constatando los recibidos de este CUIT (${previo.hechos} de ${previo.total})`, 409), { constatacion: foto(previo) });
+    throw Object.assign(err(`Ya se están constatando los recibidos de este CUIT (${previo.hechos} de ${previo.total})`, 409), { constatacion: foto(previo) });
   }
   const filas = await repo.pendientes(c, filtros, Math.min(Number(limite) || MAX_ITEMS, MAX_ITEMS));
   const t = {
@@ -273,7 +273,7 @@ async function iniciarConstatacion(cuit, { filtros = {}, limite = MAX_ITEMS, pau
  */
 function detenerConstatacion(cuit) {
   const t = trabajos.get(String(cuit || '').replace(/\D/g, ''));
-  if (!t || t.estado !== 'corriendo') throw err('No hay una constatacion corriendo para este CUIT', 409);
+  if (!t || t.estado !== 'corriendo') throw err('No hay una constatación corriendo para este CUIT', 409);
   t.detener = true;
   t.deteniendo = true;
   return foto(t);

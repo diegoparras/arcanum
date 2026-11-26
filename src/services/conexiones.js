@@ -29,13 +29,13 @@ function esInterno(host) {
 function validarUrlServicio(raw, nombre) {
   const limpia = String(raw || '').trim().replace(/\/+$/, '');
   let u;
-  try { u = new URL(limpia); } catch { throw err(`La URL de ${nombre} no es valida (ejemplo: http://${nombre.toLowerCase()}:8099)`, 400); }
+  try { u = new URL(limpia); } catch { throw err(`La URL de ${nombre} no es válida (ejemplo: http://${nombre.toLowerCase()}:8099)`, 400); }
   if (!['http:', 'https:'].includes(u.protocol)) throw err(`La URL de ${nombre} tiene que empezar con http:// o https://`, 400);
   if (u.username || u.password) throw err(`La URL de ${nombre} no puede llevar usuario ni clave: el token va aparte`, 400);
   const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   const n = host.split('.').map(Number);
   const metadata = host.endsWith('.internal') || (n.length === 4 && n.every(Number.isInteger) && ((n[0] === 169 && n[1] === 254) || n[0] === 0 || n[0] >= 224));
-  if (metadata) throw err(`La URL de ${nombre} apunta a una direccion reservada (metadata de la nube o link-local)`, 400);
+  if (metadata) throw err(`La URL de ${nombre} apunta a una dirección reservada (metadata de la nube o link-local)`, 400);
   if (u.protocol === 'http:' && !esInterno(host)) throw err(`Fuera de la red interna, la URL de ${nombre} tiene que ser https (el token viaja en cada pedido)`, 400);
   return limpia;
 }
@@ -95,7 +95,7 @@ function crearConexion({ clave, nombre, varUrl, varToken, deps = {} }) {
     if (url !== undefined && String(url).trim() !== '') {
       nueva = validarUrlServicio(url, nombre);
       if (urlEnv && destino(nueva) !== destino(urlEnv)) {
-        throw err(`La URL de ${nombre} viene de la variable ${varUrl}: cambiala ahi, no desde el panel`, 409);
+        throw err(`La URL de ${nombre} viene de la variable ${varUrl}: cambiala ahí, no desde el panel`, 409);
       }
     } else if (url !== undefined && !urlEnv) {
       nueva = ''; // URL vacia: se desconecta

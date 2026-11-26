@@ -76,7 +76,7 @@ function sugerirComprobante(p = {}) {
       motivo = 'Emisor RI a receptor no inscripto (CF/Monotributo/Exento): comprobante B (IVA incluido).';
     }
   } else {
-    return { letra: null, tipoComprobante: null, requiereIva: null, condicionIvaReceptorId: recId, condicionIvaReceptor: condicionIvaLabel(recId), motivo: 'Condicion del emisor no configurada (definí ARCANUM_EMISOR_CONDICION_IVA).' };
+    return { letra: null, tipoComprobante: null, requiereIva: null, condicionIvaReceptorId: recId, condicionIvaReceptor: condicionIvaLabel(recId), motivo: 'Condición del emisor no configurada (definí ARCANUM_EMISOR_CONDICION_IVA).' };
   }
 
   return {

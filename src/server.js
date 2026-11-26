@@ -85,7 +85,7 @@ function esClaveMaestra(clave) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-const MSG_SIN_CLAVE = 'No autenticado: enviá la clave en X-API-Key o en Authorization: Bearer <clave>, o iniciá sesion.';
+const MSG_SIN_CLAVE = 'No autenticado: enviá la clave en X-API-Key o en Authorization: Bearer <clave>, o iniciá sesión.';
 
 /**
  * Principal de una clave (maestra o de la tabla api_keys), o null si no hay clave.
@@ -97,7 +97,7 @@ async function principalDeClave(req) {
   if (esClaveMaestra(clave)) return { username: 'apikey', role: 'admin', via: 'maestra' };
   const p = await apikeys.verificar(clave);
   if (p) return p;
-  throw Object.assign(new Error('Clave invalida o dada de baja.'), { httpStatus: 401 });
+  throw Object.assign(new Error('Clave inválida o dada de baja.'), { httpStatus: 401 });
 }
 
 // Limite de pedidos por clave de API (por minuto) y deteccion de uso anomalo.
@@ -114,7 +114,7 @@ function aplicarLimiteDeClave(req, res, principal) {
   if (r.restantes !== null) res.setHeader('X-RateLimit-Remaining', String(r.restantes));
   if (!r.ok) {
     res.setHeader('Retry-After', String(r.reintentarEnS));
-    throw Object.assign(new Error(`Limite de pedidos de esta clave alcanzado. Proba de nuevo en ${r.reintentarEnS} s.`), { httpStatus: 429 });
+    throw Object.assign(new Error(`Límite de pedidos de esta clave alcanzado. Probá de nuevo en ${r.reintentarEnS} s.`), { httpStatus: 429 });
   }
 }
 
@@ -129,7 +129,7 @@ async function checkAuth(req, res) {
   if (sess) {
     // Sesion registrada y no revocada (M-06). Usuario local: rol y CUITs actuales de la base.
     const ses = sesiones.servicio();
-    if (!(await ses.vigente(sess.sid))) throw Object.assign(new Error('La sesion se cerro o vencio: volvé a iniciar sesión.'), { httpStatus: 401 });
+    if (!(await ses.vigente(sess.sid))) throw Object.assign(new Error('La sesión se cerró o venció: volvé a iniciar sesión.'), { httpStatus: 401 });
     if (sess.origen === 'local') {
       const u = await ses.usuarioLocal(sess.username);
       if (!u) throw Object.assign(new Error('El usuario ya no existe.'), { httpStatus: 401 });
@@ -158,7 +158,7 @@ const mcp = crearServidorMcp({
 async function handleMcp(req, res) {
   if (req.method !== 'POST') {
     res.writeHead(405, { Allow: 'POST', 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({ ok: false, error: 'Servidor MCP sin estado: usa POST /mcp (no ofrece stream SSE).' }));
+    return res.end(JSON.stringify({ ok: false, error: 'Servidor MCP sin estado: usá POST /mcp (no ofrece stream SSE).' }));
   }
   // Anti DNS-rebinding: si el pedido viene de un navegador, el Origin debe ser este host.
   if (req.headers.origin) {
@@ -185,7 +185,7 @@ async function handleMcp(req, res) {
       herramientas += 1;
       if (herramientas > 1 && principal.via === 'clave') {
         const r = limitador.permitir(principal.claveId, principal.limitePorMinuto);
-        if (!r.ok) throw Object.assign(new Error(`Limite de pedidos de esta clave alcanzado. Proba de nuevo en ${r.reintentarEnS} s.`), { httpStatus: 429 });
+        if (!r.ok) throw Object.assign(new Error(`Límite de pedidos de esta clave alcanzado. Probá de nuevo en ${r.reintentarEnS} s.`), { httpStatus: 429 });
       }
     },
     despuesDeHerramienta: ({ herramienta, ok, cuit, cuitConsultado }) => {
@@ -271,7 +271,7 @@ async function route(req, res, url) {
   }
   // OIDC: inicio del login
   if (req.method === 'GET' && url.pathname === '/api/auth/oidc/login') {
-    if (!oidc.enabled()) throw badRequest('Federacion OIDC no configurada');
+    if (!oidc.enabled()) throw badRequest('Federación OIDC no configurada');
     const redirectUri = oidcRedirect(req, url);
     const { url: authUrl, state, verifier } = await oidc.buildAuthUrl(redirectUri);
     res.setHeader('Set-Cookie', [
@@ -287,7 +287,7 @@ async function route(req, res, url) {
       const i = p.indexOf('='); if (i > 0) a[p.slice(0, i).trim()] = p.slice(i + 1).trim(); return a;
     }, {});
     if (!url.searchParams.get('code') || url.searchParams.get('state') !== cookies.arcanum_oidc_state) {
-      throw Object.assign(new Error('OIDC: state invalido'), { httpStatus: 400 });
+      throw Object.assign(new Error('OIDC: state inválido'), { httpStatus: 400 });
     }
     const principal = await oidc.exchangeCode(url.searchParams.get('code'), cookies.arcanum_oidc_verifier, oidcRedirect(req, url));
     const sid = await sesiones.servicio().crear(principal, 'oidc');
@@ -308,13 +308,13 @@ async function route(req, res, url) {
       throw Object.assign(new Error('Login local deshabilitado: ingresá con Lockatus (SSO).'), { httpStatus: 403 });
     }
     const cuerpo = await readJsonBody(req, { max: 8 * 1024 }); // un login no pesa mas
-    if (!cuerpo || typeof cuerpo !== 'object') throw badRequest('Falta usuario y contrasena');
+    if (!cuerpo || typeof cuerpo !== 'object') throw badRequest('Falta usuario y contraseña');
     const { username, password } = cuerpo;
     req._ip = ipCliente(req); // B-11: el login deja IP y usuario intentado en la auditoria
     req._op = 'login';
     validarUsuario(username);
     req._user = String(username).slice(0, 64);
-    if (typeof password !== 'string' || password.length > 1024) throw badRequest('Contrasena invalida');
+    if (typeof password !== 'string' || password.length > 1024) throw badRequest('Contraseña inválida');
     const ip = ipCliente(req);
     limiteLogin.chequear(ip, username);
     try {
@@ -347,13 +347,13 @@ async function route(req, res, url) {
   chequearCsrf(req, principal); // sesion por cookie: solo desde el panel y con JSON (M-07)
   // Contrasena generada al instalar: hasta cambiarla, solo se puede cambiarla o salir (B-07).
   if (principal.debeCambiar && !['/api/auth/me', '/api/auth/password', '/api/auth/logout'].includes(url.pathname)) {
-    throw Object.assign(new Error('Antes de seguir, cambia la contrasena inicial.'), { httpStatus: 403 });
+    throw Object.assign(new Error('Antes de seguir, cambiá la contraseña inicial.'), { httpStatus: 403 });
   }
 
   // POST /api/auth/password { actual, nueva } -> cambia la contrasena del usuario local (B-07)
   if (req.method === 'POST' && url.pathname === '/api/auth/password') {
     if (principal.via !== 'sesion' || principal.origen !== 'local') {
-      throw badRequest('Solo los usuarios locales cambian la contrasena aca; los de Lockatus, en Lockatus.');
+      throw badRequest('Solo los usuarios locales cambian la contraseña acá; los de Lockatus, en Lockatus.');
     }
     const { actual, nueva } = await readJsonBody(req, { max: 8 * 1024 });
     const ip = ipCliente(req);
@@ -365,7 +365,7 @@ async function route(req, res, url) {
       if (e.httpStatus === 401) limiteLogin.fallo(ip, principal.username);
       throw e;
     }
-    return sendJson(res, 200, { ok: true, mensaje: 'Contrasena cambiada. Las otras sesiones abiertas se cerraron.' });
+    return sendJson(res, 200, { ok: true, mensaje: 'Contraseña cambiada. Las otras sesiones abiertas se cerraron.' });
   }
   // Rol "lectura" (usuario o clave): solo GET/HEAD (mas una lista cerrada de POST que
   // no escriben, como la vista previa), en todas las rutas. Falla cerrado.
@@ -456,7 +456,7 @@ async function route(req, res, url) {
   if (seg[0] === 'api' && seg[1] === 'services' && req.method !== 'GET') {
     requireRole(principal, 'superadmin');
     if (principal.via === 'clave' || principal.via === 'maestra') {
-      throw Object.assign(new Error('El catalogo de servicios se edita desde el panel, con sesion de superadmin'), { httpStatus: 403 });
+      throw Object.assign(new Error('El catálogo de servicios se edita desde el panel, con sesión de superadmin'), { httpStatus: 403 });
     }
     const quien = principal.username || 'superadmin';
     const avisar = (accion, id) => webhooks.emitir('catalogo_cambiado', { servicio: id, accion, usuario: quien }).catch(() => {});
@@ -736,7 +736,7 @@ async function route(req, res, url) {
       if (!cmp) throw notFound();
       // Un importado es de un tercero: Arcanum no arma su PDF (saldria con este CUIT como emisor). M-09.
       if (cmp.origen === 'importado') {
-        throw Object.assign(new Error('Es un comprobante importado de un tercero: su PDF lo tiene quien lo emitio.'), { httpStatus: 409 });
+        throw Object.assign(new Error('Es un comprobante importado de un tercero: su PDF lo tiene quien lo emitió.'), { httpStatus: 409 });
       }
       // Multi-emisor: el encabezado legal sale de los datos fiscales de ESE CUIT.
       // Modelo y nombre: los del pedido (?modelo, ?nombre, ?copias), si no los elegidos al facturar,
@@ -825,7 +825,7 @@ async function route(req, res, url) {
     // GET /api/lotes?cuit=   -> lista con resumen de aging
     if (req.method === 'GET' && !seg[2]) {
       const cuit = q.get('cuit');
-      if (scopedRequiresCuit(principal) && !cuit) throw badRequest('Indica un CUIT autorizado en ?cuit=');
+      if (scopedRequiresCuit(principal) && !cuit) throw badRequest('Indicá un CUIT autorizado en ?cuit=');
       if (cuit) assertCuitAllowed(principal, cuit);
       return sendJson(res, 200, { ok: true, lotes: await lotes.listar(cuit) });
     }
@@ -949,7 +949,7 @@ function conIdempotencia(req, inv) {
 
 function requireQ(q, name) {
   const v = q.get(name);
-  if (!v) throw badRequest(`Falta el parametro de query "${name}"`);
+  if (!v) throw badRequest(`Falta el parámetro de query "${name}"`);
   return v;
 }
 function badRequest(msg) {
@@ -1064,7 +1064,7 @@ async function start() {
   await db.waitForDb();
   await db.migrate();
   await catalog.init();
-  console.log(`[arcanum] catalogo: ${catalog.list().length} servicios cargados`);
+  console.log(`[arcanum] catálogo: ${catalog.list().length} servicios cargados`);
   // Entorno persistido (si el admin lo cambio desde la UI) pisa al del env var.
   try {
     const { rows } = await db.query("SELECT value FROM settings WHERE key = 'entorno'");
@@ -1076,17 +1076,17 @@ async function start() {
   });
   if (seeded && seeded.generated && seeded.creado) {
     // La contrasena NUNCA va al log: queda en un archivo 0600 del volumen.
-    console.log(`\n[arcanum] Usuario superadmin creado: ${seeded.username} (contrasena generada, no se muestra en el log)`);
+    console.log(`\n[arcanum] Usuario superadmin creado: ${seeded.username} (contraseña generada, no se muestra en el log)`);
     console.log(`[arcanum]   Leela desde la consola del servicio: cat ${seeded.ruta}`);
-    console.log('[arcanum]   Cambiala despues de entrar y borra ese archivo. (defini ARCANUM_ADMIN_PASS para fijarla)\n');
+    console.log('[arcanum]   Cambiala después de entrar y borrá ese archivo. (definí ARCANUM_ADMIN_PASS para fijarla)\n');
   } else if (seeded && seeded.generated) {
-    console.error(`[arcanum] No se creo el superadmin: no se pudo guardar la contrasena generada (${seeded.error}).`);
-    console.error('[arcanum]   Defini ARCANUM_ADMIN_PASS y reinicia: el superadmin se crea con esa contrasena.');
+    console.error(`[arcanum] No se creó el superadmin: no se pudo guardar la contraseña generada (${seeded.error}).`);
+    console.error('[arcanum]   Definí ARCANUM_ADMIN_PASS y reiniciá: el superadmin se crea con esa contraseña.');
   }
   try {
     const n = await require('./services/colaEmision').servicio().reencolarProcesando();
     if (n) console.log(`[arcanum] ${n} comprobante(s) de la cola vuelven a pendiente tras el reinicio`);
-  } catch (e) { console.error('[arcanum] cola de emision:', e.message); }
+  } catch (e) { console.error('[arcanum] cola de emisión:', e.message); }
   try {
     const n = await require('./services/misComprobantes').servicio().marcarHuerfanas();
     if (n) console.log(`[arcanum] ${n} corrida(s) de Mis Comprobantes interrumpidas por el reinicio`);
@@ -1104,7 +1104,7 @@ if (require.main === module) {
   // estado puede haber quedado inconsistente y el orquestador lo reinicia.
   process.on('unhandledRejection', (e) => console.error('[arcanum] promesa rechazada sin manejar:', (e && e.stack) || e));
   start().catch((e) => {
-    console.error('[arcanum] fallo el arranque:', e.message);
+    console.error('[arcanum] falló el arranque:', e.message);
     process.exit(1);
   });
 }

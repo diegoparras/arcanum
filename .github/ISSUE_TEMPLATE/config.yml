@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Reportar una vulnerabilidad
+    url: https://github.com/diegoparras/arcanum/security/advisories/new
+    about: Los problemas de seguridad se reportan en privado, nunca en un issue público.
+  - name: Guía de instalación (PDF)
+    url: https://github.com/diegoparras/arcanum/blob/main/docs/guias/arcanum-guia-instalacion.pdf
+    about: Paso a paso para instalar Arcanum, con solución de problemas frecuentes.

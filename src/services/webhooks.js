@@ -35,7 +35,7 @@ async function listar() {
 }
 
 async function crear({ url, eventos, secret }) {
-  if (!url || !/^https?:\/\//.test(url)) throw err('URL invalida', 400);
+  if (!url || !/^https?:\/\//.test(url)) throw err('URL inválida', 400);
   assertSafeUrl(url); // anti-SSRF: rechaza localhost / IPs privadas / metadata
   url = new URL(url).href; // se guarda la forma normalizada (codifica < > " del path): M-11
   const evs = (eventos && eventos.length ? eventos : EVENTOS).filter((e) => EVENTOS.includes(e));
@@ -99,7 +99,7 @@ async function emitir(evento, payload) {
       try {
         await enviar(w, body);
       } catch (e) {
-        console.error('[arcanum][webhook] fallo', e.message);
+        console.error('[arcanum][webhook] falló', e.message);
       }
     }),
   );
@@ -115,7 +115,7 @@ async function probar(id) {
     const r = await enviar(rows[0], body);
     return { entregado: r.ok, status: r.status, ms: Date.now() - t0 };
   } catch (e) {
-    return { entregado: false, error: e.name === 'AbortError' ? 'El destino no respondio en 8 s' : e.message, ms: Date.now() - t0 };
+    return { entregado: false, error: e.name === 'AbortError' ? 'El destino no respondió en 8 s' : e.message, ms: Date.now() - t0 };
   }
 }
 

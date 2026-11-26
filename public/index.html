@@ -135,8 +135,10 @@
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px}
   .dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)} .dot.idle{background:#cabfa9}
   h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:30px 0 12px}
-  h3{font-size:15px;margin:16px 0 10px;text-transform:capitalize}
+  h3{font-size:15px;margin:16px 0 10px}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .acciones{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}
+  .nw,.tag{white-space:nowrap}
   table{width:100%;border-collapse:collapse;font-size:13.5px}
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
   th{color:var(--muted);font-weight:560;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
@@ -431,11 +433,11 @@ async function vClientes(){
   const rows=tenants.map(t=>{
     const cert=t.tieneCertificado?`<span class="tag ok">vigente${t.diasParaVencer!=null?' ('+t.diasParaVencer+'d)':''}</span>`:(t.tieneClave?'<span class="tag warn">falta certificado</span>':'<span class="tag no">sin clave</span>');
     return `<tr><td class="mono">${esc(t.cuit)}</td><td>${esc(t.nombre||'')}</td><td>${cert}</td>
-      <td class="row">
+      <td><div class="acciones">
        ${t.tieneClave?`<button class="ghost" onclick="verCsr(${jsA(t.cuit)})">CSR</button>`:''}
        <button class="ghost" onclick="pegarCert(${jsA(t.cuit)})">Pegar .crt</button>
        <button class="ghost" onclick="editarEmisor(${jsA(t.cuit)})">Datos fiscales</button>
-      </td></tr>`;}).join('')||'<tr><td colspan="4" class="hint">No hay clientes. Creá el primero.</td></tr>';
+      </div></td></tr>`;}).join('')||'<tr><td colspan="4" class="hint">No hay clientes. Creá el primero.</td></tr>';
   v.innerHTML=`<div class="row"><h2 style="margin:0">Clientes (${ENV})</h2>
     <button style="margin-left:auto" onclick="importarCert()">Importar certificado</button>
     <button class="primary" onclick="nuevoCliente()">Nuevo cliente</button></div>
@@ -461,7 +463,7 @@ async function editarEmisor(cuit){
     <p class="hint">Van en el encabezado legal del PDF. Se guardan <strong>por CUIT</strong>, así cada cliente sale con sus propios datos.</p>
     <div id="em_aviso">${faltan.length?`<p class="hint"><span class="tag warn">FALTAN</span> ${esc(faltan.map(f=>f.etiqueta).join(', '))}</p>`:''}</div>
     <div class="row"><button onclick="traerEmisorDeArca(${jsA(cuit)})">Traer de ARCA</button>
-    <span class="hint">Razón social, domicilio y condición frente al IVA salen del padrón. Completa solo lo vacío.</span></div>
+    <span class="hint">Razón social, domicilio y condición frente al IVA salen del padrón. Completá solo lo vacío.</span></div>
     <label>Razón social</label><input id="em_rs" value="${a(e.razonSocial)}">
     <label>Nombre de fantasía</label><input id="em_nf" value="${a(e.nombreFantasia)}">
     <label>Domicilio comercial</label><input id="em_dom" value="${a(e.domicilio)}">
@@ -522,7 +524,7 @@ async function vServicios(){
     ${cuitOpts?`<div class="row" style="margin:6px 0 4px"><span class="hint">Verificar con el CUIT:</span><select id="verif_cuit" style="max-width:280px">${cuitOpts}</select></div>`:'<p class="hint">Cargá un cliente para poder verificar la asociación.</p>'}`;
   const orden=['facturacion','consultas','agro','aduana','otros'];
   for(const cat of Object.keys(categorias).sort((a,b)=>orden.indexOf(a)-orden.indexOf(b))){
-    html+=`<h3>${cat}</h3>`;
+    html+=`<h3>${esc(catNombre(cat))}</h3>`;
     for(const id of categorias[cat]){const s=servicios.find(x=>x.id===id);if(!s)continue;
       const tag=s.rich?'<span class="tag rich">rico</span>':'<span class="tag">genérico</span>';
       const off=s.enabled===false?'<span class="tag no">deshabilitado</span>':'';
@@ -636,7 +638,7 @@ async function previsualizar(){
     const rec=p.receptor&&p.receptor.padron?`<tr><th>Receptor</th><td>${esc(p.receptor.padron.nombre||'')} <span class="hint">${esc(p.receptor.padron.condicionIVA||'')}</span></td></tr>`:'';
     $('#e_result').innerHTML=`<div class="card"><span class="tag ${p.valido?'ok':'no'}">${p.valido?'LISTO PARA EMITIR':'CON PROBLEMAS'}</span> <span class="hint">No se emitió nada.</span>
       <table style="margin-top:10px">${p.comprobante?`<tr><th>Comprobante</th><td class="mono">${esc(p.comprobante)}</td></tr>`:''}
-      <tr><th>Fecha</th><td class="mono">${esc(p.fecha||'')}</td></tr><tr><th>Total</th><td class="mono">$${Number(p.importes?p.importes.total:0).toFixed(2)}</td></tr>${rec}
+      <tr><th>Fecha</th><td class="mono">${esc(p.fecha||'')}</td></tr><tr><th>Total</th><td class="mono">${mcaPlata(p.importes?p.importes.total:0)}</td></tr>${rec}
       ${p.letraSugerida?`<tr><th>Letra sugerida</th><td>${esc(p.letraSugerida)}</td></tr>`:''}</table>
       ${p.problemas.length?`<h4>Problemas</h4><ul>${li(p.problemas)}</ul>`:''}
       ${p.advertencias.length?`<h4>Advertencias</h4><ul class="hint">${li(p.advertencias)}</ul>`:''}
@@ -1029,6 +1031,9 @@ function mcaPlegarTodo(plegar){document.querySelectorAll('#view .card[data-pleg]
 function mcaToggle(k){MCA.abiertos.has(k)?MCA.abiertos.delete(k):MCA.abiertos.add(k);mcAnalisis();}
 function mcaToggleTodos(abrir){if(!abrir){MCA.abiertos=new Set();mcAnalisis();return;}
   api(`/api/mis-comprobantes/${MC.cuit}/analisis?${mcFiltros()}`).then(({analisis:a})=>{MCA.abiertos=new Set(a.subtotales.map(g=>g.mes+'|'+g.tipo));mcAnalisis();}).catch(()=>{});}
+/* Las categorías del catálogo se guardan como clave; esto es lo que se muestra. */
+const CATEGORIAS={facturacion:'Facturación',consultas:'Consultas',agro:'Agro y remitos',aduana:'Aduana',otros:'Otros'};
+const catNombre=c=>CATEGORIAS[c]||String(c||'Otros').replace(/^./,x=>x.toUpperCase());
 const NOMBRE_TIPO={1:'Factura A',2:'ND A',3:'NC A',6:'Factura B',7:'ND B',8:'NC B',11:'Factura C',12:'ND C',13:'NC C',51:'Factura M',201:'FCE A',206:'FCE B',211:'FCE C'};
 async function mcCargarTabla(){
   try{const {comprobantes:l}=await api(`/api/mis-comprobantes/${MC.cuit}?${mcFiltros()}`);
@@ -1094,7 +1099,7 @@ async function mcConstatar(){
   $('#mc_const').innerHTML='<p class="hint">Buscando los recibidos sin constatar…</p>';
   try{const {constatacion:c}=await api(`/api/mis-comprobantes/${MC.cuit}/constatar`,{method:'POST',body:JSON.stringify({filtros})});
     mcConstPintar(c);if(c.estado==='corriendo')mcConstSeguir();else{if(b)b.disabled=false;}}
-  catch(e){if(/Ya se estan constatando/.test(e.message)){mcConstSeguir();return;}
+  catch(e){if(/Ya se están constatando/.test(e.message)){mcConstSeguir();return;}
     if(b)b.disabled=false;$('#mc_const').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
 function mcConstPintar(c){
@@ -1477,12 +1482,11 @@ async function vContingencia(){
 }
 async function clCargar(){
   try{const est=$('#cl_estado').value;const {cola}=await api('/api/cola'+(est?'?estado='+est:''));
-    const pesos=n=>Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2});
     $('#cl_tabla').innerHTML=cola.length?`<table><tr><th>#</th><th>CUIT</th><th>Fecha</th><th>Total</th><th>Estado</th><th>Intentos</th><th>Próximo intento</th><th>Detalle</th><th></th></tr>${cola.map(x=>{const e=COLA_ESTADO[x.estado]||['',x.estado];
       const acc=window._clOpera&&['pendiente','requiere_humano'].includes(x.estado)?`<button class="ghost" onclick="clAccion(${Number(x.id)},'reintentar')">Reintentar</button>${x.estado==='requiere_humano'?`<button class="ghost" onclick="clAccion(${Number(x.id)},'hoy')">Emitir con fecha de hoy</button>`:''}<button class="ghost" onclick="clAccion(${Number(x.id)},'cancelar')">Cancelar</button>`:'';
       const det=x.estado==='emitido'&&x.resultado?`CAE ${esc(x.resultado.cae||'')}${x.modo==='CAEA'?' (CAEA)':''}${x.resultado.adoptado?' · recuperado de ARCA':''}`:esc(x.ultimo_error||'');
-      return `<tr><td class="mono">${Number(x.id)}</td><td class="mono">${esc(x.cuit)}</td><td class="mono">${String(x.fecha||'').slice(0,10)}</td><td class="mono">$${pesos(x.cuerpo&&x.cuerpo.importeTotal)}</td>
-      <td><span class="tag ${e[0]}">${esc(e[1])}</span></td><td class="mono">${x.intentos}</td><td class="hint">${x.estado==='pendiente'&&x.proximo_intento_at?new Date(x.proximo_intento_at).toLocaleString('es-AR'):''}</td><td class="hint">${det}</td><td>${acc}</td></tr>`;}).join('')}</table>`:'<p class="hint">La cola está vacía.</p>';
+      return `<tr><td class="mono">${Number(x.id)}</td><td class="mono">${esc(x.cuit)}</td><td class="mono nw">${String(x.fecha||'').slice(0,10)}</td><td class="mono nw">${mcaPlata(x.cuerpo&&x.cuerpo.importeTotal)}</td>
+      <td><span class="tag ${e[0]}">${esc(e[1])}</span></td><td class="mono">${x.intentos}</td><td class="hint">${x.estado==='pendiente'&&x.proximo_intento_at?new Date(x.proximo_intento_at).toLocaleString('es-AR'):''}</td><td class="hint">${det}</td><td><div class="acciones">${acc}</div></td></tr>`;}).join('')}</table>`:'<p class="hint">La cola está vacía.</p>';
   }catch(e){$('#cl_tabla').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
 async function clAccion(id,a){
@@ -1547,14 +1551,14 @@ async function sincronizarEmitidosIr(){
 }
 async function vComprobantes(){
   const v=$('#view');const {comprobantes}=await api('/api/comprobantes');
-  const rows=comprobantes.map(c=>`<tr><td class="mono">${esc(c.cuit)}</td><td class="mono">${esc(c.punto_venta)}-${esc(c.numero)}</td><td>${esc(c.tipo_cbte)}</td>
-    <td class="mono">${esc((c.fecha||'').slice?.(0,10)||c.fecha||'')}</td><td class="mono">${esc(c.cae||'')}</td><td class="mono">$${Number(c.importe_total).toFixed(2)}</td>
+  const rows=comprobantes.map(c=>`<tr><td class="mono">${esc(c.cuit)}</td><td class="mono nw">${String(c.punto_venta).padStart(4,'0')}-${String(c.numero).padStart(8,'0')}</td><td class="nw">${esc(NOMBRE_TIPO[c.tipo_cbte]||'Tipo '+c.tipo_cbte)}</td>
+    <td class="mono nw">${esc((c.fecha||'').slice?.(0,10)||c.fecha||'')}</td><td class="mono">${esc(c.cae||'')}</td><td class="mono nw">${mcaPlata(c.importe_total)}</td>
     <td>${c.origen==='importado'?'<span class="tag" title="Comprobante de un tercero, constatado con ARCA">Importado</span>':`<a href="/api/comprobantes/${encodeURIComponent(c.cuit)}/${Number(c.punto_venta)}/${Number(c.tipo_cbte)}/${Number(c.numero)}/pdf"><button class="ghost">PDF</button></a>`}</td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
   v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes</h2>
      <button style="margin-left:auto" onclick="sincronizarEmitidos()">Traer lo emitido por fuera</button>
      <button class="primary" onclick="importarQr()">Importar por QR</button>
      <a href="/api/comprobantes/export.csv"><button>Exportar CSV</button></a></div>
-   <div class="card" style="margin-top:12px"><table><thead><tr><th>CUIT</th><th>Cbte</th><th>Tipo</th><th>Fecha</th><th>CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+   <div class="card" style="margin-top:12px"><table><thead><tr><th>CUIT</th><th>Comprobante</th><th>Tipo</th><th>Fecha</th><th>CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 async function importarQr(){
   let tenants=[];try{tenants=(await api('/api/tenants')).tenants;}catch{}
@@ -1574,7 +1578,7 @@ async function doImportarQr(){
     const c=r.comprobante, k=c.constatacion||{};
     const tag=k.consultado?(k.valido?'<span class="tag ok">ARCA valida el comprobante</span>':'<span class="tag no">ARCA lo rechazó</span>')
       :`<span class="tag warn">no se pudo constatar</span> <span class="hint">${esc((k.motivo||'').slice(0,120))}</span>`;
-    box.innerHTML=`${tag}<p class="hint" style="margin-top:8px">Emisor ${esc(c.cuitEmisor)} · ${esc(c.puntoVenta)}-${esc(c.numero)} · CAE ${esc(c.cae)} · $${Number(c.importeTotal).toFixed(2)}</p>`;
+    box.innerHTML=`${tag}<p class="hint" style="margin-top:8px">Emisor ${esc(c.cuitEmisor)} · ${esc(c.puntoVenta)}-${esc(c.numero)} · CAE ${esc(c.cae)} · ${mcaPlata(c.importeTotal)}</p>`;
     toast('Comprobante importado');setTimeout(()=>{closeModal();vComprobantes();},1500);
   }catch(e){box.innerHTML=`<span class="tag no">${esc(e.message)}</span>`;}
 }
@@ -1583,7 +1587,7 @@ async function doImportarQr(){
 async function vWebhooks(){
   const v=$('#view');const {webhooks,eventos}=await api('/api/webhooks');
   const rows=webhooks.map(w=>`<tr><td class="mono">${esc(w.url)}</td><td class="hint">${esc((w.eventos||[]).join(', '))}</td>
-    <td style="white-space:nowrap"><button class="ghost" onclick="probarWebhook(${Number(w.id)})">Probar</button> <button class="ghost" onclick="delWebhook(${Number(w.id)})">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="3" class="hint">Sin webhooks.</td></tr>';
+    <td><div class="acciones"><button class="ghost" onclick="probarWebhook(${Number(w.id)})">Probar</button><button class="ghost" onclick="delWebhook(${Number(w.id)})">Eliminar</button></div></td></tr>`).join('')||'<tr><td colspan="3" class="hint">Sin webhooks.</td></tr>';
   v.innerHTML=`<h2>Webhooks</h2><div class="card"><table><thead><tr><th>URL</th><th>Eventos</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
    <div class="card" style="margin-top:14px;max-width:560px"><h3 style="margin-top:0">Nuevo webhook</h3>
    <label>URL (n8n, etc.)</label><input id="w_url" class="mono" placeholder="https://...">
@@ -1640,10 +1644,10 @@ async function verLote(id){
     return `<tr><td>${esc(it.nombre||'')}</td><td class="mono">${esc(it.cuit||it.doc_nro||'')}</td>
       <td>${estadoTag(it.estado)}</td>
       <td>${pend?semDot(a.semaforo)+(a.dias!=null?a.dias+'d':''):''}${it.cae?'<span class="hint mono">CAE '+esc(it.cae)+'</span>':''}</td>
-      <td class="mono">${it.importe_total!=null?'$'+Number(it.importe_total).toFixed(2):''}</td>
-      <td class="row">${pend?`<button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'emitir')">Emitir</button>
+      <td class="mono">${it.importe_total!=null?mcaPlata(it.importe_total):''}</td>
+      <td><div class="acciones">${pend?`<button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'emitir')">Emitir</button>
         <button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'recibido')">Recibido</button>
-        ${it.email?`<button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'solicitar')">Solicitar</button>`:''}`:''}</td></tr>`;}).join('');
+        ${it.email?`<button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'solicitar')">Solicitar</button>`:''}`:''}</div></td></tr>`;}).join('');
   v.innerHTML=`<div class="row"><button class="ghost" onclick="vFacturador()">← Lotes</button><h2 style="margin:0 auto 0 8px">${esc(lote.nombre)}</h2>
      <button onclick="emitirTodo(${Number(id)})">Emitir pendientes</button>
      <a href="/api/lotes/${Number(id)}/export.csv"><button>CSV</button></a></div>
@@ -1713,8 +1717,8 @@ async function cargarClaves(){
       <td class="hint">${c.cuits&&c.cuits.length?c.cuits.map(esc).join(', '):'todos'}</td>
       <td>${est(c)}${act&&c.vence&&new Date(c.vence)-Date.now()>=7*864e5?`<div class="hint">vence ${fd(c.vence)}</div>`:''}</td>
       <td class="hint">${f(c.ultimoUso)}<div>${c.usos30d||0} pedidos en 30 días${c.limitePorMinuto?` · tope ${c.limitePorMinuto}/min`:''}</div></td>
-      <td style="white-space:nowrap"><button class="ghost" onclick="usoClave(${Number(c.id)})">Uso</button>
-      ${act?`<button class="ghost" onclick="rotarClave(${Number(c.id)},${n})">Rotar</button> <button class="ghost" onclick="bajaClave(${Number(c.id)},${n})">Dar de baja</button>`:''}</td></tr>`;}).join('');
+      <td><div class="acciones"><button class="ghost" onclick="usoClave(${Number(c.id)})">Uso</button>
+      ${act?`<button class="ghost" onclick="rotarClave(${Number(c.id)},${n})">Rotar</button><button class="ghost" onclick="bajaClave(${Number(c.id)},${n})">Dar de baja</button>`:''}</div></td></tr>`;}).join('');
     box.innerHTML=`<div class="card">${claves.length?`<table><thead><tr><th>Nombre</th><th>Prefijo</th><th>Rol</th><th>CUITs</th><th>Estado</th><th>Uso</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="hint" style="margin:0">Todavía no hay claves.</p>'}</div>
      <div class="card" style="margin-top:14px;max-width:520px"><h3 style="margin-top:0">Nueva clave</h3>
       <label>Nombre</label><input id="k_nom" placeholder="SecretarIA">
@@ -1800,7 +1804,7 @@ async function vGenerador(){
   const orden=['facturacion','consultas','agro','aduana','otros'];
   const byCat={}; services.forEach(s=>{ if(s.id==='eventanilla')return; (byCat[s.categoria||'otros']=byCat[s.categoria||'otros']||[]).push(s); });
   let svcGroups=''; for(const cat of Object.keys(byCat).sort((a,b)=>orden.indexOf(a)-orden.indexOf(b))){
-    svcGroups+=`<optgroup label="${esc(cat)}">`+byCat[cat].map(s=>`<option value="s:${esc(s.id)}">${esc(s.nombre)}</option>`).join('')+'</optgroup>'; }
+    svcGroups+=`<optgroup label="${esc(catNombre(cat))}">`+byCat[cat].map(s=>`<option value="s:${esc(s.id)}">${esc(s.nombre)}</option>`).join('')+'</optgroup>'; }
   const opts=`<optgroup label="Comunes (con ejemplo)">${richOpts}</optgroup>${svcGroups}`;
   const svcOpts=services.map(s=>`<option value="${esc(s.id)}">${esc(s.nombre)}</option>`).join('');
   v.innerHTML=`<h2>Generador de código</h2>
@@ -1811,7 +1815,7 @@ async function vGenerador(){
      <label>Endpoint</label><select id="g_preset">${opts}</select>
      <div class="f2"><div><label>Método</label><select id="g_method"><option>GET</option><option>POST</option></select></div>
      <div><label>Ruta</label><input id="g_path" class="mono"></div></div>
-     <label>Body (JSON) <span class="hint">— sólo para POST</span></label><textarea id="g_body" class="mono"></textarea>
+     <label>Body (JSON) <span class="hint">— solo para POST</span></label><textarea id="g_body" class="mono"></textarea>
    </div>
    <div class="card" style="max-width:780px;margin-top:14px">
      <strong>Explorar operaciones de un servicio</strong>

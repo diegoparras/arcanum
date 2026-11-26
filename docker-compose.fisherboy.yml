@@ -2,7 +2,7 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.fisherboy.yml up -d
 #
-# Fisherboy aporta la "sesion de agente" (navegador con receta, IA opcional y toma de control
+# Fisherboy aporta la "sesión de agente" (navegador con receta, IA opcional y toma de control
 # en vivo). Arcanum le habla por la red interna con FISHERBOY_TOKEN (= API_TOKEN de Fisherboy).
 # Para la IA de respaldo, cargar LLM_API_BASE_URL / LLM_API_KEY / LLM_MODEL en Fisherboy
 # (cualquier proveedor compatible con OpenAI, incluido Ollama local). Sin IA anda igual.

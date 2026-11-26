@@ -29,7 +29,7 @@ const num = (x) => (x === undefined || x === null || x === '' ? null : Number(x)
 
 function endpoint(entorno) {
   const url = catalog.endpoint('eventanilla', entorno || config.env);
-  if (!url) throw new SoapError('e-Ventanilla no esta en el catalogo', 404);
+  if (!url) throw new SoapError('e-Ventanilla no está en el catálogo', 404);
   return url;
 }
 
@@ -52,7 +52,7 @@ function authXml(token, sign, cuit) {
 
 async function authParts(cuit, entorno) {
   const c = normalizeCuit(cuit);
-  if (!c) throw new SoapError('CUIT invalido', 400);
+  if (!c) throw new SoapError('CUIT inválido', 400);
   const ta = await getAccessTicket(c, WSAA_SERVICE, entorno || config.env);
   return { c, token: ta.token, sign: ta.sign };
 }

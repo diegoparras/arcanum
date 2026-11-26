@@ -13,7 +13,7 @@ const bk = {
   directorio: () => '/no/existe',
   listar: () => [],
   crear: async () => ({ nombre: 'arcanum-20261120-0300.arcbak', bytes: 10 }),
-  ruta: (dir, n) => { if (!/^arcanum-\d{8}-\d{4}\.arcbak$/.test(n)) throw Object.assign(new Error('Nombre de backup invalido'), { httpStatus: 400 }); return `${dir}/${n}`; },
+  ruta: (dir, n) => { if (!/^arcanum-\d{8}-\d{4}\.arcbak$/.test(n)) throw Object.assign(new Error('Nombre de backup inválido'), { httpStatus: 400 }); return `${dir}/${n}`; },
 };
 const db = { query: async () => ({ rows: [] }) };
 
