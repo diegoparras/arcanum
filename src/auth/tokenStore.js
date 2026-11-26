@@ -2,9 +2,8 @@
 
 // Cache del Ticket de Acceso (Token + Sign) por CUIT + servicio + entorno, en
 // Postgres. ARCA rechaza pedir un TA nuevo si el anterior sigue vigente, asi que
-// reutilizamos hasta que falte poco para vencer. Para que dos requests (o dos
-// instancias del contenedor) no disparen dos logins a la vez usamos advisory
-// locks de Postgres: lock real, distribuido, no solo en memoria.
+// reutilizamos hasta que falte poco para vencer. Los pedidos concurrentes de una
+// instancia comparten un solo login (ver getOrCreate).
 
 const db = require('../db');
 const { config } = require('../config');
@@ -57,22 +56,30 @@ async function write(cuit, service, entorno, ta, client = db) {
   );
 }
 
+// Logins a WSAA en curso, por (cuit, service, entorno). Los pedidos concurrentes de esta instancia
+// esperan el mismo login en vez de disparar otro.
+const enCurso = new Map();
+
 /**
- * Devuelve un TA vigente; si no hay, llama a `fetcher()` bajo advisory lock.
+ * Devuelve un TA vigente; si no hay, llama a `fetcher()` una sola vez por clave.
+ *
+ * El login a WSAA NO corre dentro de una transaccion (auditoria 2026-11-26, M-03): antes tenia
+ * tomada una conexion del pool mientras esperaba a ARCA, y con ARCA lento 10 pedidos dejaban a
+ * toda la aplicacion sin base. Si otra instancia pide el mismo TA a la vez, ARCA rechaza el
+ * segundo login ("ya posee un TA valido") y wsaa.js usa el guardado (readRaw).
  */
 async function getOrCreate(cuit, service, entorno, fetcher) {
   const cached = await read(cuit, service, entorno);
   if (cached) return cached;
-
-  return db.tx(async (client) => {
-    // Lock por (cuit, service, entorno): serializa el login concurrente.
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey(cuit, service, entorno)]);
-    const again = await read(cuit, service, entorno, client);
-    if (again) return again;
+  const clave = lockKey(cuit, service, entorno);
+  if (enCurso.has(clave)) return enCurso.get(clave);
+  const p = (async () => {
     const ta = await fetcher();
-    await write(cuit, service, entorno, ta, client);
+    await write(cuit, service, entorno, ta);
     return ta;
-  });
+  })();
+  enCurso.set(clave, p);
+  try { return await p; } finally { enCurso.delete(clave); }
 }
 
 async function invalidate(cuit, service, entorno) {

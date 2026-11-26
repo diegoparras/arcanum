@@ -18,7 +18,7 @@ const zlib = require('zlib');
 const crypto = require('crypto');
 
 const MAGIA = 'ARCBAK1\n';
-const TABLAS_EXCLUIDAS = ['requests', 'service_status', 'access_tickets'];
+const TABLAS_EXCLUIDAS = ['requests', 'service_status', 'access_tickets', 'sesiones'];
 const PADRES_PRIMERO = ['lotes']; // lote_items referencia a lotes
 const NOMBRE = /^arcanum-\d{8}-\d{4}(-\d+)?\.arcbak$/;
 

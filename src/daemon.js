@@ -30,6 +30,9 @@ function maskCuit(c) {
 async function monitor() {
   // Limpieza: historial de status mas viejo que 7 dias.
   db.query("DELETE FROM service_status WHERE checked_at < now() - interval '7 days'").catch(() => {});
+  // Retencion de la auditoria de pedidos (M-12): ARCANUM_AUDITORIA_DIAS, 90 por defecto.
+  const dias = Math.max(7, parseInt(process.env.ARCANUM_AUDITORIA_DIAS || '90', 10) || 90);
+  db.query('DELETE FROM requests WHERE ts < now() - make_interval(days => $1)', [dias]).catch(() => {});
   const servicios = catalog.list().filter((s) => s.dummyOp);
   for (const s of servicios) {
     const t0 = Date.now();

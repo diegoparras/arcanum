@@ -22,6 +22,23 @@ function verifyPassword(pw, stored) {
   }
 }
 
+/** Igual que verifyPassword pero sin bloquear el hilo (scrypt asincrono). */
+function verificarAsync(pw, stored) {
+  return new Promise((resolve) => {
+    try {
+      const [, saltHex, hashHex] = String(stored).split('$');
+      crypto.scrypt(String(pw), Buffer.from(saltHex, 'hex'), 64, (e, dk) => {
+        if (e) return resolve(false);
+        try { resolve(crypto.timingSafeEqual(dk, Buffer.from(hashHex, 'hex'))); } catch { resolve(false); }
+      });
+    } catch { resolve(false); }
+  });
+}
+
+// Hash senuelo: si el usuario no existe se verifica contra este, asi la respuesta tarda lo mismo
+// y no delata que usuarios existen (auditoria 2026-11-26, M-04).
+const SENUELO = `scrypt$${'00'.repeat(16)}$${'00'.repeat(64)}`;
+
 /**
  * Crea el superadmin la primera vez (solo si no hay ningun usuario).
  * Sin ARCANUM_ADMIN_PASS genera una contrasena y la entrega a `guardarClave(pass) -> ruta`
@@ -54,7 +71,8 @@ async function seedAdmin({ guardarClave } = {}) {
 
 async function login(username, password) {
   const { rows } = await db.query('SELECT username, pass_hash, role, cuit_allow FROM usuarios WHERE username = $1', [username]);
-  if (!rows.length || !verifyPassword(password, rows[0].pass_hash)) {
+  const ok = await verificarAsync(password, rows.length ? rows[0].pass_hash : SENUELO);
+  if (!rows.length || !ok) {
     throw Object.assign(new Error('Usuario o contrasena invalidos'), { httpStatus: 401 });
   }
   await db.query('UPDATE usuarios SET last_login = now() WHERE username = $1', [username]);

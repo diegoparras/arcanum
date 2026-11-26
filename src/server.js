@@ -35,10 +35,20 @@ const pdf = require('./services/pdf');
 const emisores = require('./services/emisores');
 const importar = require('./services/importar');
 const metrics = require('./services/metrics');
+// /metrics cacheado 5 s: un scrape frecuente (o malicioso) no pega 7 consultas cada vez.
+let cacheMetricas = { hasta: 0, texto: null };
+async function metricasCacheadas() {
+  if (cacheMetricas.texto && Date.now() < cacheMetricas.hasta) return cacheMetricas.texto;
+  const texto = await metrics.prometheus();
+  cacheMetricas = { hasta: Date.now() + 5000, texto };
+  return texto;
+}
 const webhooks = require('./services/webhooks');
 const sesiones = require('./auth/sesiones');
 const { chequearCsrf } = require('./lib/csrf');
 const { cabecerasComunes, CSP_PANEL, CSP_DOCS } = require('./lib/cabeceras');
+const { crearLimiteLogin, ipCliente, validarUsuario } = require('./auth/limiteLogin');
+const { filaAuditoria, guardarFila, esCuit } = require('./lib/auditoria');
 const lotes = require('./services/lotes');
 const apikeys = require('./auth/apikeys');
 const vistaPrevia = require('./services/vistaPrevia');
@@ -162,11 +172,35 @@ async function handleMcp(req, res) {
     throw Object.assign(new Error('Falta la clave: enviá Authorization: Bearer <clave> (o X-API-Key).'), { httpStatus: 401 });
   }
   req._user = principal.username;
-  req._ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null;
+  req._ip = ipCliente(req); // la que agrego el proxy de confianza, no la que dice el cliente
   aplicarLimiteDeClave(req, res, principal);
+  // Cada herramienta (tambien dentro de un lote) descuenta del limite de la clave, deja su fila de
+  // auditoria y pasa por el detector de uso anomalo con su propio CUIT (M-01). La primera ya la
+  // desconto aplicarLimiteDeClave al entrar el pedido.
+  let herramientas = 0;
   const ctx = {
     principal,
     alLlamar: (herramienta) => { req._op = herramienta; },
+    antesDeHerramienta: () => {
+      herramientas += 1;
+      if (herramientas > 1 && principal.via === 'clave') {
+        const r = limitador.permitir(principal.claveId, principal.limitePorMinuto);
+        if (!r.ok) throw Object.assign(new Error(`Limite de pedidos de esta clave alcanzado. Proba de nuevo en ${r.reintentarEnS} s.`), { httpStatus: 429 });
+      }
+    },
+    despuesDeHerramienta: ({ herramienta, ok, cuit, cuitConsultado }) => {
+      guardarFila(db, {
+        cuit: esCuit(cuit), service: 'mcp', operation: `tools/call ${herramienta}`.slice(0, 200), http_method: 'MCP',
+        path: '/mcp', status: ok ? 200 : 500, ok, duration_ms: null, usuario: principal.username || null,
+        ip: req._ip || null, clave_id: principal.claveId || null,
+      });
+      if (principal.claveId) {
+        for (const a of detector.registrar({ id: principal.claveId, nombre: principal.username, status: ok ? 200 : 500, cuitConsultado: esCuit(cuitConsultado) })) {
+          console.warn(`[arcanum] uso anomalo de ${a.clave}: ${a.detalle}`);
+          webhooks.emitir('clave_anomala', a).catch(() => {});
+        }
+      }
+    },
   };
   const salida = await mcp.atender(await readTextBody(req), ctx);
   if (ctx.cuit) req._cuit = ctx.cuit;
@@ -179,22 +213,8 @@ async function handleMcp(req, res) {
 }
 
 // Rate-limit en memoria para el login (anti fuerza bruta).
-const loginFails = new Map(); // key -> { count, until }
-function loginThrottle(key) {
-  const rec = loginFails.get(key);
-  if (rec && rec.until > Date.now()) {
-    throw Object.assign(new Error('Demasiados intentos. Espera unos minutos.'), { httpStatus: 429 });
-  }
-}
-function loginFailed(key) {
-  const rec = loginFails.get(key) || { count: 0, until: 0 };
-  rec.count += 1;
-  if (rec.count >= 5) rec.until = Date.now() + Math.min(15 * 60_000, 30_000 * 2 ** (rec.count - 5));
-  loginFails.set(key, rec);
-}
-function loginOk(key) {
-  loginFails.delete(key);
-}
+// Intentos de login: por IP del proxy de confianza + usuario, por usuario y global (M-04, M-05).
+const limiteLogin = crearLimiteLogin();
 
 function notFound() {
   return Object.assign(new Error('Recurso no encontrado'), { httpStatus: 404 });
@@ -224,8 +244,22 @@ async function route(req, res, url) {
   }
   // Metricas Prometheus: publicas (agregados, sin datos sensibles) para scrapers.
   if (req.method === 'GET' && url.pathname === '/metrics') {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    return res.end(await metrics.prometheus());
+    // Con ARCANUM_METRICS_TOKEN, solo quien scrapea con ese token. Primero se calcula y despues se
+    // responde: un error de la base es un 503, nunca una caida del proceso (M-02).
+    const tokenScrape = process.env.ARCANUM_METRICS_TOKEN || '';
+    if (tokenScrape) {
+      const dado = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const a = Buffer.from(dado); const b = Buffer.from(tokenScrape);
+      if (a.length !== b.length || !require('crypto').timingSafeEqual(a, b)) {
+        throw Object.assign(new Error('Falta el token de /metrics (ARCANUM_METRICS_TOKEN)'), { httpStatus: 401 });
+      }
+    }
+    let texto;
+    try { texto = await metricasCacheadas(); } catch (e) {
+      throw Object.assign(new Error('Metricas no disponibles: ' + e.message), { httpStatus: 503 });
+    }
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(texto);
   }
 
   // Config de auth (publico): la UI lo usa para mostrar "Entrar con Lockatus" y,
@@ -272,18 +306,19 @@ async function route(req, res, url) {
     if (oidc.enabled() && !config.allowLocalLogin) {
       throw Object.assign(new Error('Login local deshabilitado: ingresá con Lockatus (SSO).'), { httpStatus: 403 });
     }
-    const { username, password } = await readJsonBody(req);
-    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '?';
-    const key = `${ip}:${username}`;
-    loginThrottle(key);
+    const { username, password } = await readJsonBody(req, { max: 8 * 1024 }); // un login no pesa mas
+    validarUsuario(username);
+    if (typeof password !== 'string' || password.length > 1024) throw badRequest('Contrasena invalida');
+    const ip = ipCliente(req);
+    limiteLogin.chequear(ip, username);
     try {
       const principal = await users.login(username, password);
-      loginOk(key);
+      limiteLogin.exito(ip, username);
       const sid = await sesiones.servicio().crear(principal, 'local');
       res.setHeader('Set-Cookie', session.cookieHeader(session.sign({ ...principal, sid, origen: 'local' })));
       return sendJson(res, 200, { ok: true, usuario: { username: principal.username, role: principal.role } });
     } catch (e) {
-      loginFailed(key);
+      if (e.httpStatus === 401) limiteLogin.fallo(ip, username);
       throw e;
     }
   }
@@ -299,7 +334,7 @@ async function route(req, res, url) {
   if (url.pathname === '/mcp') return handleMcp(req, res);
 
   // A partir de aca, todo requiere autenticacion (clave o sesion).
-  req._ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null;
+  req._ip = ipCliente(req); // la que agrego el proxy de confianza, no la que dice el cliente
   const principal = await checkAuth(req, res);
   req._user = principal.username;
   chequearCsrf(req, principal); // sesion por cookie: solo desde el panel y con JSON (M-07)
@@ -438,7 +473,10 @@ async function route(req, res, url) {
 
   // GET /api/wsaa/:cuit/:service  -> fuerza/inspecciona el TA (diagnostico)
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'wsaa' && seg[2] && seg[3]) {
+    // Diagnostico que dispara un login a ARCA: operador o mas, y solo servicios del catalogo (M-03).
+    requireRole(principal, 'superadmin', 'admin', 'operador');
     assertCuitAllowed(principal, seg[2]);
+    if (!catalog.list().some((s) => s.wsaaService === seg[3])) throw badRequest(`Servicio WSAA desconocido: ${seg[3]}`);
     const ta = await wsaa.getAccessTicket(seg[2], seg[3]);
     return sendJson(res, 200, { ok: true, token: ta.token.slice(0, 12) + '…', sign: '***', expirationTime: ta.expirationTime, service: ta.service });
   }
@@ -937,19 +975,8 @@ function serveDocsPage(res) {
 
 // Auditoria de pedidos. Nunca se registran cabeceras (ni la clave), ni bodies.
 function logRequest(req, res, url, startedAt) {
-  const esMcp = url.pathname === '/mcp';
-  if (!url.pathname.startsWith('/api/') && !esMcp) return;
-  const seg = url.pathname.split('/').filter(Boolean);
-  const service = esMcp ? 'mcp' : seg[1] === 'ws' ? seg[2] : seg[1];
-  const duration = Date.now() - startedAt;
-  const ok = res.statusCode < 400;
-  // No bloqueamos la respuesta: log best-effort.
-  db.query(
-    `INSERT INTO requests (cuit, service, operation, http_method, path, status, ok, duration_ms, usuario, ip, clave_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-    [req._cuit || url.searchParams.get('cuit') || null, service || null, req._op || null, req.method, url.pathname,
-      res.statusCode, ok, duration, req._user || null, req._ip || null, req._claveId || null],
-  ).catch(() => {});
+  // Fila acotada (ruta truncada, CUIT validado, sin anonimos rechazados): ver lib/auditoria.js (M-12).
+  guardarFila(db, filaAuditoria(req, res, url, Date.now() - startedAt));
   // Uso anomalo de una clave (barrido de CUITs, muchos rechazos): aviso por webhook/email.
   if (req._claveId) {
     for (const a of detector.registrar({ id: req._claveId, nombre: req._claveNombre, status: res.statusCode, cuitConsultado: req._cuitConsultado })) {
@@ -1017,6 +1044,10 @@ async function start() {
 }
 
 if (require.main === module) {
+  // Red de contencion (M-02): una promesa rechazada sin manejar se registra, no tira el gateway
+  // (con emisiones en vuelo). Una excepcion sincronica no atrapada si termina el proceso: el
+  // estado puede haber quedado inconsistente y el orquestador lo reinicia.
+  process.on('unhandledRejection', (e) => console.error('[arcanum] promesa rechazada sin manejar:', (e && e.stack) || e));
   start().catch((e) => {
     console.error('[arcanum] fallo el arranque:', e.message);
     process.exit(1);

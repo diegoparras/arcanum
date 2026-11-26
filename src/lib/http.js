@@ -15,6 +15,13 @@ function sendJson(res, status, payload) {
 
 function sendError(res, err) {
   const status = err.httpStatus || 500;
+  // Si ya se mandaron las cabeceras no hay forma de responder un error: se corta la conexion.
+  // Intentar escribir de nuevo tira ERR_HTTP_HEADERS_SENT y, sin manejador, cae el proceso (M-02).
+  if (res.headersSent) {
+    console.error('[arcanum] error con la respuesta ya empezada:', err.message);
+    if (typeof res.destroy === 'function') res.destroy();
+    return;
+  }
   const payload = {
     ok: false,
     error: err.message || 'Error interno',

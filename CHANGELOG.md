@@ -3,6 +3,35 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.15] - 2026-11-26
+
+### Seguridad y disponibilidad
+- **`/metrics` ya no puede tirar el proceso.** Escribía las cabeceras antes de consultar la base:
+  un error de la base terminaba el proceso. Ahora calcula primero y, si falla, responde 503.
+  Ningún error con la respuesta ya empezada tira el gateway, y una promesa rechazada sin manejar se
+  registra en lugar de terminarlo. Las métricas se cachean 5 s y, con `ARCANUM_METRICS_TOKEN`,
+  piden ese token.
+- **El login a WSAA ya no retiene una conexión de la base mientras espera a ARCA.** Con ARCA lento,
+  10 pedidos dejaban a toda la aplicación sin base. Ahora los pedidos simultáneos del mismo ticket
+  comparten un solo login, sin transacción abierta. El diagnóstico `GET /api/wsaa/:cuit/:servicio`
+  pide rol operador y un servicio del catálogo.
+- **Login más difícil de atacar:**
+  - Tarda lo mismo exista o no el usuario: ya no sirve para averiguar qué usuarios hay.
+  - La verificación de la contraseña ya no frena al resto de los pedidos.
+  - La IP para el límite es la que agrega el proxy (`ARCANUM_PROXIES`, 1 por defecto); cambiar
+    la cabecera `X-Forwarded-For` ya no resetea el límite.
+  - Además del límite por IP hay uno por usuario (10 fallos, 15 min) y uno global.
+  - Usuario de hasta 64 caracteres y cuerpo de hasta 8 KB: el registro de intentos tiene tope
+    de memoria y no guarda el usuario en claro.
+- **MCP:** un lote JSON-RPC acepta hasta 10 mensajes y los atiende de a uno. Cada herramienta
+  descuenta del límite de la clave, deja su fila de auditoría y pasa por el detector de uso
+  anómalo con su propio CUIT. Antes un lote de N contaba como un solo pedido.
+- **Auditoría de pedidos acotada:**
+  - Los pedidos anónimos rechazados ya no dejan fila (los intentos de login sí).
+  - La ruta se trunca y el CUIT se guarda solo si son 11 dígitos.
+  - Las filas se borran a los 90 días (`ARCANUM_AUDITORIA_DIAS`).
+- Los backups ya no incluyen la tabla de sesiones.
+
 ## [2.1.14] - 2026-11-26
 
 ### Seguridad
