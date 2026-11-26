@@ -52,7 +52,11 @@
   .logo{width:32px;height:32px;border-radius:9px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-family:var(--mono)}
   .bar h1{font-size:16px;margin:0;font-weight:650}
   /* Navegacion lateral: componente .sidenav del CSS canonico (escriba-ui.css). Aca solo el topbar. */
-  .topbar{padding:0 16px}
+  /* Header con aire: 18px arriba y abajo. --top-h es su alto (34 del boton + 36), del que
+     dependen el panel lateral pegajoso y la esquina curva; si cambia uno, cambia el otro. */
+  :root{--top-h:70px}
+  .bar.topbar{padding:18px 26px;gap:18px}
+  .topbar .crumb{margin-left:-4px}
   .navbtn{margin-left:-4px}
   .right{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:13px;color:var(--muted)}
   .env{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:999px;background:var(--chip);color:var(--accent-ink)}
@@ -170,7 +174,8 @@
   @media(max-width:760px){
     .wrap{padding:0 14px}
     main.wrap{padding:18px 14px 60px}
-    .topbar{padding:0 12px;gap:10px}
+    :root{--top-h:62px}
+    .bar.topbar{padding:14px 14px;gap:12px}
   }
 </style>
 </head>

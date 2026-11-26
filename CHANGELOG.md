@@ -3,6 +3,12 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.3] - 2026-11-25
+
+### Cambiado
+- **El header tiene más aire:** 18 px arriba y abajo y más margen a los costados (en celular,
+  14 px). El panel lateral y la esquina curva siguen pegados justo debajo, también al hacer scroll.
+
 ## [2.1.2] - 2026-11-25
 
 ### Agregado
