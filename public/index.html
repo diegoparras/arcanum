@@ -106,6 +106,8 @@
   .mca-pleg{cursor:pointer;user-select:none}
   .card.plegada > :not(.mca-cab){display:none !important}
   .card.plegada .mca-cab{margin:0 !important}
+  .card.plegada[data-pleg-ext]{display:none !important}
+  .card.plegada{align-self:start}
   .mca-link{background:none;border:0;padding:0;cursor:pointer;color:var(--accent-ink);font:inherit;font-weight:600}
   @media(max-width:760px){.mca-2{grid-template-columns:minmax(0,1fr)} .mca-meses{gap:2px}}
   .iconbtn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:9px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;transition:color .15s,background-color .15s}
@@ -627,7 +629,8 @@ async function vMis(){
   MC.cuit=MC.cuit||(tenants[0]&&tenants[0].cuit)||'';
   const hoy=new Date(), d1=new Date(Date.UTC(hoy.getUTCFullYear(),hoy.getUTCMonth()-1,1));
   v.innerHTML=`<h2>Mis Comprobantes</h2>
-   <p class="hint">Emitidos y recibidos bajados de la página de ARCA con el navegador de Fisherboy. La descarga sigue una receta fija; si ARCA pide un captcha, se pausa y lo resolvés acá mismo.</p>
+   <p class="hint">Emitidos y recibidos bajados de la página de ARCA con el navegador de Fisherboy. La descarga sigue una receta fija; si ARCA pide un captcha, se pausa y lo resolvés acá mismo. Tocá el título de un bloque para plegarlo.</p>
+   <div class="row" style="justify-content:flex-end;margin:-4px 0 8px"><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaPlegarTodo(true)">Plegar todo</button><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaPlegarTodo(false)">Desplegar todo</button></div>
    <div class="card"><div class="row"><div style="flex:1;min-width:220px"><label>CUIT</label>
      <input id="mc_cuit" class="mono" list="mc_cuits" value="${esc(MC.cuit)}" placeholder="11 dígitos"></div>
      <datalist id="mc_cuits">${tenants.map(t=>`<option value="${t.cuit}">${esc(t.nombre||'')}</option>`).join('')}</datalist>
@@ -663,6 +666,7 @@ async function vMis(){
      <button id="mc_constBtn" ${opera?'':'disabled'} onclick="mcConstatar()" title="Constata con ARCA los recibidos todavía sin constatar que pasan los filtros">Constatar recibidos</button></span></div>
      <div id="mc_const"></div>
      <div id="mc_tabla" style="margin-top:10px;overflow-x:auto"><p class="hint">Cargando…</p></div></div>`;
+  mcaPlegables(v);
   if(!/^\d{11}$/.test(MC.cuit)){['mc_cred','mc_mono','mc_corridas','mc_tabla'].forEach(id=>$('#'+id).innerHTML='<p class="hint">Elegí un CUIT.</p>');return;}
   mcCredencial(admin);mcMonotributo();mcCorridas(true);mcCargarTabla();mcRango();mcConstRetomar();
   if(admin)api('/api/fisherboy/salud').then(r=>{$('#mc_fbsalud').textContent=r.fisherboy.ok?`Fisherboy ${r.fisherboy.version||''} conectado`:`Fisherboy: ${r.fisherboy.error||'no responde'}`;}).catch(()=>{});
@@ -929,7 +933,7 @@ function mcaSubtotales(a){
    titulo en este navegador, asi se mantienen al cambiar filtros o al volver. */
 function mcaPlegadas(){try{return new Set(JSON.parse(localStorage.getItem('arcanum.mcaPlegadas')||'[]'));}catch{return new Set();}}
 function mcaGuardarPlegadas(set){try{localStorage.setItem('arcanum.mcaPlegadas',JSON.stringify([...set]));}catch{}}
-function mcaPintarPleg(card){const pl=card.classList.contains('plegada'),b=card.querySelector('.mca-pleg-btn');
+function mcaPintarPleg(card){const pl=card.classList.contains('plegada'),b=card.querySelector('.mca-pleg-btn')||card._plegBtn;
   if(b){b.innerHTML=pl?I_CHEV_R:I_CHEV_D;b.setAttribute('aria-expanded',String(!pl));b.setAttribute('aria-label',`${pl?'Desplegar':'Plegar'} ${card.dataset.pleg}`);}}
 function mcaPlegables(root){
   if(!root)return;const cerr=mcaPlegadas();
@@ -943,6 +947,22 @@ function mcaPlegables(root){
     h.classList.add('mca-pleg');h.title='Plegar o desplegar';
     const b=document.createElement('button');b.type='button';b.className='mca-tog mca-pleg-btn';
     h.prepend(b);
+    h.onclick=()=>mcaPlegar(card);
+    h.tabIndex=-1;
+    if(cerr.has(clave))card.classList.add('plegada');
+    mcaPintarPleg(card);
+  });
+  // Titulos de seccion (h2) con la tarjeta justo abajo (Sincronizaciones, Comprobantes): el
+  // titulo queda a la vista y pliega la tarjeta entera.
+  root.querySelectorAll('h2').forEach(h=>{
+    const cab=h.parentElement&&h.parentElement.classList.contains('row')?h.parentElement:h;
+    const card=cab.nextElementSibling;
+    if(!card||!card.classList.contains('card')||card.dataset.pleg)return;
+    const clave=h.textContent.trim();if(!clave)return;
+    card.dataset.pleg=clave;card.dataset.plegExt='1';
+    h.classList.add('mca-pleg');h.title='Plegar o desplegar';
+    const b=document.createElement('button');b.type='button';b.className='mca-tog mca-pleg-btn';
+    h.prepend(b);card._plegBtn=b;
     h.onclick=()=>mcaPlegar(card);
     h.tabIndex=-1;
     if(cerr.has(clave))card.classList.add('plegada');

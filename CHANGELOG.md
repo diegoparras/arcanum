@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.10] - 2026-11-26
+
+### Agregado
+- **Mis Comprobantes también se pliega por bloques**, igual que Análisis: Credencial de ARCA,
+  Sincronizar, Navegador en vivo, Monotributo, Sincronizaciones y Comprobantes.
+  - Se pliega tocando el título, y hay botones para plegar y desplegar todo.
+  - Arcanum recuerda qué bloques dejaste plegados, en este navegador.
+  - Una tarjeta plegada ocupa solo su título, aunque esté en una fila con otra.
+- En Análisis también se pliega el listado de Comprobantes.
+
 ## [2.1.9] - 2026-11-26
 
 ### Agregado
