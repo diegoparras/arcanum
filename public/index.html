@@ -512,7 +512,7 @@ async function guardarImport(){const cuit=($('#imp_cuit').value||'').replace(/[^
 async function vServicios(){
   const v=$('#view');const {servicios,categorias}=await api('/api/services');
   let tenants=[];try{tenants=(await api('/api/tenants')).tenants;}catch{}
-  const admin=['superadmin','admin'].includes(ME.role);
+  const admin=ME.role==='superadmin'; // el catalogo lo edita solo el superadmin (A-08)
   const cuitOpts=tenants.map(t=>`<option value="${esc(t.cuit)}">${esc(t.cuit)}${t.nombre?' — '+esc(t.nombre):''}</option>`).join('');
   let html=`<div class="row"><h2 style="margin:0">Servicios de ARCA (${servicios.length})</h2>
     <a href="https://www.afip.gob.ar/ws/documentacion/catalogo.asp" target="_blank" rel="noopener" style="margin-left:auto"><button class="ghost"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>Catálogo oficial de ARCA</button></a>
@@ -537,7 +537,7 @@ async function vServicios(){
         <div class="verif" style="font-size:13px;margin-top:6px"></div>
         <div class="pasos">${rel}<ol>${pasos}</ol>
           <p class="hint"><a target="_blank" href="https://serviciosweb.afip.gob.ar/clavefiscal/adminrel/main.aspx">Abrir Administrador de Relaciones</a>
-          ${s.activacion&&s.activacion.docs?` · <a target="_blank" href="${s.activacion.docs}">documentación</a>`:''}</p></div></div>`;}
+          ${s.activacion&&s.activacion.docs?` · <a target="_blank" rel="noopener" href="${esc(s.activacion.docs)}">documentación</a>`:''}</p></div></div>`;}
   }
   v.innerHTML=html;
 }
@@ -827,7 +827,7 @@ function mcSeguir(id){
       const t=$('#mc_vivo_estado');t.textContent=MC_ESTADO[c.estado]||c.estado;t.className='tag '+(c.estado==='terminado'?'ok':c.estado==='error'?'no':'warn');
       const humano=c.estado==='humano'||c.estado==='esperando_humano';
       const pideOk=c.estado==='esperando_ok';
-      $('#mc_tomar').classList.toggle('hidden',humano||pideOk||!MC_VIVOS.includes(c.estado));
+      $('#mc_tomar').classList.toggle('hidden',humano||pideOk||!MC_VIVOS.includes(c.estado)||!['admin','superadmin'].includes(ME.role)); // operador: solo cuando ARCA pide una persona
       $('#mc_si').classList.toggle('hidden',!pideOk);$('#mc_no').classList.toggle('hidden',!pideOk);
       $('#mc_devolver').classList.toggle('hidden',!humano);
       const av=$('#mc_vivo_avance'),ta=mcAvance(c);av.textContent=ta;av.classList.toggle('hidden',!ta);av.title=c.progreso&&c.progreso.error?`Error del paso: ${c.progreso.error}`:'';
@@ -850,7 +850,8 @@ function mcSeguir(id){
 }
 async function mcEvento(cmd){
   if(!MC.corrida||$('#mc_devolver').classList.contains('hidden'))return;
-  try{await api(`/api/mis-comprobantes/corridas/${MC.corrida}/evento`,{method:'POST',body:JSON.stringify(cmd)});}catch{}
+  try{await api(`/api/mis-comprobantes/corridas/${MC.corrida}/evento`,{method:'POST',body:JSON.stringify(cmd)});}
+  catch(e){if(MC.errEv!==e.message){MC.errEv=e.message;toast(e.message,true);setTimeout(()=>{MC.errEv=null;},4000);}}
 }
 async function mcOk(si){
   try{await api(`/api/mis-comprobantes/corridas/${MC.corrida}/${si?'ok':'no'}`,{method:'POST'});toast(si?'Listo, sigue':'Cancelado');}catch(e){toast(e.message,true);}
@@ -1234,10 +1235,11 @@ async function ajustesMc(){
   try{rec=(await api('/api/mis-comprobantes/receta')).receta;}catch{}
   try{cats=(await api('/api/monotributo/categorias')).categorias;}catch{}
   modal(`<button class="modal-x" onclick="closeModal()" aria-label="Cerrar">&times;</button><h3 style="text-transform:none">Fisherboy y Mis Comprobantes</h3>
-   <label>URL de Fisherboy</label><input id="aj_fburl" class="mono" value="${esc(fb.url||'')}" placeholder="http://fisherboy:8000">
+   <label>URL de Fisherboy</label><input id="aj_fburl" class="mono" value="${esc(fb.url||'')}" placeholder="http://fisherboy:8000"${fb.urlDelEntorno?' disabled':''}>
+   <p class="hint">${fb.urlDelEntorno?'Viene de la variable FISHERBOY_URL: se cambia en el entorno del servicio.':'Si cambiás de servidor, cargá también su token: el anterior no se manda a otro destino.'}</p>
    <label>Token de Fisherboy (API_TOKEN) ${fb.tokenCargado?'— cargado, vacío para no cambiarlo':''}</label>
    <div class="pwwrap"><input id="aj_fbtok" type="password" autocomplete="new-password"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar el token" onclick="togglePw('aj_fbtok',this)">${I_EYE}</button></div>
-   <div class="row" style="margin-top:10px"><button class="primary" onclick="ajGuardarFb()">Guardar conexión</button></div>
+   <div class="row" style="margin-top:10px"><button class="primary" onclick="ajGuardarFb()">Guardar conexión</button>${fb.tokenCargado?`<button onclick="ajBorrarToken('fisherboy','Fisherboy')">Borrar token</button>`:''}</div>
    <h3 style="text-transform:none;margin-top:22px">Receta</h3><p class="hint">Lo que corre el navegador. Cambiala cuando ARCA cambie la página.</p>
    <textarea id="aj_receta" style="min-height:220px">${esc(JSON.stringify(rec,null,2))}</textarea>
    <div class="row" style="margin-top:8px"><button class="primary" onclick="ajGuardarReceta()">Guardar receta</button><button onclick="ajRestaurarReceta()">Restaurar la de fábrica</button></div>
@@ -1245,7 +1247,7 @@ async function ajustesMc(){
    <textarea id="aj_cats" style="min-height:160px">${esc(JSON.stringify(cats,null,2))}</textarea>
    <div class="row" style="margin-top:8px"><button class="primary" onclick="ajGuardarCats()">Guardar topes</button></div>`);
 }
-async function ajGuardarFb(){const b={url:$('#aj_fburl').value.trim()};const t=$('#aj_fbtok').value;if(t)b.token=t;
+async function ajGuardarFb(){const u=$('#aj_fburl');const b=u.disabled?{}:{url:u.value.trim()};const t=$('#aj_fbtok').value;if(t)b.token=t;
   try{await api('/api/fisherboy/config',{method:'PUT',body:JSON.stringify(b)});$('#aj_fbtok').value='';toast('Conexión guardada');refrescarFunciones();}catch(e){toast(e.message,true);}}
 // Tras cambiar la conexion con Fisherboy, el panel lateral muestra u oculta Mis Comprobantes.
 async function refrescarFunciones(){try{const me=await api('/api/auth/me');FUNC=me.funciones||{};renderNav((location.hash||'#panel').slice(1));}catch{}}
@@ -1440,16 +1442,20 @@ async function ajustesFactorum(){
   try{fa=(await api('/api/factorum/config')).factorum;}catch{}
   modal(`<button class="modal-x" type="button" onclick="closeModal()" aria-label="Cerrar">&times;</button><h3 style="text-transform:none">Factorum (facturas recibidas)</h3>
    <p class="hint">El lector de facturas. Arcanum le habla por la red interna; el token se guarda cifrado y no se vuelve a mostrar.</p>
-   <label>URL de Factorum</label><input id="aj_faurl" class="mono" value="${escA(fa.url||'')}" placeholder="http://factorum:8095">
+   <label>URL de Factorum</label><input id="aj_faurl" class="mono" value="${escA(fa.url||'')}" placeholder="http://factorum:8095"${fa.urlDelEntorno?' disabled':''}>
+   <p class="hint">${fa.urlDelEntorno?'Viene de la variable FACTORUM_URL: se cambia en el entorno del servicio.':'Si cambiás de servidor, cargá también su token: el anterior no se manda a otro destino.'}</p>
    <label>Token de Factorum (FACTORUM_API_KEY) ${fa.tokenCargado?'— cargado, vacío para no cambiarlo':''}</label>
    <div class="pwwrap"><input id="aj_fatok" type="password" autocomplete="new-password"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar el token" onclick="togglePw('aj_fatok',this)">${I_EYE}</button></div>
-   <div class="row" style="margin-top:10px"><button class="primary" onclick="ajGuardarFa()">Guardar conexión</button><button onclick="ajProbarFa()">Probar</button></div>
+   <div class="row" style="margin-top:10px"><button class="primary" onclick="ajGuardarFa()">Guardar conexión</button><button onclick="ajProbarFa()">Probar</button>${fa.tokenCargado?`<button onclick="ajBorrarToken('factorum','Factorum')">Borrar token</button>`:''}</div>
    <p class="hint" id="aj_fasalud" style="margin-top:10px">${faSaludTexto(null)}</p>`);
   ajProbarFa();
 }
 async function ajProbarFa(){const s=await faChequearSalud();const el=$('#aj_fasalud');if(el)el.innerHTML=faSaludTexto(s);}
-async function ajGuardarFa(){const b={url:$('#aj_faurl').value.trim()};const t=$('#aj_fatok').value;if(t)b.token=t;
+async function ajGuardarFa(){const u=$('#aj_faurl');const b=u.disabled?{}:{url:u.value.trim()};const t=$('#aj_fatok').value;if(t)b.token=t;
   try{await api('/api/factorum/config',{method:'PUT',body:JSON.stringify(b)});$('#aj_fatok').value='';toast('Conexión guardada');ajProbarFa();}catch(e){toast(e.message,true);}}
+async function ajBorrarToken(servicio,nombre){
+  if(!await confirmar({titulo:'Borrar el token de '+nombre,texto:'Arcanum deja de poder hablar con '+nombre+' hasta que cargues un token de nuevo.',si:'Borrar token',tono:'peligro'}))return;
+  try{await api('/api/'+servicio+'/config',{method:'PUT',body:JSON.stringify({borrarToken:true})});toast('Token borrado');closeModal();if(servicio==='fisherboy')refrescarFunciones();}catch(e){toast(e.message,true);}}
 
 /* ---------- CONTINGENCIA (cola de emision) ---------- */
 const COLA_ESTADO={pendiente:['warn','En espera'],procesando:['warn','Emitiendo'],emitido:['ok','Emitido'],rechazado:['no','Rechazado'],requiere_humano:['no','Necesita tu decisión'],cancelado:['','Cancelado']};

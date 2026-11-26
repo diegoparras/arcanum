@@ -45,6 +45,14 @@ async function reload() {
   }
   cache = next;
   loaded = true;
+  // Endpoints fuera de ARCA guardados de antes (2.1.13 en adelante no se aceptan ni se usan).
+  for (const svc of next.values()) {
+    for (const [ent, u] of Object.entries(svc.endpoints || {})) {
+      try { validarEndpoint(u); } catch {
+        console.warn(`[arcanum] catalogo: el servicio ${svc.id} (${ent}) tiene un endpoint que no es de ARCA y no se va a usar. Corregilo o restauralo en Servicios.`);
+      }
+    }
+  }
 }
 
 async function init() {
@@ -77,12 +85,34 @@ function categorias() {
   return c;
 }
 
-// --- API de escritura (solo superadmin; el router valida el rol) ---
+/**
+ * Endpoint de un servicio: el motor le manda el sobre SOAP con el Ticket de Acceso de WSAA del
+ * CUIT (Token y Sign), asi que solo puede ser https de un dominio de ARCA (auditoria 2026-11-26,
+ * A-08). ARCANUM_CATALOGO_ENDPOINTS_LIBRES=1 lo abre a cualquier http(s): SOLO para pruebas con
+ * stubs locales, nunca en un despliegue real.
+ */
+function validarEndpoint(raw) {
+  let u;
+  try { u = new URL(String(raw)); } catch { throw err('Endpoint invalido: tiene que ser una URL https de ARCA', 400); }
+  if (process.env.ARCANUM_CATALOGO_ENDPOINTS_LIBRES === '1') {
+    if (!['http:', 'https:'].includes(u.protocol)) throw err('Endpoint invalido: http(s)', 400);
+    return raw;
+  }
+  const { esHostArca } = require('./soap/tlsArca');
+  if (u.protocol !== 'https:' || u.username || u.password || !esHostArca(u.hostname)) {
+    throw err(`Endpoint no permitido: ${u.protocol === 'https:' ? '' : 'tiene que ser https y '}solo se aceptan dominios de ARCA (afip.gov.ar, afip.gob.ar, arca.gob.ar)`, 400);
+  }
+  return raw;
+}
+
+// --- API de escritura (solo superadmin por sesion; el router valida el rol) ---
 function validateDef(def) {
   if (!def || typeof def !== 'object') throw err('Definicion invalida', 400);
   if (!def.id || !/^[a-z0-9_]+$/.test(def.id)) throw err('id invalido (use minusculas, numeros y guion bajo)', 400);
   if (!def.wsaaService) throw err('Falta wsaaService (nombre del servicio para WSAA)', 400);
   if (!def.endpoints || !def.endpoints.homo || !def.endpoints.prod) throw err('Faltan endpoints homo y prod', 400);
+  if (typeof def.endpoints !== 'object') throw err('endpoints invalido', 400);
+  for (const u of Object.values(def.endpoints)) validarEndpoint(u);
   if (!def.soapNamespace) throw err('Falta soapNamespace', 400);
   return def;
 }
@@ -148,6 +178,7 @@ module.exports = {
   get,
   list,
   endpoint,
+  validarEndpoint,
   categorias,
   upsert,
   setEnabled,

@@ -25,6 +25,8 @@ const EVENTOS = [
   'emitidos_por_fuera', // aparecieron en ARCA comprobantes hechos por fuera de Arcanum (o diferencias)
   'backup_creado', // se hizo el backup diario
   'backup_fallo', // el backup diario fallo
+  'conexion_cambiada', // cambio la URL o el token de Fisherboy o de Factorum (nunca lleva el token)
+  'catalogo_cambiado', // un superadmin creo, edito, borro o restauro un servicio del catalogo
 ];
 
 async function listar() {

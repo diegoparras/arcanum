@@ -61,6 +61,11 @@ async function call(serviceId, operation, params = {}, opts = {}) {
 
   const entorno = opts.entorno || config.env;
   const url = catalog.endpoint(svc, entorno);
+  // Antes de armar el sobre (lleva Token y Sign): un endpoint fuera de ARCA guardado en la base
+  // (de antes de la validacion, o cargado a mano) no se usa. Auditoria 2026-11-26, A-08.
+  try { catalog.validarEndpoint(url); } catch (e) {
+    throw new SoapError(`El servicio ${serviceId} tiene un endpoint que no es de ARCA: no se usa. ${e.message}`, 400);
+  }
   const ns = svc.soapNamespace;
   const isDummy = svc.dummyOp && operation === svc.dummyOp;
   const cuit = normalizeCuit(opts.cuit || '');

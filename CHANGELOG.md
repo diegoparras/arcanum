@@ -3,6 +3,38 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.13] - 2026-11-26
+
+### Seguridad
+- **Vista en vivo de Mis Comprobantes: un operador ya no maneja el portal de ARCA.** El navegador
+  de Fisherboy ya entró con la clave fiscal, que solo carga un admin. Ahora:
+  - Admin y superadmin toman el control en cualquier momento, como antes.
+  - Un operador solo cuando ARCA pide una persona (captcha o segundo factor), nunca con el control
+    en manos de otro, y solo en el login de ARCA o en Mis Comprobantes. Fuera de ahí (el portal,
+    desde donde se llega a cualquier servicio del contribuyente) recibe 403.
+  - Cada clic o tecla queda en la auditoría con el CUIT y la página. Lo tipeado no se guarda.
+  - El botón **Tomar el control** ya no aparece para el operador; para resolver un captcha no
+    hace falta.
+- **El token de Fisherboy y el de Factorum solo viajan al servidor para el que se cargaron.**
+  Antes, cambiar solo la URL mandaba el token guardado (y, en Fisherboy, la clave fiscal de cada
+  sincronización) al host nuevo. Ahora:
+  - Cambiar a otro host exige cargar el token de nuevo (409 si no).
+  - Si la URL viene por entorno (`FISHERBOY_URL`, `FACTORUM_URL`), no se cambia desde el panel.
+  - El token del entorno solo se usa con la URL del entorno y no se copia a la base.
+  - La URL no puede ser metadata de la nube, link-local ni llevar usuario y clave; fuera de la red
+    interna tiene que ser https.
+  - Hay un botón **Borrar token**, y cada cambio avisa por el webhook nuevo `conexion_cambiada`.
+- **Catálogo de servicios: solo endpoints de ARCA y solo el superadmin.** El sobre SOAP lleva el
+  Ticket de Acceso de WSAA del CUIT. Ahora:
+  - Los endpoints tienen que ser https de `afip.gov.ar`, `afip.gob.ar` o `arca.gob.ar`. Se valida
+    al guardar, antes de cada llamada y al leer el WSDL. Si hubiera uno de antes fuera de ARCA, no
+    se usa y el log lo avisa al arrancar.
+  - Lo edita solo un superadmin con sesión: ni el rol admin ni las claves de API (tampoco la
+    maestra). Queda registrado quién hizo cada cambio y avisa por el webhook nuevo
+    `catalogo_cambiado`.
+  - Para pruebas con stubs locales existe `ARCANUM_CATALOGO_ENDPOINTS_LIBRES=1`. Nunca en un
+    despliegue real.
+
 ## [2.1.12] - 2026-11-26
 
 ### Seguridad

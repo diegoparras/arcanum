@@ -366,27 +366,43 @@ async function route(req, res, url) {
       return sendJson(res, 200, { ok: true, asociado: false, servicio: seg[2], wsaaService: svc.wsaaService, motivo: e.message });
     }
   }
-  // Admin de catalogo (superadmin): crear/editar/borrar/restaurar
+  // Admin de catalogo: SOLO superadmin con sesion (no claves de API, ni la maestra). El catalogo
+  // decide a donde viaja el Ticket de Acceso de cada CUIT (auditoria 2026-11-26, A-08).
   if (seg[0] === 'api' && seg[1] === 'services' && req.method !== 'GET') {
-    requireRole(principal, 'superadmin', 'admin');
+    requireRole(principal, 'superadmin');
+    if (principal.via === 'clave' || principal.via === 'maestra') {
+      throw Object.assign(new Error('El catalogo de servicios se edita desde el panel, con sesion de superadmin'), { httpStatus: 403 });
+    }
+    const quien = principal.username || 'superadmin';
+    const avisar = (accion, id) => webhooks.emitir('catalogo_cambiado', { servicio: id, accion, usuario: quien }).catch(() => {});
     if (req.method === 'POST' && !seg[2]) {
       const def = await readJsonBody(req);
-      return sendJson(res, 200, { ok: true, servicio: await catalog.upsert(def, 'admin') });
+      const servicio = await catalog.upsert(def, quien);
+      avisar('creado o editado', servicio && servicio.id);
+      return sendJson(res, 200, { ok: true, servicio });
     }
     if (req.method === 'PUT' && seg[2]) {
       const def = await readJsonBody(req);
       def.id = seg[2];
-      return sendJson(res, 200, { ok: true, servicio: await catalog.upsert(def, 'admin') });
+      const servicio = await catalog.upsert(def, quien);
+      avisar('editado', seg[2]);
+      return sendJson(res, 200, { ok: true, servicio });
     }
     if (req.method === 'DELETE' && seg[2]) {
-      return sendJson(res, 200, { ok: true, resultado: await catalog.remove(seg[2], 'admin') });
+      const resultado = await catalog.remove(seg[2], quien);
+      avisar('borrado', seg[2]);
+      return sendJson(res, 200, { ok: true, resultado });
     }
     if (req.method === 'POST' && seg[2] && seg[3] === 'reset') {
-      return sendJson(res, 200, { ok: true, servicio: await catalog.reset(seg[2], 'admin') });
+      const servicio = await catalog.reset(seg[2], quien);
+      avisar('restaurado', seg[2]);
+      return sendJson(res, 200, { ok: true, servicio });
     }
     if (req.method === 'POST' && seg[2] && seg[3] === 'enabled') {
       const { enabled } = await readJsonBody(req);
-      return sendJson(res, 200, { ok: true, servicio: await catalog.setEnabled(seg[2], enabled, 'admin') });
+      const servicio = await catalog.setEnabled(seg[2], enabled, quien);
+      avisar(enabled ? 'habilitado' : 'deshabilitado', seg[2]);
+      return sendJson(res, 200, { ok: true, servicio });
     }
   }
 

@@ -19,20 +19,9 @@ function err(message, httpStatus) {
   return Object.assign(new Error(message), { httpStatus });
 }
 
-async function leerConfigDeBase() {
-  const db = require('../db');
-  const vault = require('../crypto/vault');
-  let guardada = null;
-  try {
-    const { rows } = await db.query("SELECT value FROM settings WHERE key = 'fisherboy'");
-    if (rows[0] && rows[0].value) guardada = JSON.parse(rows[0].value);
-  } catch { /* sin tabla todavia: se usa el entorno */ }
-  let token = process.env.FISHERBOY_TOKEN || '';
-  if (guardada && guardada.tokenCifrado) {
-    try { token = vault.decrypt(guardada.tokenCifrado); } catch { /* clave maestra distinta */ }
-  }
-  return { url: (guardada && guardada.url) || process.env.FISHERBOY_URL || '', token };
-}
+// URL + token: ver services/conexiones.js (el token solo viaja al destino para el que se cargo).
+const conexion = require('./conexiones').crearConexion({ clave: 'fisherboy', nombre: 'Fisherboy', varUrl: 'FISHERBOY_URL', varToken: 'FISHERBOY_TOKEN' });
+const leerConfigDeBase = () => conexion.leer();
 
 function pedir(cfg, method, ruta, { cuerpo, timeoutMs = TIMEOUT_MS, binario = false } = {}) {
   return new Promise((resolve, reject) => {
@@ -116,24 +105,10 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
 }
 
 /** Config visible para la UI: nunca devuelve el token. */
-async function config() {
-  const c = await leerConfigDeBase();
-  return { url: c.url, tokenCargado: !!c.token };
-}
+const config = () => conexion.config();
 
-async function guardarConfig({ url, token }, usuario) {
-  const db = require('../db');
-  const vault = require('../crypto/vault');
-  const limpia = String(url || '').trim().replace(/\/+$/, '');
-  if (limpia && !/^https?:\/\/[^\s]+$/i.test(limpia)) throw err('La URL de Fisherboy tiene que empezar con http:// o https://', 400);
-  const previa = await leerConfigDeBase();
-  const tokenCifrado = token ? vault.encrypt(String(token)) : (previa.token ? vault.encrypt(previa.token) : null);
-  await db.query(
-    "INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('fisherboy',$1,$2,now()) ON CONFLICT (key) DO UPDATE SET value=$1, updated_by=$2, updated_at=now()",
-    [JSON.stringify({ url: limpia, tokenCifrado }), usuario || null],
-  );
-  return config();
-}
+/** { url, token, borrarToken }: ver las reglas en services/conexiones.js. */
+const guardarConfig = (datos, usuario) => conexion.guardar(datos || {}, usuario);
 
 const cliente = crearCliente();
 
