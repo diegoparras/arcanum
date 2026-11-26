@@ -3,6 +3,22 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.12] - 2026-11-26
+
+### Seguridad
+- **El panel escapa todo lo que muestra.** Algunas vistas pintaban sin escapar datos que escribe un
+  usuario de menor rol o que vienen de afuera: el nombre de un lote o de un cliente, el CAE de un
+  comprobante importado por QR, la URL de un webhook, mensajes de error, entre otros. Un operador
+  podía guardar ahí código que se ejecutaba con la sesión del admin que abría la vista. Se revisaron
+  todas las vistas: el escape ahora cubre también comillas y `>`, y los botones que pasan un texto a
+  una función (dar de baja una clave, ver el CSR, editar un servicio) lo pasan como literal seguro.
+- **Validación en el servidor, como segunda barrera:**
+  - Nombre de cliente: se rechazan `<`, `>` y caracteres de control (422). Acentos, ñ, comillas,
+    `&`, puntos y paréntesis siguen valiendo.
+  - Importar comprobante (QR o a mano): CUIT de 11 dígitos, CAE de 14, fecha, documento, números e
+    importe con formato estricto (422). El mensaje de error ya no repite el valor recibido.
+  - Lotes, marcar recibido: CAE y número solo dígitos.
+
 ## [2.1.11] - 2026-11-26
 
 ### Seguridad

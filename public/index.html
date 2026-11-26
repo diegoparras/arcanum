@@ -410,7 +410,7 @@ async function vPanel(){
   const bars=serie.map(s=>`<div class="b" title="${ddmm(s.dia)}: ${s.n} ${s.n===1?'emisión':'emisiones'}" style="height:${s.n?Math.max(4,Math.round(s.n/max*100)):0}%"></div>`).join('');
   const sinEmisiones=!serie.some(s=>s.n);
   const grafico=serie.length?`<div class="bars">${bars}</div><div class="bars-eje"><span>${ddmm(serie[0].dia)}</span><span>${sinEmisiones?'Sin emisiones en estos 14 días':`Máximo: ${max} por día`}</span><span>${ddmm(serie[serie.length-1].dia)}</span></div>`:'<span class="hint">Sin datos de emisiones.</span>';
-  const arca=m.arca.map(a=>`<tr><td>${a.servicio}</td><td><span class="dot ${a.ok?'ok':'bad'}"></span>${a.ok?'OK':'caído'}</td><td class="mono">${a.uptime24h??'—'}%</td><td class="mono">${a.latencia??'—'} ms</td></tr>`).join('')||'<tr><td colspan="4" class="hint">El monitor corre cada 5 min; esperá el primer chequeo.</td></tr>';
+  const arca=m.arca.map(a=>`<tr><td>${esc(a.servicio)}</td><td><span class="dot ${a.ok?'ok':'bad'}"></span>${a.ok?'OK':'caído'}</td><td class="mono">${a.uptime24h??'—'}%</td><td class="mono">${a.latencia??'—'} ms</td></tr>`).join('')||'<tr><td colspan="4" class="hint">El monitor corre cada 5 min; esperá el primer chequeo.</td></tr>';
   v.innerHTML=`
    <div class="grid">
      <div class="card stat"><div class="label">Emisiones hoy</div><div class="val">${m.emisiones.hoy}</div></div>
@@ -429,11 +429,11 @@ async function vClientes(){
   const {tenants}=await api('/api/tenants');
   const rows=tenants.map(t=>{
     const cert=t.tieneCertificado?`<span class="tag ok">vigente${t.diasParaVencer!=null?' ('+t.diasParaVencer+'d)':''}</span>`:(t.tieneClave?'<span class="tag warn">falta certificado</span>':'<span class="tag no">sin clave</span>');
-    return `<tr><td class="mono">${t.cuit}</td><td>${t.nombre||''}</td><td>${cert}</td>
+    return `<tr><td class="mono">${esc(t.cuit)}</td><td>${esc(t.nombre||'')}</td><td>${cert}</td>
       <td class="row">
-       ${t.tieneClave?`<button class="ghost" onclick="verCsr('${t.cuit}')">CSR</button>`:''}
-       <button class="ghost" onclick="pegarCert('${t.cuit}')">Pegar .crt</button>
-       <button class="ghost" onclick="editarEmisor('${t.cuit}')">Datos fiscales</button>
+       ${t.tieneClave?`<button class="ghost" onclick="verCsr(${jsA(t.cuit)})">CSR</button>`:''}
+       <button class="ghost" onclick="pegarCert(${jsA(t.cuit)})">Pegar .crt</button>
+       <button class="ghost" onclick="editarEmisor(${jsA(t.cuit)})">Datos fiscales</button>
       </td></tr>`;}).join('')||'<tr><td colspan="4" class="hint">No hay clientes. Creá el primero.</td></tr>';
   v.innerHTML=`<div class="row"><h2 style="margin:0">Clientes (${ENV})</h2>
     <button style="margin-left:auto" onclick="importarCert()">Importar certificado</button>
@@ -446,10 +446,10 @@ function nuevoCliente(){modal(`<h3>Nuevo cliente</h3><label>CUIT</label><input i
   <div class="row" style="margin-top:16px"><button class="primary" onclick="crearCliente()">Generar CSR</button><button onclick="closeModal()">Cancelar</button></div>`);}
 async function crearCliente(){
   try{ const r=await api('/api/tenants',{method:'POST',body:JSON.stringify({cuit:$('#ncuit').value,nombre:$('#nnombre').value})});
-    modal(`<h3>CSR generado para ${r.cuit}</h3><p class="hint">Subí este CSR a ARCA (WSASS en homologación, o el portal de Certificados en producción), descargá el certificado y luego usá "Pegar .crt".</p>
-      <pre>${r.csr.replace(/</g,'&lt;')}</pre>
-      <div class="row"><button onclick="navigator.clipboard.writeText(\`${r.csr}\`);toast('CSR copiado')">Copiar</button>
-      <a href="/api/tenants/${r.cuit}/csr"><button>Descargar .csr</button></a>
+    modal(`<h3>CSR generado para ${esc(r.cuit)}</h3><p class="hint">Subí este CSR a ARCA (WSASS en homologación, o el portal de Certificados en producción), descargá el certificado y luego usá "Pegar .crt".</p>
+      <pre>${esc(r.csr)}</pre>
+      <div class="row"><button onclick="navigator.clipboard.writeText(${jsA(r.csr)});toast('CSR copiado')">Copiar</button>
+      <a href="/api/tenants/${encodeURIComponent(r.cuit)}/csr"><button>Descargar .csr</button></a>
       <button class="primary" onclick="closeModal();vClientes()">Listo</button></div>`);
     toast('Cliente creado'); }catch(e){toast(e.message,true);}
 }
@@ -459,7 +459,7 @@ async function editarEmisor(cuit){
   modal(`<h3>Datos fiscales del emisor · <span class="mono">${cuit}</span></h3>
     <p class="hint">Van en el encabezado legal del PDF. Se guardan <strong>por CUIT</strong>, así cada cliente sale con sus propios datos.</p>
     <div id="em_aviso">${faltan.length?`<p class="hint"><span class="tag warn">FALTAN</span> ${esc(faltan.map(f=>f.etiqueta).join(', '))}</p>`:''}</div>
-    <div class="row"><button onclick="traerEmisorDeArca('${cuit}')">Traer de ARCA</button>
+    <div class="row"><button onclick="traerEmisorDeArca(${jsA(cuit)})">Traer de ARCA</button>
     <span class="hint">Razón social, domicilio y condición frente al IVA salen del padrón. Completa solo lo vacío.</span></div>
     <label>Razón social</label><input id="em_rs" value="${a(e.razonSocial)}">
     <label>Nombre de fantasía</label><input id="em_nf" value="${a(e.nombreFantasia)}">
@@ -473,7 +473,7 @@ async function editarEmisor(cuit){
     <div class="f2"><div><label>Inicio de actividades</label><input id="em_ia" type="date" value="${a(e.inicioActividades)}"></div>
     <div><label>&nbsp;</label><label class="chk" style="padding:9px 0"><input type="checkbox" id="em_mipyme" ${e.mipyme?'checked':''}> Es MiPyME (FCE)</label></div></div>
     <p class="hint">Ingresos Brutos e inicio de actividades no los da ARCA por web service: copialos de tu constancia (ARCA / tu provincia).</p>
-    <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarEmisor('${cuit}')">Guardar</button>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarEmisor(${jsA(cuit)})">Guardar</button>
     <button onclick="closeModal()">Cancelar</button></div>`);
 }
 async function traerEmisorDeArca(cuit){
@@ -492,10 +492,10 @@ async function guardarEmisor(cuit){
     toast('Datos fiscales guardados');closeModal();vClientes(); }catch(e){ toast(e.message,true); }
 }
 async function verCsr(cuit){ try{const t=await fetch('/api/tenants/'+cuit+'/csr',{credentials:'include'}).then(r=>r.text());
-  modal(`<h3>CSR de ${cuit}</h3><pre>${t.replace(/</g,'&lt;')}</pre><div class="row"><button onclick="navigator.clipboard.writeText(\`${t}\`);toast('Copiado')">Copiar</button><a href="/api/tenants/${cuit}/csr"><button>Descargar</button></a><button class="primary" onclick="closeModal()">Cerrar</button></div>`);}catch(e){toast(e.message,true);} }
+  modal(`<h3>CSR de ${esc(cuit)}</h3><pre>${esc(t)}</pre><div class="row"><button onclick="navigator.clipboard.writeText(${jsA(t)});toast('Copiado')">Copiar</button><a href="/api/tenants/${encodeURIComponent(cuit)}/csr"><button>Descargar</button></a><button class="primary" onclick="closeModal()">Cerrar</button></div>`);}catch(e){toast(e.message,true);} }
 function pegarCert(cuit){modal(`<h3>Pegar certificado de ${cuit}</h3><p class="hint">Pegá el contenido del .crt que descargaste de ARCA (incluyendo BEGIN/END CERTIFICATE).</p>
   <textarea id="certpem" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
-  <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarCert('${cuit}')">Guardar</button><button onclick="closeModal()">Cancelar</button></div>`);}
+  <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarCert(${jsA(cuit)})">Guardar</button><button onclick="closeModal()">Cancelar</button></div>`);}
 async function guardarCert(cuit){ try{ await api('/api/tenants/'+cuit+'/certificate',{method:'POST',body:JSON.stringify({certPem:$('#certpem').value})});
   toast('Certificado cargado');closeModal();vClientes();}catch(e){toast(e.message,true);} }
 function importarCert(){modal(`<h3>Importar certificado ya validado</h3><p class="hint">Para un par clave + certificado que ya tenés (ej. el que usás en n8n). Arcanum valida que coincidan.</p>
@@ -513,7 +513,7 @@ async function vServicios(){
   const v=$('#view');const {servicios,categorias}=await api('/api/services');
   let tenants=[];try{tenants=(await api('/api/tenants')).tenants;}catch{}
   const admin=['superadmin','admin'].includes(ME.role);
-  const cuitOpts=tenants.map(t=>`<option value="${t.cuit}">${t.cuit}${t.nombre?' — '+t.nombre:''}</option>`).join('');
+  const cuitOpts=tenants.map(t=>`<option value="${esc(t.cuit)}">${esc(t.cuit)}${t.nombre?' — '+esc(t.nombre):''}</option>`).join('');
   let html=`<div class="row"><h2 style="margin:0">Servicios de ARCA (${servicios.length})</h2>
     <a href="https://www.afip.gob.ar/ws/documentacion/catalogo.asp" target="_blank" rel="noopener" style="margin-left:auto"><button class="ghost"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>Catálogo oficial de ARCA</button></a>
     ${admin?'<button class="primary" onclick="editarServicio()">Agregar servicio</button>':''}</div>
@@ -526,13 +526,13 @@ async function vServicios(){
       const tag=s.rich?'<span class="tag rich">rico</span>':'<span class="tag">genérico</span>';
       const off=s.enabled===false?'<span class="tag no">deshabilitado</span>':'';
       const pasos=(s.activacion&&s.activacion.pasos||[]).map(p=>'<li>'+p+'</li>').join('');
-      const rel=s.activacion&&s.activacion.relacionNombre?`<p class="hint">Servicio a asociar: <span class="rel">${s.activacion.relacionNombre}</span></p>`:'';
+      const rel=s.activacion&&s.activacion.relacionNombre?`<p class="hint">Servicio a asociar: <span class="rel">${esc(s.activacion.relacionNombre)}</span></p>`:'';
       html+=`<div class="svc"><div class="top">
-        <div><div><strong>${s.nombre}</strong> ${tag} ${off}</div><div class="hint">${s.descripcion||''}</div></div>
+        <div><div><strong>${esc(s.nombre)}</strong> ${tag} ${off}</div><div class="hint">${esc(s.descripcion||'')}</div></div>
         <div class="row" style="margin-left:auto">
-          <button class="ghost" onclick="verificarServicio('${s.id}',this)">Verificar</button>
+          <button class="ghost" onclick="verificarServicio(${jsA(s.id)},this)">Verificar</button>
           <button class="ghost" onclick="this.closest('.svc').querySelector('.pasos').classList.toggle('open')">Cómo activar</button>
-          ${admin?`<button class="ghost" onclick='editarServicio(${JSON.stringify(s).replace(/'/g,"&#39;")})'>Editar</button>`:''}
+          ${admin?`<button class="ghost" onclick="editarServicio(${esc(JSON.stringify(s))})">Editar</button>`:''}
         </div></div>
         <div class="verif" style="font-size:13px;margin-top:6px"></div>
         <div class="pasos">${rel}<ol>${pasos}</ol>
@@ -548,22 +548,22 @@ async function verificarServicio(id,btn){
   box.innerHTML='<span class="hint">Verificando contra ARCA…</span>';
   try{ const r=await api('/api/services/'+id+'/verificar?cuit='+cuit);
     if(r.asociado) box.innerHTML=`<span class="tag ok">asociado</span> <span class="hint">CUIT ${cuit} · token vence ${(r.expira||'').slice(0,10)}</span>`;
-    else box.innerHTML=`<span class="tag no">no asociado</span> <span class="hint">${(r.motivo||'').slice(0,180)}</span>`;
-  }catch(e){box.innerHTML=`<span class="tag no">error</span> <span class="hint">${e.message}</span>`;}
+    else box.innerHTML=`<span class="tag no">no asociado</span> <span class="hint">${esc((r.motivo||'').slice(0,180))}</span>`;
+  }catch(e){box.innerHTML=`<span class="tag no">error</span> <span class="hint">${esc(e.message)}</span>`;}
 }
 function editarServicio(s){
   s=s||{endpoints:{}};const e=s.endpoints||{};
   modal(`<h3>${s.id?'Editar':'Nuevo'} servicio</h3>
-    <label>ID</label><input id="sid" class="mono" value="${s.id||''}" ${s.id?'disabled':''} placeholder="ws_nuevo">
-    <div class="f2"><div><label>Nombre</label><input id="snombre" value="${s.nombre||''}"></div>
-    <div><label>Categoría</label><input id="scat" value="${s.categoria||'otros'}"></div></div>
-    <label>Descripción</label><input id="sdesc" value="${s.descripcion||''}">
-    <div class="f2"><div><label>wsaaService</label><input id="swsaa" class="mono" value="${s.wsaaService||''}"></div>
-    <div><label>SOAP namespace</label><input id="sns" class="mono" value="${s.soapNamespace||''}"></div></div>
+    <label>ID</label><input id="sid" class="mono" value="${esc(s.id||'')}" ${s.id?'disabled':''} placeholder="ws_nuevo">
+    <div class="f2"><div><label>Nombre</label><input id="snombre" value="${esc(s.nombre||'')}"></div>
+    <div><label>Categoría</label><input id="scat" value="${esc(s.categoria||'otros')}"></div></div>
+    <label>Descripción</label><input id="sdesc" value="${esc(s.descripcion||'')}">
+    <div class="f2"><div><label>wsaaService</label><input id="swsaa" class="mono" value="${esc(s.wsaaService||'')}"></div>
+    <div><label>SOAP namespace</label><input id="sns" class="mono" value="${esc(s.soapNamespace||'')}"></div></div>
     <label>Endpoint homologación</label><input id="seh" class="mono" value="${e.homo||''}">
     <label>Endpoint producción</label><input id="sep" class="mono" value="${e.prod||''}">
-    <div class="row" style="margin-top:16px"><button class="primary" onclick="guardarServicio('${s.id||''}')">Guardar</button>
-    ${s.id?`<button onclick="resetServicio('${s.id}')">Restaurar default</button>`:''}
+    <div class="row" style="margin-top:16px"><button class="primary" onclick="guardarServicio(${jsA(s.id||'')})">Guardar</button>
+    ${s.id?`<button onclick="resetServicio(${jsA(s.id)})">Restaurar default</button>`:''}
     <button onclick="closeModal()">Cancelar</button></div>`);
 }
 async function guardarServicio(existing){
@@ -577,7 +577,7 @@ async function resetServicio(id){try{await api('/api/services/'+id+'/reset',{met
 /* ---------- EMITIR ---------- */
 async function vEmitir(){
   const v=$('#view');const {tenants}=await api('/api/tenants');
-  const opt=tenants.filter(t=>t.tieneCertificado).map(t=>`<option value="${t.cuit}">${t.cuit} — ${t.nombre||''}</option>`).join('');
+  const opt=tenants.filter(t=>t.tieneCertificado).map(t=>`<option value="${esc(t.cuit)}">${esc(t.cuit)} — ${esc(t.nombre||'')}</option>`).join('');
   v.innerHTML=`<h2>Emitir comprobante (WSFEv1)</h2>
    <div class="card" style="max-width:680px">
     ${opt?'':'<p class="hint">No hay clientes con certificado cargado. Cargá uno en la pestaña Clientes.</p>'}
@@ -648,17 +648,17 @@ async function emitir(){
   try{ const r=await api('/api/wsfev1/comprobantes',{method:'POST',body:JSON.stringify(body)});
     if(r.encolado){window._idemEmitir=null;
       $('#e_result').innerHTML=`<div class="card"><span class="tag warn">EN COLA</span> <span class="hint">${esc(r.mensaje||'')}</span>
-        <p class="hint">Item ${r.cola.id}. Seguilo en la pestaña Contingencia.</p><button onclick="go('contingencia')">Ver la cola</button></div>`;
+        <p class="hint">Item ${esc(r.cola.id)}. Seguilo en la pestaña Contingencia.</p><button onclick="go('contingencia')">Ver la cola</button></div>`;
       toast('ARCA no responde: quedó en la cola');return;}
     const c=r.comprobante;
     window._idemEmitir=null; // el proximo comprobante lleva clave nueva
     $('#e_result').innerHTML=`<div class="card"><span class="tag ok">APROBADO</span>
-      <table style="margin-top:10px"><tr><th>CAE</th><td class="mono">${c.cae}</td></tr>
+      <table style="margin-top:10px"><tr><th>CAE</th><td class="mono">${esc(c.cae)}</td></tr>
       <tr><th>Vto CAE</th><td class="mono">${c.caeVencimiento}</td></tr>
       <tr><th>Comprobante</th><td class="mono">${c.puntoVenta}-${c.numero}</td></tr></table>
-      <a href="/api/comprobantes/${c.cuit}/${c.puntoVenta}/${c.tipoComprobante}/${c.numero}/pdf"><button class="primary" style="margin-top:10px">Descargar PDF con QR</button></a></div>`;
+      <a href="/api/comprobantes/${encodeURIComponent(c.cuit)}/${Number(c.puntoVenta)}/${Number(c.tipoComprobante)}/${Number(c.numero)}/pdf"><button class="primary" style="margin-top:10px">Descargar PDF con QR</button></a></div>`;
     toast('CAE obtenido'); }
-  catch(e){ $('#e_result').innerHTML=`<div class="card"><span class="tag no">RECHAZADO</span><p>${e.message}</p></div>`; }
+  catch(e){ $('#e_result').innerHTML=`<div class="card"><span class="tag no">RECHAZADO</span><p>${esc(e.message)}</p></div>`; }
 }
 
 /* ---------- MIS COMPROBANTES (via Fisherboy) ---------- */
@@ -678,7 +678,7 @@ async function vMis(){
    <div class="row" style="justify-content:flex-end;margin:-4px 0 8px"><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaPlegarTodo(true)">Plegar todo</button><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaPlegarTodo(false)">Desplegar todo</button></div>
    <div class="card"><div class="row"><div style="flex:1;min-width:220px"><label>CUIT</label>
      <input id="mc_cuit" class="mono" list="mc_cuits" value="${esc(MC.cuit)}" placeholder="11 dígitos"></div>
-     <datalist id="mc_cuits">${tenants.map(t=>`<option value="${t.cuit}">${esc(t.nombre||'')}</option>`).join('')}</datalist>
+     <datalist id="mc_cuits">${tenants.map(t=>`<option value="${esc(t.cuit)}">${esc(t.nombre||'')}</option>`).join('')}</datalist>
      <button style="margin-top:26px" onclick="MC.cuit=$('#mc_cuit').value.replace(/\\D/g,'');vMis()">Ver</button></div></div>
    <div class="f2" style="margin-top:14px">
     <div class="card"><h3 style="text-transform:none">Credencial de ARCA</h3><div id="mc_cred" class="hint">Cargando…</div></div>
@@ -727,7 +727,7 @@ async function vAnalisis(){
    <div class="row" style="justify-content:flex-end;margin:-4px 0 8px"><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaPlegarTodo(true)">Plegar todo</button><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaPlegarTodo(false)">Desplegar todo</button></div>
    <div class="card"><div class="row"><div style="flex:1;min-width:220px"><label>CUIT</label>
      <input id="mc_cuit" class="mono" list="mc_cuits" value="${esc(MC.cuit)}" placeholder="11 dígitos"></div>
-     <datalist id="mc_cuits">${tenants.map(t=>`<option value="${t.cuit}">${esc(t.nombre||'')}</option>`).join('')}</datalist>
+     <datalist id="mc_cuits">${tenants.map(t=>`<option value="${esc(t.cuit)}">${esc(t.nombre||'')}</option>`).join('')}</datalist>
      <button style="margin-top:26px" onclick="MC.cuit=$('#mc_cuit').value.replace(/\\D/g,'');vAnalisis()">Ver</button></div></div>
    <div class="card" style="margin-top:14px">
      <div class="mca-filtros">
@@ -797,10 +797,10 @@ async function mcRango(){
 async function mcCorridas(retomar){
   try{const {corridas}=await api(`/api/mis-comprobantes/${MC.cuit}/corridas`);
     $('#mc_corridas').innerHTML=corridas.length?`<table><tr><th>#</th><th>Qué</th><th>Rango</th><th>Estado</th><th>Cantidad</th><th>Inicio</th><th>Detalle</th></tr>${corridas.map(c=>`<tr>
-      <td class="mono">${c.id}</td><td>${esc(c.tipo)}</td><td class="mono">${String(c.desde).slice(0,10)} a ${String(c.hasta).slice(0,10)}</td>
+      <td class="mono">${Number(c.id)}</td><td>${esc(c.tipo)}</td><td class="mono">${String(c.desde).slice(0,10)} a ${String(c.hasta).slice(0,10)}</td>
       <td><span class="tag ${c.estado==='terminado'?'ok':c.estado==='error'?'no':'warn'}">${esc(MC_ESTADO[c.estado]||c.estado)}</span></td>
       <td class="mono">${c.cantidad}</td><td class="hint">${new Date(c.iniciada_at).toLocaleString('es-AR')}</td>
-      <td class="hint">${esc(c.error||mcAvance(c,true))}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${c.id})">Ver en vivo</button>`:''}${c.tiene_captura?` <button class="ghost" onclick="mcCaptura(${c.id})">Ver pantalla</button>`:''}</td></tr>`).join('')}</table>`:'<p class="hint">Todavía no se sincronizó este CUIT.</p>';
+      <td class="hint">${esc(c.error||mcAvance(c,true))}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${Number(c.id)})">Ver en vivo</button>`:''}${c.tiene_captura?` <button class="ghost" onclick="mcCaptura(${Number(c.id)})">Ver pantalla</button>`:''}</td></tr>`).join('')}</table>`:'<p class="hint">Todavía no se sincronizó este CUIT.</p>';
     const viva=corridas.find(c=>MC_VIVOS.includes(c.estado));
     if(retomar&&viva)mcSeguir(viva.id);
   }catch(e){$('#mc_corridas').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
@@ -957,7 +957,7 @@ function mcaTop(titulo,r,lado){
   return `<div class="card"><h3 style="text-transform:none;margin-top:0">${titulo}</h3><div class="mca-top">${r.items.map(fila).join('')}${otros}</div>${conc}</div>`;}
 function mcaTipos(a){
   return `<div class="card" style="overflow-x:auto"><h3 style="text-transform:none;margin-top:0">Por tipo de comprobante</h3><table><tr><th>Lado</th><th>Tipo</th><th>Cant.</th><th style="text-align:right">Total</th></tr>
-    ${a.porTipo.map(t=>`<tr class="mca-click" tabindex="0" onclick="mcaTipo('${t.tipo}',${t.cbteTipo})" onkeydown="if(event.key==='Enter')this.click()" title="Clic: filtrar por este tipo"><td>${t.tipo==='emitido'?'Emitido':'Recibido'}</td><td>${esc(NOMBRE_TIPO[t.cbteTipo]||t.cbteTipo)}</td><td class="mono">${t.cantidad}</td><td class="mono" style="text-align:right">${mcaPlata(t.total)}</td></tr>`).join('')}</table></div>`;}
+    ${a.porTipo.map(t=>`<tr class="mca-click" tabindex="0" onclick="mcaTipo(${jsA(t.tipo)},${Number(t.cbteTipo)})" onkeydown="if(event.key==='Enter')this.click()" title="Clic: filtrar por este tipo"><td>${t.tipo==='emitido'?'Emitido':'Recibido'}</td><td>${esc(NOMBRE_TIPO[t.cbteTipo]||t.cbteTipo)}</td><td class="mono">${t.cantidad}</td><td class="mono" style="text-align:right">${mcaPlata(t.total)}</td></tr>`).join('')}</table></div>`;}
 function mcaTotales(a){const k=a.kpis,t=a.total;
   const fila=(l,v)=>`<tr><td>${l}</td><td class="mono" style="text-align:right">${v}</td></tr>`;
   return `<table>${fila('Comprobantes',t.cantidad)}${fila('Facturado',mcaPlata(k.facturado))}${fila('Notas de crédito emitidas',mcaPlata(-k.notasCredito))}${fila('Comprado',mcaPlata(k.comprado))}${fila('IVA débito',mcaPlata(k.ivaDebito))}${fila('IVA crédito',mcaPlata(k.ivaCredito))}${fila('Saldo de IVA (débito − crédito)',mcaPlata(k.ivaDebito-k.ivaCredito))}${fila('Resultado bruto',mcaPlata(k.resultado))}</table>
@@ -966,7 +966,7 @@ function mcaSubtotales(a){
   if(!MCA.abiertos)MCA.abiertos=new Set(a.subtotales.slice(0,2).map(g=>g.mes+'|'+g.tipo));
   const filas=a.subtotales.map((g,i)=>{const k=g.mes+'|'+g.tipo,ab=MCA.abiertos.has(k),lado=g.tipo==='emitido'?'Emitidos':'Recibidos';
     const cab=`<tr class="mca-grupo"><td><button type="button" class="mca-tog" aria-expanded="${ab}" aria-label="${ab?'Cerrar':'Abrir'} ${escA(mcaMesLargo(g.mes))}" onclick="mcaToggle('${k}')">${ab?I_CHEV_D:I_CHEV_R}</button><button type="button" class="mca-link" onclick="mcaMes('${g.mes}')" title="Clic: ver solo este mes">${esc(mcaMesLargo(g.mes))}</button> <span class="hint">· ${lado}</span></td><td class="mono">${g.cantidad}</td><td class="mono" style="text-align:right">${mcaPlata(g.neto)}</td><td class="mono" style="text-align:right">${mcaPlata(g.iva)}</td><td class="mono" style="text-align:right">${mcaPlata(g.total)}</td></tr>`;
-    const hijos=ab?g.contrapartes.map(x=>`<tr class="mca-click" tabindex="0" data-doc="${escA(x.docNro)}" data-nombre="${escA(x.nombre)}" data-lado="${g.tipo}" onclick="mcaContraparteEl(this)" onkeydown="if(event.key==='Enter')this.click()" title="Clic: filtrar por esta contraparte"><td style="padding-left:34px">${esc(x.nombre||'')} <span class="hint mono">${esc(x.docNro||'')}</span></td><td class="mono">${x.cantidad}</td><td class="mono" style="text-align:right">${mcaPlata(x.neto)}</td><td class="mono" style="text-align:right">${mcaPlata(x.iva)}</td><td class="mono" style="text-align:right">${mcaPlata(x.total)}</td></tr>`).join(''):'';
+    const hijos=ab?g.contrapartes.map(x=>`<tr class="mca-click" tabindex="0" data-doc="${escA(x.docNro)}" data-nombre="${escA(x.nombre)}" data-lado="${esc(g.tipo)}" onclick="mcaContraparteEl(this)" onkeydown="if(event.key==='Enter')this.click()" title="Clic: filtrar por esta contraparte"><td style="padding-left:34px">${esc(x.nombre||'')} <span class="hint mono">${esc(x.docNro||'')}</span></td><td class="mono">${x.cantidad}</td><td class="mono" style="text-align:right">${mcaPlata(x.neto)}</td><td class="mono" style="text-align:right">${mcaPlata(x.iva)}</td><td class="mono" style="text-align:right">${mcaPlata(x.total)}</td></tr>`).join(''):'';
     return cab+hijos;}).join('');
   return `<div class="card" style="margin-top:14px;overflow-x:auto"><div class="row" style="justify-content:space-between"><h3 style="text-transform:none;margin:0">Subtotales por mes y contraparte</h3>
     <span class="row"><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaToggleTodos(true)">Abrir todos</button><button type="button" class="ghost" style="padding:4px 10px;font-size:12px" onclick="mcaToggleTodos(false)">Cerrar todos</button></span></div>
@@ -1203,7 +1203,7 @@ async function verBackups(){
     <p class="hint" style="margin-top:8px">Sin la master key (ARCANUM_MASTER_KEY) no se pueden abrir ni los certificados ni los backups. Guardala fuera de este servidor. Huella de la clave actual: <span class="mono">${esc(mk.huella||'?')}</span>. Para comprobar tu copia: <span class="mono">echo -n CLAVE | xxd -r -p | sha256sum | cut -c1-8</span> tiene que dar lo mismo.</p>
     ${mk.respaldadaAt?'':'<button class="primary" onclick="confirmarMasterKey()">La guardé fuera del servidor</button>'}</div>
    <div class="row"><button class="primary" onclick="crearBackup()">Crear backup ahora</button><span class="hint">Diario a las 3 (hora argentina). Se guardan los últimos 14 en /data/backups, cifrados.</span></div>
-   <div id="bk_lista" style="margin-top:10px">${d.backups.length?`<table><tr><th>Archivo</th><th>Tamaño</th><th></th></tr>${d.backups.map(b=>`<tr><td class="mono">${esc(b.nombre)}</td><td class="mono">${kb(b.bytes)}</td><td><button class="ghost" onclick="bajarBackup('${esc(b.nombre)}')">Descargar</button></td></tr>`).join('')}</table>`:'<p class="hint">Todavía no hay backups.</p>'}</div>
+   <div id="bk_lista" style="margin-top:10px">${d.backups.length?`<table><tr><th>Archivo</th><th>Tamaño</th><th></th></tr>${d.backups.map(b=>`<tr><td class="mono">${esc(b.nombre)}</td><td class="mono">${kb(b.bytes)}</td><td><button class="ghost" onclick="bajarBackup(${jsA(b.nombre)})">Descargar</button></td></tr>`).join('')}</table>`:'<p class="hint">Todavía no hay backups.</p>'}</div>
    <p class="hint">Restaurar: <span class="mono">docker compose exec arcanum node src/tools/restaurar-backup.js /data/backups/ARCHIVO</span> (simulacro) y después con <span class="mono">--confirmar</span>.</p>`);
 }
 async function confirmarMasterKey(){
@@ -1262,7 +1262,7 @@ const FA_VEREDICTO={valida:['ok','VÁLIDA','ARCA confirma que el comprobante exi
 const FA_ESTADO={ok:['ok','OK'],revisar:['warn','Revisar'],error:['no','Error'],aprobado:['ok','Aprobado']};
 const FA_CAMPOS=[['tipo','Tipo (código ARCA)'],['letra','Letra'],['punto_venta','Punto de venta'],['numero','Número'],['fecha','Fecha (AAAA-MM-DD)'],['cuit_emisor','CUIT emisor'],['razon_social_emisor','Razón social del emisor'],['condicion_iva_emisor','Condición de IVA del emisor'],['doc_nro_receptor','Documento del receptor'],['razon_social_receptor','Receptor'],['moneda','Moneda'],['cotizacion','Cotización'],['neto_gravado','Neto gravado'],['no_gravado','No gravado'],['exento','Exento'],['iva_21','IVA 21%'],['iva_10_5','IVA 10,5%'],['iva_27','IVA 27%'],['iva_5','IVA 5%'],['iva_2_5','IVA 2,5%'],['otros_tributos','Otros tributos'],['total','Total'],['cae','CAE'],['vto_cae','Vencimiento del CAE']];
 const FA_ENTEROS=['tipo','punto_venta','numero'];
-const escA=s=>esc(s==null?'':s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const escA=esc; // esc ya escapa comillas
 const faPesos=n=>n==null||n===''?'':Number(n).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
 function faPararTimers(){clearTimeout(FA.timer);FA.timer=null;}
 async function faChequearSalud(){
@@ -1468,9 +1468,9 @@ async function clCargar(){
   try{const est=$('#cl_estado').value;const {cola}=await api('/api/cola'+(est?'?estado='+est:''));
     const pesos=n=>Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2});
     $('#cl_tabla').innerHTML=cola.length?`<table><tr><th>#</th><th>CUIT</th><th>Fecha</th><th>Total</th><th>Estado</th><th>Intentos</th><th>Próximo intento</th><th>Detalle</th><th></th></tr>${cola.map(x=>{const e=COLA_ESTADO[x.estado]||['',x.estado];
-      const acc=window._clOpera&&['pendiente','requiere_humano'].includes(x.estado)?`<button class="ghost" onclick="clAccion(${x.id},'reintentar')">Reintentar</button>${x.estado==='requiere_humano'?`<button class="ghost" onclick="clAccion(${x.id},'hoy')">Emitir con fecha de hoy</button>`:''}<button class="ghost" onclick="clAccion(${x.id},'cancelar')">Cancelar</button>`:'';
+      const acc=window._clOpera&&['pendiente','requiere_humano'].includes(x.estado)?`<button class="ghost" onclick="clAccion(${Number(x.id)},'reintentar')">Reintentar</button>${x.estado==='requiere_humano'?`<button class="ghost" onclick="clAccion(${Number(x.id)},'hoy')">Emitir con fecha de hoy</button>`:''}<button class="ghost" onclick="clAccion(${Number(x.id)},'cancelar')">Cancelar</button>`:'';
       const det=x.estado==='emitido'&&x.resultado?`CAE ${esc(x.resultado.cae||'')}${x.modo==='CAEA'?' (CAEA)':''}${x.resultado.adoptado?' · recuperado de ARCA':''}`:esc(x.ultimo_error||'');
-      return `<tr><td class="mono">${x.id}</td><td class="mono">${esc(x.cuit)}</td><td class="mono">${String(x.fecha||'').slice(0,10)}</td><td class="mono">$${pesos(x.cuerpo&&x.cuerpo.importeTotal)}</td>
+      return `<tr><td class="mono">${Number(x.id)}</td><td class="mono">${esc(x.cuit)}</td><td class="mono">${String(x.fecha||'').slice(0,10)}</td><td class="mono">$${pesos(x.cuerpo&&x.cuerpo.importeTotal)}</td>
       <td><span class="tag ${e[0]}">${esc(e[1])}</span></td><td class="mono">${x.intentos}</td><td class="hint">${x.estado==='pendiente'&&x.proximo_intento_at?new Date(x.proximo_intento_at).toLocaleString('es-AR'):''}</td><td class="hint">${det}</td><td>${acc}</td></tr>`;}).join('')}</table>`:'<p class="hint">La cola está vacía.</p>';
   }catch(e){$('#cl_tabla').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
@@ -1495,7 +1495,7 @@ async function caeaCargar(cuitElegido){
   const fmt=s=>s?`${String(s).slice(6,8)}/${String(s).slice(4,6)}/${String(s).slice(0,4)}`:'';
   box.innerHTML=`<h2>CAEA</h2>
    <div class="card"><p class="hint">Opcional por CUIT. Si está prendido, Arcanum pide el CAEA de cada quincena y, cuando ARCA no responde por más de los minutos indicados, emite con CAEA en el punto de venta CAEA. Pedir un CAEA obliga a informar todo lo emitido con él (o "sin movimiento") antes de la fecha tope: Arcanum lo hace solo cuando ARCA vuelve y avisa si algo queda pendiente.</p>
-   <div class="row"><select id="caea_cuit" style="width:auto" onchange="caeaCargar(this.value)">${conCert.map(t=>`<option value="${t.cuit}"${t.cuit===cuit?' selected':''}>${t.cuit} ${esc(t.nombre||'')}</option>`).join('')||'<option value="">Sin clientes con certificado</option>'}</select>
+   <div class="row"><select id="caea_cuit" style="width:auto" onchange="caeaCargar(this.value)">${conCert.map(t=>`<option value="${esc(t.cuit)}"${t.cuit===cuit?' selected':''}>${esc(t.cuit)} ${esc(t.nombre||'')}</option>`).join('')||'<option value="">Sin clientes con certificado</option>'}</select>
    <span class="tag ${c.activo?'ok':''}">${c.activo?'CAEA PRENDIDO':'CAEA APAGADO'}</span>
    ${st.pendientes?`<span class="tag warn">${st.pendientes} sin informar</span>`:''}</div>
    ${admin&&cuit?`<div class="f3"><div><label class="chk" style="margin-top:28px"><input type="checkbox" id="caea_activo"${c.activo?' checked':''}> Usar CAEA en contingencia</label></div>
@@ -1523,7 +1523,7 @@ async function sincronizarEmitidos(){
   if(!conCert.length){toast('No hay clientes con certificado',true);return;}
   modal(`<button class="modal-x" onclick="closeModal()" aria-label="Cerrar">&times;</button><h3 style="text-transform:none">Traer lo emitido por fuera de Arcanum</h3>
     <p class="hint">Consulta en ARCA los comprobantes de los últimos días que no están en Arcanum (por ejemplo, los hechos en el facturador web) y los suma. También avisa si alguno no coincide.</p>
-    <label>CUIT</label><select id="se_cuit">${conCert.map(t=>`<option value="${t.cuit}">${t.cuit} ${esc(t.nombre||'')}</option>`).join('')}</select>
+    <label>CUIT</label><select id="se_cuit">${conCert.map(t=>`<option value="${esc(t.cuit)}">${esc(t.cuit)} ${esc(t.nombre||'')}</option>`).join('')}</select>
     <label>Días hacia atrás</label><input id="se_dias" class="mono" value="90">
     <div class="row" style="margin-top:12px"><button class="primary" onclick="sincronizarEmitidosIr()">Traer</button></div><div id="se_res"></div>`);
 }
@@ -1536,9 +1536,9 @@ async function sincronizarEmitidosIr(){
 }
 async function vComprobantes(){
   const v=$('#view');const {comprobantes}=await api('/api/comprobantes');
-  const rows=comprobantes.map(c=>`<tr><td class="mono">${c.cuit}</td><td class="mono">${c.punto_venta}-${c.numero}</td><td>${c.tipo_cbte}</td>
-    <td class="mono">${(c.fecha||'').slice?.(0,10)||c.fecha||''}</td><td class="mono">${c.cae||''}</td><td class="mono">$${Number(c.importe_total).toFixed(2)}</td>
-    <td><a href="/api/comprobantes/${c.cuit}/${c.punto_venta}/${c.tipo_cbte}/${c.numero}/pdf"><button class="ghost">PDF</button></a></td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
+  const rows=comprobantes.map(c=>`<tr><td class="mono">${esc(c.cuit)}</td><td class="mono">${esc(c.punto_venta)}-${esc(c.numero)}</td><td>${esc(c.tipo_cbte)}</td>
+    <td class="mono">${esc((c.fecha||'').slice?.(0,10)||c.fecha||'')}</td><td class="mono">${esc(c.cae||'')}</td><td class="mono">$${Number(c.importe_total).toFixed(2)}</td>
+    <td><a href="/api/comprobantes/${encodeURIComponent(c.cuit)}/${Number(c.punto_venta)}/${Number(c.tipo_cbte)}/${Number(c.numero)}/pdf"><button class="ghost">PDF</button></a></td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
   v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes</h2>
      <button style="margin-left:auto" onclick="sincronizarEmitidos()">Traer lo emitido por fuera</button>
      <button class="primary" onclick="importarQr()">Importar por QR</button>
@@ -1547,7 +1547,7 @@ async function vComprobantes(){
 }
 async function importarQr(){
   let tenants=[];try{tenants=(await api('/api/tenants')).tenants;}catch{}
-  const opts=tenants.map(t=>`<option value="${t.cuit}">${t.cuit}${t.nombre?' — '+t.nombre:''}</option>`).join('');
+  const opts=tenants.map(t=>`<option value="${esc(t.cuit)}">${esc(t.cuit)}${t.nombre?' — '+esc(t.nombre):''}</option>`).join('');
   modal(`<h3>Importar comprobante por QR</h3>
     <p class="hint">Pegá el contenido del QR de ARCA (la URL <span class="mono">afip.gob.ar/fe/qr/?p=…</span>). Se leen los datos, se chequea que el CAE no esté duplicado y <strong>se constata contra ARCA (WSCDC)</strong> para confirmar que el comprobante es auténtico.</p>
     <label>Constatar con el certificado de</label><select id="imp_cuit">${opts}</select>
@@ -1562,16 +1562,16 @@ async function doImportarQr(){
     const r=await api('/api/comprobantes/importar',{method:'POST',body:JSON.stringify({cuit:$('#imp_cuit').value,qr:$('#imp_qr').value})});
     const c=r.comprobante, k=c.constatacion||{};
     const tag=k.consultado?(k.valido?'<span class="tag ok">ARCA valida el comprobante</span>':'<span class="tag no">ARCA lo rechazó</span>')
-      :`<span class="tag warn">no se pudo constatar</span> <span class="hint">${(k.motivo||'').slice(0,120)}</span>`;
-    box.innerHTML=`${tag}<p class="hint" style="margin-top:8px">Emisor ${c.cuitEmisor} · ${c.puntoVenta}-${c.numero} · CAE ${c.cae} · $${Number(c.importeTotal).toFixed(2)}</p>`;
+      :`<span class="tag warn">no se pudo constatar</span> <span class="hint">${esc((k.motivo||'').slice(0,120))}</span>`;
+    box.innerHTML=`${tag}<p class="hint" style="margin-top:8px">Emisor ${esc(c.cuitEmisor)} · ${esc(c.puntoVenta)}-${esc(c.numero)} · CAE ${esc(c.cae)} · $${Number(c.importeTotal).toFixed(2)}</p>`;
     toast('Comprobante importado');setTimeout(()=>{closeModal();vComprobantes();},1500);
-  }catch(e){box.innerHTML=`<span class="tag no">${e.message}</span>`;}
+  }catch(e){box.innerHTML=`<span class="tag no">${esc(e.message)}</span>`;}
 }
 
 /* ---------- WEBHOOKS ---------- */
 async function vWebhooks(){
   const v=$('#view');const {webhooks,eventos}=await api('/api/webhooks');
-  const rows=webhooks.map(w=>`<tr><td class="mono">${w.url}</td><td class="hint">${(w.eventos||[]).join(', ')}</td>
+  const rows=webhooks.map(w=>`<tr><td class="mono">${esc(w.url)}</td><td class="hint">${esc((w.eventos||[]).join(', '))}</td>
     <td style="white-space:nowrap"><button class="ghost" onclick="probarWebhook(${Number(w.id)})">Probar</button> <button class="ghost" onclick="delWebhook(${Number(w.id)})">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="3" class="hint">Sin webhooks.</td></tr>';
   v.innerHTML=`<h2>Webhooks</h2><div class="card"><table><thead><tr><th>URL</th><th>Eventos</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
    <div class="card" style="margin-top:14px;max-width:560px"><h3 style="margin-top:0">Nuevo webhook</h3>
@@ -1593,12 +1593,12 @@ async function delWebhook(id){try{await api('/api/webhooks/'+id,{method:'DELETE'
 /* ---------- FACTURADOR MASIVO (lotes con aging) ---------- */
 const SEMA={VERDE:'#3b6d11',AMARILLO:'#b8860b',ROJO:'#a32d2d'};
 function semDot(s){return s?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${SEMA[s]||'#999'};margin-right:6px"></span>`:'';}
-function estadoTag(e){const m={pendiente:'',solicitado:'warn',emitido:'ok',recibido:'ok',rechazado:'no'};return `<span class="tag ${m[e]||''}">${e}</span>`;}
+function estadoTag(e){const m={pendiente:'',solicitado:'warn',emitido:'ok',recibido:'ok',rechazado:'no'};return `<span class="tag ${m[e]||''}">${esc(e)}</span>`;}
 async function vFacturador(){
   const v=$('#view');const {lotes}=await api('/api/lotes');
   const rows=lotes.map(l=>{const r=l.resumen;
-    return `<tr onclick="verLote(${l.id})" style="cursor:pointer">
-      <td>${l.nombre}</td><td><span class="tag">${l.perfil}</span></td><td class="mono">${l.cuit}</td>
+    return `<tr onclick="verLote(${Number(l.id)})" style="cursor:pointer">
+      <td>${esc(l.nombre)}</td><td><span class="tag">${esc(l.perfil)}</span></td><td class="mono">${esc(l.cuit)}</td>
       <td>${r.total} <span class="hint">(${r.emitidos+r.recibidos} ok · ${r.pendientes} pend.)</span></td>
       <td>${r.rojo?semDot('ROJO')+r.rojo+' ':''}${r.amarillo?semDot('AMARILLO')+r.amarillo+' ':''}${r.verde?semDot('VERDE')+r.verde:''}</td>
       <td class="hint">${new Date(l.created_at).toLocaleDateString('es-AR')}</td></tr>`;}).join('')||'<tr><td colspan="6" class="hint">Todavía no cargaste lotes.</td></tr>';
@@ -1608,7 +1608,7 @@ async function vFacturador(){
 }
 async function nuevoLote(){
   let tenants=[];try{tenants=(await api('/api/tenants')).tenants;}catch{}
-  const opts=tenants.map(t=>`<option value="${t.cuit}">${t.cuit}${t.nombre?' — '+t.nombre:''}</option>`).join('');
+  const opts=tenants.map(t=>`<option value="${esc(t.cuit)}">${esc(t.cuit)}${t.nombre?' — '+esc(t.nombre):''}</option>`).join('');
   modal(`<h3>Nuevo lote</h3>
     <div class="f2"><div><label>Emisor (CUIT)</label><select id="lt_cuit">${opts}</select></div>
     <div><label>Perfil</label><select id="lt_perfil"><option value="pyme">PyME</option><option value="asociacion">Asociación (delegado)</option></select></div></div>
@@ -1626,17 +1626,17 @@ async function crearLote(){
 async function verLote(id){
   const v=$('#view');const {lote}=await api('/api/lotes/'+id);const r=lote.resumen;
   const rows=lote.items.map(it=>{const a=it.aging||{};const pend=!['emitido','recibido','rechazado'].includes(it.estado);
-    return `<tr><td>${it.nombre||''}</td><td class="mono">${it.cuit||it.doc_nro||''}</td>
+    return `<tr><td>${esc(it.nombre||'')}</td><td class="mono">${esc(it.cuit||it.doc_nro||'')}</td>
       <td>${estadoTag(it.estado)}</td>
-      <td>${pend?semDot(a.semaforo)+(a.dias!=null?a.dias+'d':''):''}${it.cae?'<span class="hint mono">CAE '+it.cae+'</span>':''}</td>
+      <td>${pend?semDot(a.semaforo)+(a.dias!=null?a.dias+'d':''):''}${it.cae?'<span class="hint mono">CAE '+esc(it.cae)+'</span>':''}</td>
       <td class="mono">${it.importe_total!=null?'$'+Number(it.importe_total).toFixed(2):''}</td>
-      <td class="row">${pend?`<button class="ghost" onclick="itemAccion(${id},${it.id},'emitir')">Emitir</button>
-        <button class="ghost" onclick="itemAccion(${id},${it.id},'recibido')">Recibido</button>
-        ${it.email?`<button class="ghost" onclick="itemAccion(${id},${it.id},'solicitar')">Solicitar</button>`:''}`:''}</td></tr>`;}).join('');
-  v.innerHTML=`<div class="row"><button class="ghost" onclick="vFacturador()">← Lotes</button><h2 style="margin:0 auto 0 8px">${lote.nombre}</h2>
-     <button onclick="emitirTodo(${id})">Emitir pendientes</button>
-     <a href="/api/lotes/${id}/export.csv"><button>CSV</button></a></div>
-   <p class="hint">${lote.cuit} · perfil ${lote.perfil} · ${r.total} items — ${r.emitidos} emitidos, ${r.recibidos} recibidos, ${r.pendientes} pendientes</p>
+      <td class="row">${pend?`<button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'emitir')">Emitir</button>
+        <button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'recibido')">Recibido</button>
+        ${it.email?`<button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'solicitar')">Solicitar</button>`:''}`:''}</td></tr>`;}).join('');
+  v.innerHTML=`<div class="row"><button class="ghost" onclick="vFacturador()">← Lotes</button><h2 style="margin:0 auto 0 8px">${esc(lote.nombre)}</h2>
+     <button onclick="emitirTodo(${Number(id)})">Emitir pendientes</button>
+     <a href="/api/lotes/${Number(id)}/export.csv"><button>CSV</button></a></div>
+   <p class="hint">${esc(lote.cuit)} · perfil ${esc(lote.perfil)} · ${r.total} items — ${r.emitidos} emitidos, ${r.recibidos} recibidos, ${r.pendientes} pendientes</p>
    <div class="card"><table><thead><tr><th>Nombre</th><th>CUIT/Doc</th><th>Estado</th><th>Aging / CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 async function itemAccion(loteId,itemId,accion){
@@ -1652,7 +1652,7 @@ async function emitirTodo(id){if(!await confirmar({titulo:'Emitir el lote',texto
 /* ---------- USUARIOS ---------- */
 async function vUsuarios(){
   const v=$('#view');const {usuarios}=await api('/api/usuarios');
-  const rows=usuarios.map(u=>`<tr><td>${u.username}</td><td><span class="tag">${u.role}</span></td><td class="hint">${u.last_login?new Date(u.last_login).toLocaleString('es-AR'):'nunca'}</td></tr>`).join('');
+  const rows=usuarios.map(u=>`<tr><td>${esc(u.username)}</td><td><span class="tag">${esc(u.role)}</span></td><td class="hint">${u.last_login?new Date(u.last_login).toLocaleString('es-AR'):'nunca'}</td></tr>`).join('');
   const puede=ME.role==='superadmin';
   v.innerHTML=`<h2>Usuarios</h2><div class="card"><table><thead><tr><th>Usuario</th><th>Rol</th><th>Último ingreso</th></tr></thead><tbody>${rows}</tbody></table></div>
    ${puede?`<div class="card" style="margin-top:14px;max-width:480px"><h3 style="margin-top:0">Nuevo usuario</h3>
@@ -1672,13 +1672,13 @@ async function cargarClaves(){
     const fd=d=>d?new Date(d).toLocaleDateString('es-AR'):'';
     const est=c=>c.estado==='activa'?(c.vence&&new Date(c.vence)-Date.now()<7*864e5?`<span class="tag warn">vence ${fd(c.vence)}</span>`:`<span class="tag ok">activa</span>`)
       :c.estado==='vencida'?`<span class="tag no">vencida</span>`:`<span class="tag no">de baja</span>`;
-    const rows=claves.map(c=>{const n=esc(c.nombre).replace(/'/g,'');const act=c.estado==='activa';
+    const rows=claves.map(c=>{const n=jsA(c.nombre);const act=c.estado==='activa';
       return `<tr${act?'':' style="opacity:.55"'}><td>${esc(c.nombre)}${c.rotadaDe?' <span class="hint">(rotada)</span>':''}</td><td><code>${esc(c.prefijo||'')}</code></td><td><span class="tag">${esc(c.rol)}</span></td>
       <td class="hint">${c.cuits&&c.cuits.length?c.cuits.map(esc).join(', '):'todos'}</td>
       <td>${est(c)}${act&&c.vence&&new Date(c.vence)-Date.now()>=7*864e5?`<div class="hint">vence ${fd(c.vence)}</div>`:''}</td>
       <td class="hint">${f(c.ultimoUso)}<div>${c.usos30d||0} pedidos en 30 días${c.limitePorMinuto?` · tope ${c.limitePorMinuto}/min`:''}</div></td>
       <td style="white-space:nowrap"><button class="ghost" onclick="usoClave(${Number(c.id)})">Uso</button>
-      ${act?`<button class="ghost" onclick="rotarClave(${Number(c.id)},'${n}')">Rotar</button> <button class="ghost" onclick="bajaClave(${Number(c.id)},'${n}')">Dar de baja</button>`:''}</td></tr>`;}).join('');
+      ${act?`<button class="ghost" onclick="rotarClave(${Number(c.id)},${n})">Rotar</button> <button class="ghost" onclick="bajaClave(${Number(c.id)},${n})">Dar de baja</button>`:''}</td></tr>`;}).join('');
     box.innerHTML=`<div class="card">${claves.length?`<table><thead><tr><th>Nombre</th><th>Prefijo</th><th>Rol</th><th>CUITs</th><th>Estado</th><th>Uso</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="hint" style="margin:0">Todavía no hay claves.</p>'}</div>
      <div class="card" style="margin-top:14px;max-width:520px"><h3 style="margin-top:0">Nueva clave</h3>
       <label>Nombre</label><input id="k_nom" placeholder="SecretarIA">
@@ -1764,9 +1764,9 @@ async function vGenerador(){
   const orden=['facturacion','consultas','agro','aduana','otros'];
   const byCat={}; services.forEach(s=>{ if(s.id==='eventanilla')return; (byCat[s.categoria||'otros']=byCat[s.categoria||'otros']||[]).push(s); });
   let svcGroups=''; for(const cat of Object.keys(byCat).sort((a,b)=>orden.indexOf(a)-orden.indexOf(b))){
-    svcGroups+=`<optgroup label="${cat}">`+byCat[cat].map(s=>`<option value="s:${s.id}">${s.nombre}</option>`).join('')+'</optgroup>'; }
+    svcGroups+=`<optgroup label="${esc(cat)}">`+byCat[cat].map(s=>`<option value="s:${esc(s.id)}">${esc(s.nombre)}</option>`).join('')+'</optgroup>'; }
   const opts=`<optgroup label="Comunes (con ejemplo)">${richOpts}</optgroup>${svcGroups}`;
-  const svcOpts=services.map(s=>`<option value="${s.id}">${s.nombre}</option>`).join('');
+  const svcOpts=services.map(s=>`<option value="${esc(s.id)}">${esc(s.nombre)}</option>`).join('');
   v.innerHTML=`<h2>Generador de código</h2>
    <p class="hint">Elegí el endpoint, completá los datos y copiá el nodo de n8n listo para pegar, o el snippet en tu lenguaje.</p>
    <div class="card" style="max-width:780px">
@@ -1791,8 +1791,8 @@ async function vGenerador(){
 async function cargarOps(){
   const id=$('#g_svc').value; $('#g_ops').innerHTML='<span class="hint">Leyendo WSDL…</span>';
   try{ const r=await api('/api/services/'+id+'/operaciones'); window._OPS={id,ops:r.operaciones};
-    $('#g_ops').innerHTML=r.operaciones.map((o,i)=>`<div class="row" style="border-top:1px solid var(--line);padding:7px 0"><div><span class="mono">${o.nombre}</span>${o.parametros.length?' <span class="hint">('+o.parametros.map(p=>p.nombre).join(', ')+')</span>':''}</div><button class="ghost" style="margin-left:auto" onclick="usarOp(${i})">Usar</button></div>`).join('')||'<span class="hint">Sin operaciones legibles en el WSDL.</span>';
-  }catch(e){ $('#g_ops').innerHTML='<span class="hint">'+e.message+'</span>'; }
+    $('#g_ops').innerHTML=r.operaciones.map((o,i)=>`<div class="row" style="border-top:1px solid var(--line);padding:7px 0"><div><span class="mono">${esc(o.nombre)}</span>${o.parametros.length?' <span class="hint">('+esc(o.parametros.map(p=>p.nombre).join(', '))+')</span>':''}</div><button class="ghost" style="margin-left:auto" onclick="usarOp(${i})">Usar</button></div>`).join('')||'<span class="hint">Sin operaciones legibles en el WSDL.</span>';
+  }catch(e){ $('#g_ops').innerHTML='<span class="hint">'+esc(e.message)+'</span>'; }
 }
 function usarOp(i){
   const {id,ops}=window._OPS, o=ops[i], params={};
@@ -1823,7 +1823,10 @@ function genAll(){
     ['Python (requests)',inv?'(JSON del body inválido)':genPy(m,url,key,body)]];
   $('#g_out').innerHTML=blocks.map((b,i)=>`<div class="card" style="margin-bottom:12px"><div class="row"><strong>${b[0]}</strong><button class="ghost" style="margin-left:auto" onclick="copyBlock(${i})">Copiar</button></div><pre id="gb${i}">${esc(b[1])}</pre></div>`).join('');
 }
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+// Escape HTML completo (texto y valores de atributo). Todo dato que venga de la API pasa por aca.
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// Argumento de texto para un manejador inline (onclick="f(${jsA(x)})"): literal JS escapado para el atributo.
+function jsA(v){return esc(JSON.stringify(String(v==null?'':v)));}
 function copyBlock(i){navigator.clipboard.writeText($('#gb'+i).textContent);toast('Copiado');}
 function genCurl(m,url,key,body){let s=`curl -X ${m} "${url}" \\\n  -H "X-API-Key: ${key}"`;if(body){s+=` \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(body)}'`;}return s;}
 function genJS(m,url,key,body){return `const res = await fetch(${JSON.stringify(url)}, {\n  method: ${JSON.stringify(m)},\n  headers: {\n    "X-API-Key": ${JSON.stringify(key)}${body?',\n    "Content-Type": "application/json"':''}\n  }${body?`,\n  body: JSON.stringify(${JSON.stringify(body,null,2)})`:''}\n});\nconst data = await res.json();\nconsole.log(data);`;}
@@ -1864,7 +1867,7 @@ async function renderMenu(){
   const admin=['superadmin','admin'].includes(ME.role);
   const dark=document.documentElement.getAttribute('data-theme')==='dark';
   $('#appmenu').innerHTML=`
-   <div class="menu-user">${ME.username} · ${ME.role}</div>
+   <div class="menu-user">${esc(ME.username)} · ${esc(ME.role)}</div>
    <div class="menu-sep"></div>
    <button class="menu-item" onclick="toggleTheme();renderMenu()">${dark?I_SUN:I_MOON}<span>${dark?'Tema claro':'Tema oscuro'}</span></button>
    ${admin?`<div class="menu-sec"><div class="menu-h">Entorno ARCA</div>
@@ -1889,8 +1892,8 @@ async function acercaDe(){
    <h3 class="modal-tit">Arcanum</h3>
    <p class="modal-cuerpo">Gateway REST self-hosted para los Web Services de ARCA (ex-AFIP). Firma WSAA 100% local.</p>
    <dl class="about-rows">
-     <dt>Versión</dt><dd>v${cfg.version} · <button class="linkbtn" type="button" onclick="novedadesTodas()">Qué cambió</button></dd>
-     <dt>Usuario</dt><dd>${ME.username} (${ME.role})</dd>
+     <dt>Versión</dt><dd>v${esc(cfg.version)} · <button class="linkbtn" type="button" onclick="novedadesTodas()">Qué cambió</button></dd>
+     <dt>Usuario</dt><dd>${esc(ME.username)} (${esc(ME.role)})</dd>
      <dt>Entorno</dt><dd><span class="tag ${cfg.entorno==='prod'?'warn':''}">${env}</span></dd>
      <dt>Rol en la suite</dt><dd>Gateway</dd>
    </dl>

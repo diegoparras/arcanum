@@ -50,8 +50,8 @@ test('parseQr: decodifica una URL de QR de ARCA', () => {
   assert.strictEqual(d.importeTotal, 1210.5);
 });
 test('parseQr: acepta base64 directo (sin URL)', () => {
-  const b64 = Buffer.from(JSON.stringify({ cuit: 1, codAut: 9, ptoVta: 1, nroCmp: 1, tipoCmp: 11, importe: 1 })).toString('base64');
-  assert.strictEqual(parseQr(b64).cae, '9');
+  const b64 = Buffer.from(JSON.stringify({ fecha: '2026-11-01', cuit: 20111111112, codAut: 76000000000009, ptoVta: 1, nroCmp: 1, tipoCmp: 11, importe: 1 })).toString('base64');
+  assert.strictEqual(parseQr(b64).cae, '76000000000009');
 });
 test('parseQr: rechaza basura', () => {
   assert.throws(() => parseQr('no-es-un-qr'), /no es un QR/i);

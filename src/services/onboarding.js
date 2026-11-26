@@ -22,6 +22,7 @@ async function crearCliente(cuit, nombre, entorno = config.env) {
   const c = tenants.normalizeCuit(cuit);
   if (!c || c.length < 11) throw err('CUIT invalido (11 digitos)', 400);
   if (!nombre || !String(nombre).trim()) throw err('Falta el nombre / razon social', 400);
+  nombre = tenants.validarNombre(nombre); // antes del CSR: el nombre va en el subject
 
   const keys = forge.pki.rsa.generateKeyPair(2048);
   const csr = forge.pki.createCertificationRequest();

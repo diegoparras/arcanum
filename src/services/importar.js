@@ -33,7 +33,7 @@ function parseQr(qr) {
   if (!json || !json.cuit || !json.codAut) {
     throw new SoapError('El QR no tiene los campos esperados (cuit / codAut)', 422);
   }
-  return {
+  return validarComprobante({
     cuitEmisor: String(json.cuit),
     puntoVenta: Number(json.ptoVta),
     tipoComprobante: Number(json.tipoCmp),
@@ -46,7 +46,27 @@ function parseQr(qr) {
     docNro: String(json.nroDocRec || 0),
     cae: String(json.codAut),
     tipoCodAut: json.tipoCodAut || 'E',
-  };
+  });
+}
+
+/**
+ * Formato estricto de un comprobante a importar (venga del QR o cargado a mano). Lo que no tiene
+ * forma de dato de ARCA se rechaza con 422 y sin repetir el valor recibido en el mensaje: el CAE y
+ * el CUIT se guardan y se muestran en el panel (auditoria 2026-11-26, A-06).
+ */
+function validarComprobante(d) {
+  const mal = (campo) => { throw new SoapError(`El comprobante tiene ${campo} con formato invalido`, 422); };
+  if (!/^\d{11}$/.test(String(d.cuitEmisor))) mal('un CUIT emisor (deben ser 11 digitos)');
+  if (!/^\d{14}$/.test(String(d.cae))) mal('un CAE/CAEA (deben ser 14 digitos)');
+  if (!/^\d{8}$/.test(String(d.fecha))) mal('una fecha (AAAA-MM-DD)');
+  if (!/^\d{1,20}$/.test(String(d.docNro))) mal('un documento del receptor');
+  for (const [k, campo] of [['puntoVenta', 'un punto de venta'], ['tipoComprobante', 'un tipo'], ['numero', 'un numero']]) {
+    if (!Number.isInteger(d[k]) || d[k] <= 0) mal(campo);
+  }
+  if (!Number.isFinite(d.importeTotal)) mal('un importe');
+  if (!['E', 'A'].includes(d.tipoCodAut || 'E')) mal('un tipo de autorizacion (E o A)');
+  if (!/^[A-Z0-9$]{1,4}$/.test(String(d.moneda || 'PES'))) mal('una moneda');
+  return d;
 }
 
 /** Constata el comprobante contra ARCA (WSCDC). Devuelve { valido, resultado, observaciones }. */
@@ -92,7 +112,7 @@ async function importar(cuitConsultante, input = {}) {
   const consultante = normalizeCuit(cuitConsultante);
   if (!consultante) throw new SoapError('Falta el CUIT consultante (con certificado)', 400);
 
-  const d = input.qr ? parseQr(input.qr) : {
+  const d = input.qr ? parseQr(input.qr) : validarComprobante({
     cuitEmisor: normalizeCuit(input.cuitEmisor),
     puntoVenta: Number(input.puntoVenta),
     tipoComprobante: Number(input.tipoComprobante),
@@ -105,7 +125,7 @@ async function importar(cuitConsultante, input = {}) {
     docNro: String(input.docNro || 0),
     cae: String(input.cae || ''),
     tipoCodAut: input.tipoCodAut || 'E',
-  };
+  });
   if (!d.cuitEmisor || !d.cae || !d.numero) {
     throw new SoapError('Faltan datos del comprobante (cuitEmisor, cae, numero). Pasa `qr` o los campos.', 422);
   }
@@ -167,4 +187,4 @@ async function importar(cuitConsultante, input = {}) {
   return { ...d, cuitConsultante: consultante, origen: 'importado', constatacion };
 }
 
-module.exports = { importar, parseQr, constatar };
+module.exports = { importar, parseQr, constatar, validarComprobante };

@@ -212,12 +212,24 @@ async function emitirLote(loteId, extra = {}) {
   return { total: pend.length, emitidos: resultados.filter((r) => r.ok).length, resultados };
 }
 
+/** CAE y numero de un recibido: solo digitos (o vacios). Se muestran en el panel (auditoria 2026-11-26, A-04). */
+function validarRecibido(datos = {}) {
+  const limpio = (v, campo, max) => {
+    const s = v == null ? '' : String(v).trim();
+    if (!s) return null;
+    if (!/^\d+$/.test(s) || s.length > max) throw Object.assign(new Error(`El ${campo} solo puede tener digitos`), { httpStatus: 422 });
+    return s;
+  };
+  return { cae: limpio(datos.cae, 'CAE', 14), numero: limpio(datos.numero, 'numero', 8) };
+}
+
 /** Marca un item como "recibido" (el profesional emitio y te mando su comprobante). */
 async function marcarRecibido(loteId, itemId, datos = {}) {
+  const { cae, numero } = validarRecibido(datos);
   await getItem(loteId, itemId);
   await db.query(
     'UPDATE lote_items SET estado=$1, cae=$2, numero=$3, nota=$4, resuelto_at=now() WHERE id=$5 AND lote_id=$6',
-    [datos.estado === 'rechazado' ? 'rechazado' : 'recibido', datos.cae || null, datos.numero || null, datos.nota || null, itemId, loteId],
+    [datos.estado === 'rechazado' ? 'rechazado' : 'recibido', cae, numero, datos.nota || null, itemId, loteId],
   );
   return getItem(loteId, itemId);
 }
@@ -250,6 +262,6 @@ async function exportCsv(loteId) {
   return lines.join('\n');
 }
 
-module.exports = { crear, listar, detalle, emitirItem, emitirLote, marcarRecibido, solicitarItem, exportCsv, aging, cuitDe, ESTADOS,
+module.exports = { crear, listar, detalle, emitirItem, emitirLote, marcarRecibido, validarRecibido, solicitarItem, exportCsv, aging, cuitDe, ESTADOS,
   // Expuestos para tests unitarios (funciones puras).
   _internos: { parseCsv, normItem, alicuotaId, n, pInt } };

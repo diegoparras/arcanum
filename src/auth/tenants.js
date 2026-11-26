@@ -27,10 +27,25 @@ function fingerprint(pem) {
   return forge.md.sha256.create().update(der).digest().toHex();
 }
 
+/**
+ * Nombre o razon social de un cliente: se recorta y se rechaza lo que no puede ser un nombre
+ * (< > y caracteres de control) o pasa de 200 caracteres. Vacio -> null. Acentos, comillas, &,
+ * puntos y parentesis son validos. Segunda barrera contra XSS (auditoria 2026-11-26, A-05).
+ */
+function validarNombre(nombre) {
+  if (nombre == null) return null;
+  const n = String(nombre).trim();
+  if (!n) return null;
+  if (/[<>\u0000-\u001f\u007f]/.test(n)) throw new TenantError('El nombre tiene caracteres no permitidos (< > o de control)', 422);
+  if (n.length > 200) throw new TenantError('El nombre es demasiado largo (maximo 200 caracteres)', 422);
+  return n;
+}
+
 /** Crea/asegura el tenant y guarda su clave privada (cifrada). */
 async function storeKey(cuit, entorno, keyPem, nombre) {
   const c = normalizeCuit(cuit);
   if (!c) throw new TenantError('CUIT invalido', 400);
+  nombre = validarNombre(nombre);
   // Validamos que la clave parsee antes de guardarla.
   try {
     forge.pki.privateKeyFromPem(keyPem);
@@ -116,4 +131,4 @@ async function list(entorno) {
   }));
 }
 
-module.exports = { load, list, storeKey, storeCert, normalizeCuit, TenantError };
+module.exports = { load, list, storeKey, storeCert, normalizeCuit, validarNombre, TenantError };
