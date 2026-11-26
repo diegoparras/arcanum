@@ -58,3 +58,27 @@ test('si el login falla, el siguiente pedido lo vuelve a intentar', async () => 
     assert.strictEqual((await tokenStore.getOrCreate('20111111112', 'wscdc', 'homo', fetcher)).token, 'T2');
   } finally { b.restaurar(); }
 });
+
+test('B-14: token y sign se guardan cifrados y se leen descifrados; los viejos en claro siguen sirviendo', async () => {
+  const crypto = require('crypto');
+  process.env.ARCANUM_MASTER_KEY = process.env.ARCANUM_MASTER_KEY || crypto.randomBytes(32).toString('hex');
+  const filas = new Map();
+  const original = { query: db.query, tx: db.tx };
+  db.query = async (sql, p = []) => {
+    if (/^\s*INSERT INTO access_tickets/i.test(sql)) { filas.set(p.slice(0, 3).join('|'), { token: p[3], sign: p[4], generation_time: p[5], expiration_time: p[6] }); return { rows: [] }; }
+    if (/^\s*SELECT token, sign/i.test(sql)) { const f = filas.get(p.join('|')); return { rows: f ? [f] : [] }; }
+    return { rows: [] };
+  };
+  try {
+    const exp = new Date(Date.now() + 12 * 3600e3).toISOString();
+    await tokenStore.getOrCreate('20111111112', 'wsfe', 'prod', async () => ({ token: 'TOKEN-REAL', sign: 'SIGN-REAL', expirationTime: exp }));
+    const guardada = filas.get('20111111112|wsfe|prod');
+    assert.ok(!guardada.token.includes('TOKEN-REAL') && /^v1:/.test(guardada.token), 'el token quedo en claro en la base');
+    assert.ok(!guardada.sign.includes('SIGN-REAL') && /^v1:/.test(guardada.sign));
+    const leido = await tokenStore.read('20111111112', 'wsfe', 'prod');
+    assert.strictEqual(leido.token, 'TOKEN-REAL');
+    assert.strictEqual(leido.sign, 'SIGN-REAL');
+    filas.set('20111111112|wscdc|prod', { token: 'VIEJO-EN-CLARO', sign: 'S', expiration_time: exp });
+    assert.strictEqual((await tokenStore.readRaw('20111111112', 'wscdc', 'prod')).token, 'VIEJO-EN-CLARO');
+  } finally { db.query = original.query; db.tx = original.tx; }
+});

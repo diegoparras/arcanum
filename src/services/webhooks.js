@@ -7,7 +7,7 @@
 const crypto = require('crypto');
 const db = require('../db');
 const mailer = require('./mailer');
-const { assertSafeUrl } = require('../lib/ssrfguard');
+const { assertSafeUrl, agenteSeguro } = require('../lib/ssrfguard');
 
 const EVENTOS = [
   'comprobante_emitido', 'comprobante_rechazado', 'cert_por_vencer', 'arca_caido', 'arca_restablecido',
@@ -62,16 +62,22 @@ async function hayInteresados(evento) {
   }
 }
 
-async function enviar(w, body) {
+async function enviar(w, body, { guarda = true } = {}) {
   const headers = { 'Content-Type': 'application/json', 'User-Agent': 'Arcanum-Webhook' };
   if (w.secret) {
     headers['X-Arcanum-Signature'] = 'sha256=' + crypto.createHmac('sha256', w.secret).update(body).digest('hex');
   }
-  assertSafeUrl(w.url); // defensa en profundidad por si el destino cambio
+  if (guarda) assertSafeUrl(w.url); // defensa en profundidad por si el destino cambio
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 8000);
   try {
-    const r = await fetch(w.url, { method: 'POST', headers, body, signal: ctrl.signal });
+    // Sin seguir redirecciones, y conectando solo a IPs validadas al resolver (B-01).
+    const { fetch: undiciFetch } = require('undici');
+    const r = await undiciFetch(w.url, {
+      method: 'POST', headers, body, signal: ctrl.signal, redirect: 'manual',
+      ...(guarda ? { dispatcher: agenteSeguro() } : {}),
+    });
+    await r.body?.cancel?.().catch(() => {});
     return { status: r.status, ok: r.ok };
   } finally {
     clearTimeout(t);
@@ -117,4 +123,7 @@ function err(message, httpStatus) {
   return Object.assign(new Error(message), { httpStatus });
 }
 
-module.exports = { listar, crear, eliminar, emitir, probar, hayInteresados, EVENTOS };
+// Solo para tests: el envio sin la guarda de IP (para probar contra 127.0.0.1).
+const _enviarSinGuarda = (w, body) => enviar(w, body, { guarda: false });
+
+module.exports = { _enviarSinGuarda, listar, crear, eliminar, emitir, probar, hayInteresados, EVENTOS };

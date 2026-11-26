@@ -44,6 +44,9 @@ function parsearCsv(texto) {
 }
 
 /** ZIP -> [{nombre, datos}]. Lee el directorio central; metodos 0 (stored) y 8 (deflate). */
+// Tope de cada archivo descomprimido del ZIP de Mis Comprobantes (50 MB sobra para un CSV).
+const MAX_DESCOMPRIMIDO = 50 * 1024 * 1024;
+
 function leerZip(buf) {
   const b = Buffer.from(buf);
   let eocd = -1;
@@ -67,7 +70,8 @@ function leerZip(buf) {
     const crudo = b.slice(ini, ini + tamComp);
     if (!nombre.endsWith('/')) {
       if (metodo === 0) out.push({ nombre, datos: crudo });
-      else if (metodo === 8) out.push({ nombre, datos: zlib.inflateRawSync(crudo) });
+      // Con tope (I-02): un ZIP chico que se infla a cientos de MB no tumba el proceso.
+      else if (metodo === 8) out.push({ nombre, datos: zlib.inflateRawSync(crudo, { maxOutputLength: MAX_DESCOMPRIMIDO }) });
     }
     p += 46 + lnNombre + lnExtra + lnComent;
   }

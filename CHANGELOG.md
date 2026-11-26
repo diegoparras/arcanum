@@ -3,6 +3,40 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.18] - 2026-11-26
+
+### Agregado
+- **Cancelar una sincronización de Mis Comprobantes** en curso, desde la lista de
+  sincronizaciones. Cierra la sesión del navegador en ARCA; lo ya bajado queda guardado.
+
+### Seguridad
+- **Mis Comprobantes:**
+  - Una sincronización abarca como máximo 3 años (`ARCANUM_MC_MAX_DIAS`). Cada año es un login
+    con la clave fiscal; desde 1990 eran 74 logins seguidos.
+  - Si el navegador de Fisherboy queda fuera de los dominios de ARCA (por ejemplo, tras una
+    redirección), se corta la sesión.
+  - Consultar una corrida ya no devuelve el token de la sesión de Fisherboy ni el log crudo.
+  - El análisis acepta hasta 2 años por vez y frena con un aviso si hay demasiados comprobantes.
+- **Tickets de WSAA cifrados en la base:** un volcado de Postgres ya no entrega tickets vigentes.
+  Los guardados en claro antes de esta versión se siguen leyendo hasta que vencen.
+- **Backups:** sin `ARCANUM_MASTER_KEY` o `ARCANUM_BACKUP_KEY` por entorno ya no se crean, porque
+  la clave quedaría en el mismo volumen que los backups. En producción, Arcanum ya no genera una
+  master key nueva en el volumen; una generada por una instalación previa se sigue usando.
+- **Webhooks:** la protección contra destinos internos ahora valida la IP real a la que se
+  conecta (también si el nombre resuelve a una IP interna), rechaza nombres sin dominio (servicios
+  de la red interna) e IPv6 mapeadas, y no sigue redirecciones.
+- **CSV exportados:** las celdas de texto que empiezan con `=`, `+`, `-` o `@` ya no se ejecutan
+  como fórmula al abrirlas en la planilla. Los números, también los negativos, no cambian.
+- **Lotes:** el email tiene que ser una sola dirección válida; nombre y período van en una línea;
+  "Solicitar" se puede mandar una vez por día por item.
+- **Factorum:**
+  - Subir un lote o verificar responde enseguida si Factorum no está configurado, sin leer
+    antes un cuerpo de hasta 80 MB.
+  - Corregir un comprobante rechaza variantes de `cliente_cuit` con otra capitalización.
+  - El panel fuerza a número el punto de venta y el número que devuelve.
+- e-Ventanilla valida las fechas antes de armar el pedido a ARCA, y el ZIP de Mis Comprobantes se
+  descomprime con tope.
+
 ## [2.1.17] - 2026-11-26
 
 ### Agregado

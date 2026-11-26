@@ -123,6 +123,12 @@ function rangoFechas(desde, hasta) {
   // ARCA limita la ventana a 31 dias (y fechaDesde no mas de 31 dias de hoy).
   // Para mas historia hay que consultar por tramos. Default: ultimos 30 dias.
   const d = desde ? String(desde).slice(0, 10) : fmt(new Date(now.getTime() - 30 * 86400000));
+  // Van al XML: solo fechas reales AAAA-MM-DD (I-01).
+  for (const [campo, v] of [['desde', d], ['hasta', h]]) {
+    const f = new Date(`${v}T00:00:00Z`);
+    const ok = /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(f.getTime()) && f.toISOString().slice(0, 10) === v;
+    if (!ok) throw Object.assign(new Error(`"${campo}" tiene que ser una fecha AAAA-MM-DD`), { httpStatus: 400 });
+  }
   return { desde: d, hasta: h };
 }
 
@@ -286,4 +292,4 @@ function filenamesFromXml(xml) {
   return out;
 }
 
-module.exports = { dummy, consultarComunicaciones, consumirComunicacion, obtenerAdjuntos, WSAA_SERVICE };
+module.exports = { dummy, consultarComunicaciones, consumirComunicacion, obtenerAdjuntos, WSAA_SERVICE, _internos: { rangoFechas } };

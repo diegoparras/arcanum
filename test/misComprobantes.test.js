@@ -567,3 +567,56 @@ test('hayComprobantes: con alcance por CUIT pregunta solo por esos; admin, por t
   assert.strictEqual(await s.hayComprobantes({ role: 'lectura' }), true);
   assert.deepStrictEqual(pedidos, [['30711111118'], null, null]);
 });
+
+test('P-02: si el navegador sale de los dominios de ARCA, se corta la sesion', async () => {
+  const repo = repoFalso();
+  const fb = fisherboyFalso([
+    { estado: 'corriendo', url: 'https://auth.afip.gob.ar/contribuyente_/login.xhtml', log: [] },
+    { estado: 'corriendo', url: 'https://sitio-ajeno.example/robo', log: [] },
+    TERMINADO,
+  ]);
+  const { s } = servicio(repo, fb);
+  const c = await s.sincronizar('20263630743', { tipo: 'recibidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.corridas[c.id].estado, 'error');
+  assert.match(repo.corridas[c.id].error, /fuera de los dominios de ARCA/);
+  assert.deepStrictEqual(fb.cerrados, ['tok-1']);
+});
+
+test('P-02: about:blank o sin URL no corta la sesion', async () => {
+  const repo = repoFalso();
+  const fb = fisherboyFalso([{ estado: 'corriendo', url: 'about:blank', log: [] }, { estado: 'corriendo', log: [] }, TERMINADO]);
+  const { s } = servicio(repo, fb);
+  const c = await s.sincronizar('20263630743', { tipo: 'recibidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
+});
+
+test('B-13: un rango de mas de 3 anios se rechaza (cada anio es un login con la clave fiscal)', async () => {
+  const { s } = servicio(repoFalso(), fisherboyFalso([TERMINADO]));
+  await assert.rejects(s.sincronizar('20263630743', { tipo: 'recibidos', desde: '1990-01-01', hasta: '2026-11-18' }), (e) => e.httpStatus === 400 && /3 a/.test(e.message));
+  await s.sincronizar('20263630743', { tipo: 'recibidos', desde: '2024-01-01', hasta: '2026-11-18' });
+});
+
+test('B-13: una corrida en curso se puede cancelar y la sesion se cierra', async () => {
+  const repo = repoFalso();
+  const fb = fisherboyFalso([{ estado: 'corriendo', log: [] }]); // nunca termina sola
+  const { s } = servicio(repo, fb);
+  const c = await s.sincronizar('20263630743', { tipo: 'recibidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  const p = s.seguir(c.id);
+  await new Promise((r) => setTimeout(r, 20));
+  await s.cancelar(c.id, 'ana');
+  await p;
+  assert.strictEqual(repo.corridas[c.id].estado, 'error');
+  assert.match(repo.corridas[c.id].error, /Cancelada por ana/);
+  assert.deepStrictEqual(fb.cerrados, ['tok-1']);
+  await assert.rejects(s.cancelar(c.id, 'ana'), (e) => e.httpStatus === 409, 'ya no esta en curso');
+});
+
+test('B-16: el analisis acepta hasta 2 anios y frena si hay demasiadas filas', async () => {
+  const repo = repoFalso();
+  repo.paraAnalisis = async () => Array.from({ length: 100001 }, () => ({ tipo: 'emitido', fecha: '2026-01-01', total: 1 }));
+  const { s } = servicio(repo, fisherboyFalso([TERMINADO]));
+  await assert.rejects(s.analisis('20263630743', { desde: '2022-01-01', hasta: '2026-11-18' }), (e) => e.httpStatus === 400 && /2 a/.test(e.message));
+  await assert.rejects(s.analisis('20263630743', { desde: '2026-01-01', hasta: '2026-11-18' }), (e) => e.httpStatus === 413);
+});

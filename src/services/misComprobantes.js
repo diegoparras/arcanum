@@ -11,7 +11,17 @@
 // La clave fiscal vive cifrada con el vault. Se descifra solo para armar `secretos` del pedido
 // a Fisherboy y nunca se registra, ni se devuelve por la API.
 
+const { celdaCsv } = require('../lib/csv');
 const { RECETA_DEFAULT, DOMINIOS, OK_AUTOMATICO } = require('./misComprobantes.receta');
+
+/** true si la URL es de un dominio de la receta (o no es http: about:blank, data:). */
+function enDominiosArca(url) {
+  let u;
+  try { u = new URL(String(url)); } catch { return true; }
+  if (!/^https?:$/.test(u.protocol)) return true;
+  const h = u.hostname.toLowerCase();
+  return DOMINIOS.some((d) => h === d || h.endsWith('.' + d));
+}
 const { desdeArchivo } = require('./mcParser');
 const { analizar, periodoPorDefecto, periodoAnterior } = require('./mcAnalisis');
 const { NOTAS_CREDITO, NOTAS_DEBITO } = require('./tiposCbte');
@@ -25,6 +35,9 @@ const TIMEOUT_SESION_MS = 25 * 60 * 1000;
 // mando), la sesion esta trabada: se corta con el paso donde quedo en vez de esperar los 25 min.
 const SIN_AVANCE_MS = (Number(process.env.ARCANUM_MC_SIN_AVANCE_MIN) > 0 ? Number(process.env.ARCANUM_MC_SIN_AVANCE_MIN) : 5) * 60 * 1000;
 const TRAMO_DIAS = Number(process.env.ARCANUM_MC_TRAMO_DIAS) || 365;
+// Tope del rango de una sincronizacion (B-13): cada tramo de un anio es un login con la clave
+// fiscal; desde 1990 eran 74 logins seguidos, con riesgo de captcha o bloqueo de la cuenta.
+const MAX_RANGO_DIAS = Number(process.env.ARCANUM_MC_MAX_DIAS) || 3 * 366;
 // Sincronizacion incremental: la primera trae los ultimos 12 meses completos (lo que necesitan
 // los topes de Monotributo); las siguientes arrancan en lo ultimo bajado menos un solape, porque
 // ARCA muestra algunos comprobantes dias despues de su fecha (CAEA, servicios con fecha atras).
@@ -54,7 +67,9 @@ function hoyAr(d) { return iso(new Date(d.getTime() - 3 * 3600000)); }
 function ddmmaaaa(s) { const [a, m, d] = s.split('-'); return `${d}/${m}/${a}`; }
 
 const CLASES = ['facturas', 'nc', 'nd'];
-const MAX_DIAS_ANALISIS = 5 * 366;
+// Tope del analisis (B-16): con el periodo anterior se leen hasta 4 anios de comprobantes.
+const MAX_DIAS_ANALISIS = 2 * 366;
+const MAX_FILAS_ANALISIS = 100000;
 
 /** Filtros extra del listado y del analisis (los del clic): validados, o error 400. */
 function filtrosExtra(o = {}) {
@@ -259,7 +274,7 @@ function repoSql() {
     async paraAnalisis(cuit, desde, hasta) {
       const { rows } = await db.query(
         `SELECT tipo, fecha, cbte_tipo, doc_nro, contraparte, tipo_cambio, iva, total
-           FROM mc_comprobantes WHERE cuit = $1 AND fecha >= $2 AND fecha <= $3 LIMIT 200000`, [cuit, desde, hasta]);
+           FROM mc_comprobantes WHERE cuit = $1 AND fecha >= $2 AND fecha <= $3 LIMIT 100001`, [cuit, desde, hasta]);
       return rows;
     },
     async corridas(cuit, limite = 20) {
@@ -321,6 +336,7 @@ function loginRechazado(st) {
 // --- el servicio --------------------------------------------------------------
 function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () => new Date(), sinAvanceMs = SIN_AVANCE_MS, ia = iaPorEntorno() } = {}) {
   const lanzados = new Set();
+  const cancelados = new Map(); // id de corrida -> quien la cancelo (B-13)
 
   async function receta() {
     return (await repo.receta()) || RECETA_DEFAULT;
@@ -398,6 +414,9 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       hasta = hasta || r.hasta;
     }
     tramos(desde, hasta); // valida fechas
+    if ((dia(hasta) - dia(desde)) / 86400000 + 1 > MAX_RANGO_DIAS) {
+      throw err(`El rango es demasiado largo: maximo 3 anios por sincronizacion (cada anio es un login con la clave fiscal en ARCA).`, 400);
+    }
     const cred = await repo.credencial(c);
     if (!cred || !cred.clave_cifrada) throw err('Este CUIT no tiene clave fiscal cargada en Mis Comprobantes', 400);
     if (cred.rechazada_at) {
@@ -436,7 +455,14 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       let avance = Date.now();
       let okDado = false;
       for (;;) {
+        if (cancelados.has(id)) throw err(`Cancelada por ${cancelados.get(id)}.`, 499);
         st = await fisherboy.estado(token);
+        // Segunda barrera (P-02): Fisherboy limita los dominios al navegar, pero no revalida tras
+        // una redireccion HTTP. Si el navegador, ya con la clave fiscal adentro, quedo fuera de
+        // ARCA, se corta la sesion.
+        if (st.url && !enDominiosArca(st.url)) {
+          throw err(`El navegador quedo fuera de los dominios de ARCA (${String(st.url).slice(0, 80)}): se corto la sesion.`, 502);
+        }
         if (['terminado', 'error', 'cerrado'].includes(st.estado)) break;
         const n = Array.isArray(st.log) ? st.log.length : 0;
         const pideOk = st.estado === 'esperando_ok';
@@ -530,6 +556,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       const hasta = typeof fila.hasta === 'string' ? fila.hasta : iso(new Date(fila.hasta));
       for (const tipo of tipos) {
         for (const tramo of tramos(desde, hasta)) {
+          if (cancelados.has(id)) throw err(`Cancelada por ${cancelados.get(id)}.`, 499);
           const res = await correrSesion(id, fila, cred, tipo, tramo, r, secretos, avisado);
           total += res.n;
           log = log.concat(res.log.slice(-40));
@@ -547,6 +574,19 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       }
       await webhooks.emitir('mis_comprobantes_fallo', { cuit: fila.cuit, corrida: id, error: String(e.message || e).slice(0, 300) }).catch(() => {});
     }
+  }
+
+  /**
+   * Cancela una corrida en curso (B-13): el seguimiento corta en el proximo sondeo, cierra la
+   * sesion de Fisherboy y la corrida queda en error con quien la cancelo. Lo ya bajado queda.
+   */
+  async function cancelar(id, usuario) {
+    const fila = await repo.corrida(Number(id));
+    if (!fila) throw err(`No existe la corrida ${id}`, 404);
+    if (!ESTADOS_VIVOS.includes(fila.estado) || cancelados.has(fila.id)) throw err('La corrida no esta en curso', 409);
+    cancelados.set(fila.id, usuario || 'alguien');
+    setTimeout(() => cancelados.delete(fila.id), 30 * 60 * 1000).unref?.();
+    return { ok: true };
   }
 
   /** JPEG de la pantalla del robot cuando fallo la corrida, o null. */
@@ -569,20 +609,18 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     const desde = o.desde ? iso(dia(o.desde)) : def.desde;
     const hasta = o.hasta ? iso(dia(o.hasta)) : def.hasta;
     if (desde > hasta) throw err('"desde" es posterior a "hasta"', 400);
-    if ((dia(hasta) - dia(desde)) / 86400000 > MAX_DIAS_ANALISIS) throw err('El periodo del analisis no puede pasar de 5 años', 400);
+    if ((dia(hasta) - dia(desde)) / 86400000 > MAX_DIAS_ANALISIS) throw err('El periodo del analisis no puede pasar de 2 años', 400);
     if (o.tipo && !['emitido', 'recibido'].includes(o.tipo)) throw err('Tipo invalido (emitido o recibido)', 400);
     const ant = periodoAnterior({ desde, hasta });
     const filas = await repo.paraAnalisis(c, ant.desde, hasta);
+    if (filas.length > MAX_FILAS_ANALISIS) throw err('Hay demasiados comprobantes en ese periodo para analizarlos juntos: achica el rango.', 413);
     return analizar(filas, { desde, hasta, tipo: o.tipo || undefined, ...filtrosExtra(o) });
   }
 
   async function exportarCsv(cuit, filtros) {
     const filas = await repo.listar(cuitDe(cuit), { ...filtros, ...filtrosExtra(filtros), limite: 5000 });
     const cols = ['tipo', 'fecha', 'cbte_tipo', 'punto_venta', 'numero_desde', 'numero_hasta', 'cae', 'doc_tipo', 'doc_nro', 'contraparte', 'moneda', 'tipo_cambio', 'neto_gravado', 'no_gravado', 'exento', 'iva', 'total'];
-    const esc = (v) => {
-      const s = v == null ? '' : (v instanceof Date ? iso(v) : String(v));
-      return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
+    const esc = (v) => celdaCsv(v instanceof Date ? iso(v) : v, ';'); // sin formulas (B-03)
     return [cols.join(';'), ...filas.map((f) => cols.map((k) => esc(f[k])).join(';'))].join('\n') + '\n';
   }
 
@@ -590,7 +628,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     receta, guardarReceta, restaurarReceta,
     estadoCredencial, guardarCredencial,
     borrarCredencial: async (cuit) => repo.borrarCredencial(cuitDe(cuit)),
-    sincronizar, seguir, lanzar, responderOk, rangoSugerido, captura,
+    sincronizar, seguir, lanzar, cancelar, responderOk, rangoSugerido, captura,
     /** Al arrancar: las corridas que seguian vivas perdieron su seguimiento (estaba en memoria). */
     marcarHuerfanas: async () => repo.marcarHuerfanas('Arcanum se reinicio durante la corrida: volve a sincronizar'),
     corrida: async (id) => repo.corrida(Number(id)),

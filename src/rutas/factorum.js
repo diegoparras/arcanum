@@ -121,7 +121,12 @@ function enviarBinario(res, archivo, { nombre, adjunto }) {
 
 function crearRutas({ factorum } = {}) {
   const fa = () => factorum || require('../services/factorum');
-  const limites = () => require('../services/factorum').LIMITES;
+  const limites = () => (factorum && factorum.LIMITES) || require('../services/factorum').LIMITES;
+  // Antes de leer (y decodificar) un cuerpo de hasta 80 MB, que Factorum este conectado (B-16).
+  async function exigirConfigurado() {
+    const c = await fa().config();
+    if (!c || !c.url || !c.tokenCargado) throw err('Factorum no esta configurado: carga su URL y su token en Ajustes', 503);
+  }
 
   async function comprobanteEnAlcance(principal, id) {
     if (!/^\d+$/.test(String(id))) throw err('Comprobante invalido', 400);
@@ -158,6 +163,7 @@ function crearRutas({ factorum } = {}) {
     // --- verificar una factura (no guarda nada) ---
     if (req.method === 'POST' && seg[2] === 'verificar' && !seg[3]) {
       puedeOperar(principal);
+      await exigirConfigurado();
       const b = await readJsonBody(req, { max: limites().MAX_BODY_VERIFICAR });
       const cuitConsultante = consultanteDelAlcance(principal, b.cuit_consultante);
       if (cuitConsultante) req._cuit = cuitConsultante;
@@ -180,6 +186,7 @@ function crearRutas({ factorum } = {}) {
       }
       if (req.method === 'POST') {
         puedeOperar(principal);
+        await exigirConfigurado();
         const b = await readJsonBody(req, { max: limites().MAX_BODY_LOTE });
         const clienteCuit = clienteDelAlcance(principal, b.cliente_cuit, 'cliente_cuit');
         if (clienteCuit) req._cuit = clienteCuit;
@@ -219,6 +226,14 @@ function crearRutas({ factorum } = {}) {
         if (actual.comprobante.cliente_cuit) req._cuit = actual.comprobante.cliente_cuit;
         const b = await readJsonBody(req);
         const campos = b.campos && typeof b.campos === 'object' && !Array.isArray(b.campos) ? b.campos : {};
+        // Factorum (Go) decodifica sin distinguir mayusculas: "Cliente_Cuit" moveria el comprobante
+        // sin pasar por el chequeo de alcance de abajo. Solo se acepta la forma exacta (P-04).
+        for (const k of Object.keys(campos)) {
+          if (k !== 'cliente_cuit' && k.replace(/[^a-z]/gi, '').toLowerCase() === 'clientecuit') {
+            throw err(`Campo invalido: "${k.slice(0, 40)}" (usa cliente_cuit)`, 400);
+          }
+          if (!/^[a-z0-9_]{1,40}$/.test(k)) throw err(`Campo invalido: "${k.slice(0, 40)}"`, 400);
+        }
         if (Object.prototype.hasOwnProperty.call(campos, 'cliente_cuit')) {
           // Moverlo a otro cliente tambien tiene que respetar el scope.
           assertCuitAllowed(principal, cuitDe(campos.cliente_cuit, 'cliente_cuit'));

@@ -2,6 +2,7 @@
 
 // Consulta y export de comprobantes emitidos (lo que guardamos al obtener CAE).
 
+const { celdaCsv } = require('../lib/csv');
 const db = require('../db');
 const { config } = require('../config');
 const { normalizeCuit } = require('../auth/tenants');
@@ -38,18 +39,13 @@ async function list({ cuit, desde, hasta, limit = 200, entorno = config.env } = 
   return rows;
 }
 
-function csvEscape(v) {
-  if (v === null || v === undefined) return '';
-  const s = String(v);
-  return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}
 
 async function exportCsv(filters) {
   const rows = await list({ ...filters, limit: 5000 });
   const headers = ['cuit', 'punto_venta', 'tipo_cbte', 'numero', 'cae', 'cae_vto', 'fecha', 'importe_total', 'doc_tipo', 'doc_nro', 'resultado'];
   const lines = [headers.join(';')];
   for (const r of rows) {
-    lines.push(headers.map((h) => csvEscape(r[h] instanceof Date ? r[h].toISOString().slice(0, 10) : r[h])).join(';'));
+    lines.push(headers.map((h) => celdaCsv(r[h], ';')).join(';')); // sin formulas (B-03)
   }
   return lines.join('\n');
 }

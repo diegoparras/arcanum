@@ -656,7 +656,7 @@ async function emitir(){
     $('#e_result').innerHTML=`<div class="card"><span class="tag ok">APROBADO</span>
       <table style="margin-top:10px"><tr><th>CAE</th><td class="mono">${esc(c.cae)}</td></tr>
       <tr><th>Vto CAE</th><td class="mono">${c.caeVencimiento}</td></tr>
-      <tr><th>Comprobante</th><td class="mono">${c.puntoVenta}-${c.numero}</td></tr></table>
+      <tr><th>Comprobante</th><td class="mono">${Number(c.puntoVenta)||0}-${Number(c.numero)||0}</td></tr></table>
       <a href="/api/comprobantes/${encodeURIComponent(c.cuit)}/${Number(c.puntoVenta)}/${Number(c.tipoComprobante)}/${Number(c.numero)}/pdf"><button class="primary" style="margin-top:10px">Descargar PDF con QR</button></a></div>`;
     toast('CAE obtenido'); }
   catch(e){ $('#e_result').innerHTML=`<div class="card"><span class="tag no">RECHAZADO</span><p>${esc(e.message)}</p></div>`; }
@@ -801,10 +801,14 @@ async function mcCorridas(retomar){
       <td class="mono">${Number(c.id)}</td><td>${esc(c.tipo)}</td><td class="mono">${String(c.desde).slice(0,10)} a ${String(c.hasta).slice(0,10)}</td>
       <td><span class="tag ${c.estado==='terminado'?'ok':c.estado==='error'?'no':'warn'}">${esc(MC_ESTADO[c.estado]||c.estado)}</span></td>
       <td class="mono">${c.cantidad}</td><td class="hint">${new Date(c.iniciada_at).toLocaleString('es-AR')}</td>
-      <td class="hint">${esc(c.error||mcAvance(c,true))}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${Number(c.id)})">Ver en vivo</button>`:''}${c.tiene_captura?` <button class="ghost" onclick="mcCaptura(${Number(c.id)})">Ver pantalla</button>`:''}</td></tr>`).join('')}</table>`:'<p class="hint">Todavía no se sincronizó este CUIT.</p>';
+      <td class="hint">${esc(c.error||mcAvance(c,true))}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${Number(c.id)})">Ver en vivo</button> <button class="ghost" onclick="mcCancelar(${Number(c.id)})">Cancelar</button>`:''}${c.tiene_captura?` <button class="ghost" onclick="mcCaptura(${Number(c.id)})">Ver pantalla</button>`:''}</td></tr>`).join('')}</table>`:'<p class="hint">Todavía no se sincronizó este CUIT.</p>';
     const viva=corridas.find(c=>MC_VIVOS.includes(c.estado));
     if(retomar&&viva)mcSeguir(viva.id);
   }catch(e){$('#mc_corridas').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+async function mcCancelar(id){
+  if(!await confirmar({titulo:'Cancelar la sincronización',texto:'Se cierra la sesión del navegador en ARCA. Lo que ya se bajó queda guardado.',si:'Cancelar sincronización',no:'Seguir',tono:'aviso'}))return;
+  try{await api(`/api/mis-comprobantes/corridas/${Number(id)}/cancelar`,{method:'POST'});toast('Se cancela en unos segundos');}catch(e){toast(e.message,true);}
 }
 async function mcCaptura(id){
   try{const r=await fetch(`/api/mis-comprobantes/corridas/${id}/captura`,{credentials:'include'});
@@ -1332,7 +1336,7 @@ function faVeredictoHtml(r){
   const cbtes=(r.resultado&&r.resultado.comprobantes)||[];
   const filas=cbtes.map(rc=>{const c=rc.comprobante||rc;const hs=rc.hallazgos||[];
     return `<table style="margin-top:8px">
-      <tr><th>Comprobante</th><td class="mono">${NOMBRE_TIPO[c.tipo]?esc(NOMBRE_TIPO[c.tipo]):esc(('Tipo '+(c.tipo||'?'))+(c.letra?' '+c.letra:''))} ${String(c.punto_venta||0).padStart(4,'0')}-${String(c.numero||0).padStart(8,'0')}</td></tr>
+      <tr><th>Comprobante</th><td class="mono">${NOMBRE_TIPO[c.tipo]?esc(NOMBRE_TIPO[c.tipo]):esc(('Tipo '+(c.tipo||'?'))+(c.letra?' '+c.letra:''))} ${String(Number(c.punto_venta)||0).padStart(4,'0')}-${String(Number(c.numero)||0).padStart(8,'0')}</td></tr>
       <tr><th>Fecha</th><td class="mono">${esc(c.fecha||'')}</td></tr>
       <tr><th>Emisor</th><td>${esc(c.razon_social_emisor||'')} <span class="mono hint">${esc(c.cuit_emisor||'')}</span></td></tr>
       <tr><th>Total</th><td class="mono">$${faPesos(c.total)}</td></tr>
@@ -1398,7 +1402,7 @@ async function faCargar(){
   try{const r=await api('/api/factorum/comprobantes?'+q.toString()+'&limite=200');const l=r.comprobantes||[];
     box.innerHTML=l.length?`<table><tr><th>Fecha</th><th>Comprobante</th><th>Emisor</th><th>Cliente</th><th>Total</th><th>Estado</th><th>Constatación</th><th></th></tr>${l.map(c=>{const e=FA_ESTADO[c.estado]||['',c.estado||''];const k=c.constatacion;
       const cons=!k?'<span class="hint">sin constatar</span>':k.apoc&&k.apoc.esApocrifo?'<span class="tag no">APÓCRIFO</span>':k.valido?'<span class="tag ok">OK</span>':'<span class="tag no">NO CONSTA</span>';
-      return `<tr><td class="mono">${esc(c.fecha||'')}</td><td class="mono">${esc(NOMBRE_TIPO[c.tipo]||c.tipo||'')} ${String(c.punto_venta||0).padStart(4,'0')}-${String(c.numero||0).padStart(8,'0')}${c.duplicado_de?' <span class="tag warn">duplicado</span>':''}</td>
+      return `<tr><td class="mono">${esc(c.fecha||'')}</td><td class="mono">${esc(NOMBRE_TIPO[c.tipo]||c.tipo||'')} ${String(Number(c.punto_venta)||0).padStart(4,'0')}-${String(Number(c.numero)||0).padStart(8,'0')}${c.duplicado_de?' <span class="tag warn">duplicado</span>':''}</td>
        <td>${esc(c.razon_social_emisor||'')} <span class="hint mono">${esc(c.cuit_emisor||'')}</span></td><td class="mono hint">${esc(c.cliente_cuit||'')}</td>
        <td class="mono">$${faPesos(c.total)}</td><td><span class="tag ${e[0]}">${esc(e[1])}</span></td><td>${cons}</td>
        <td><button class="ghost" onclick="faRevisar(${Number(c.id)})">Revisar</button></td></tr>`;}).join('')}</table>${r.total>l.length?`<p class="hint">Se muestran ${l.length} de ${esc(r.total)}. Afiná los filtros o descargá el Excel.</p>`:''}`:'<p class="hint">No hay comprobantes con estos filtros.</p>';

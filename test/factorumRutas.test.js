@@ -276,3 +276,14 @@ test('factorum: la clave de Arcanum para Factorum puede ser de rol lectura (POST
   assert.doesNotThrow(() => permisos.assertPuedeEscribir({ role: 'lectura' }, 'GET', '/api/padron/a5/30500010912'));
   assert.doesNotThrow(() => permisos.assertPuedeEscribir({ role: 'operador', cuitAllow: ['30711111118'] }, 'POST', '/api/constatacion'));
 });
+
+test('P-04: corregir rechaza variantes de cliente_cuit con otra capitalizacion', async () => {
+  const fa = faFalso();
+  await conServidor(OPERADOR, fa, async (base) => {
+    for (const k of ['Cliente_Cuit', 'CLIENTE_CUIT', 'clienteCuit']) {
+      const r = await pedir(base, 'PATCH', '/api/factorum/comprobantes/5', { campos: { [k]: '20333333334' } });
+      assert.strictEqual(r.status, 400, k);
+    }
+  });
+  assert.strictEqual(fa.llamadas.filter((l) => l[0] === 'corregir').length, 0);
+});

@@ -138,3 +138,16 @@ test('operador: en esperando_humano resuelve el captcha sin tomar el control (co
     assert.strictEqual((await s.pedir('/evento', OPERADOR, 'POST', { tipo: 'click', x: 10, y: 20 })).status, 200);
   } finally { s.cerrar(); }
 });
+
+test('B-02: la corrida que devuelve la API no trae el token de Fisherboy ni el log crudo', async () => {
+  const deps = dobles({ estado: 'corriendo', log: ['paso 1', 'secreto?'] });
+  const s = await servidor(deps);
+  try {
+    const r = await s.pedir('', OPERADOR, 'GET');
+    const j = await r.json();
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(j.corrida.token_fb, undefined);
+    assert.strictEqual(j.corrida.log, undefined);
+    assert.strictEqual(j.corrida.estado, 'corriendo');
+  } finally { s.cerrar(); }
+});

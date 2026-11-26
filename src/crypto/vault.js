@@ -25,6 +25,11 @@ function resolveKey() {
   try {
     return Buffer.from(fs.readFileSync(keyFile, 'utf8').trim(), 'hex');
   } catch {
+    // En produccion no se genera una nueva (B-15): quedaria en el mismo volumen que los backups y
+    // los datos cifrados. Una ya generada por una instalacion previa se sigue leyendo (arriba).
+    if (process.env.ARCANUM_ENV === 'prod' || config.isProd) {
+      throw new Error('En produccion ARCANUM_MASTER_KEY es obligatoria (64 hex: openssl rand -hex 32). Guardala fuera del servidor.');
+    }
     const buf = crypto.randomBytes(32);
     fs.mkdirSync(config.dataDir, { recursive: true });
     fs.writeFileSync(keyFile, buf.toString('hex'), { mode: 0o600 });

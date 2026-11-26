@@ -9,7 +9,7 @@
 //   GET      /api/mis-comprobantes/corridas/:id         quien pueda operar ese CUIT
 //   GET      /api/mis-comprobantes/corridas/:id/frame   vista en vivo (JPEG, 204 si no cambio)
 //   GET      /api/mis-comprobantes/corridas/:id/captura pantalla del robot al fallar (JPEG, 404 si no hay)
-//   POST     /api/mis-comprobantes/corridas/:id/{evento,tomar-control,devolver}
+//   POST     /api/mis-comprobantes/corridas/:id/{evento,tomar-control,devolver,cancelar}
 //   GET      /api/mis-comprobantes/:cuit                comprobantes bajados (cualquier rol, con scope)
 //   GET      /api/mis-comprobantes/:cuit/analisis       totales, graficos y subtotales (mismos filtros)
 //   GET      /api/mis-comprobantes/:cuit/export.csv
@@ -135,7 +135,11 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
     if (seg[2] === 'corridas' && seg[3]) {
       const c = await corridaOperable(principal, seg[3]);
       req._cuit = c.cuit;
-      if (req.method === 'GET' && !seg[4]) return json(res, 200, { ok: true, corrida: c });
+      if (req.method === 'GET' && !seg[4]) {
+        // Sin el token de la sesion de Fisherboy ni el log crudo del robot (B-02).
+        const { token_fb: _t, log: _l, ...publica } = c; // eslint-disable-line no-unused-vars
+        return json(res, 200, { ok: true, corrida: publica });
+      }
       if (req.method === 'GET' && seg[4] === 'captura' && !seg[5]) {
         const img = await servicio().captura(c.id);
         if (!img) throw err('Esta corrida no tiene pantalla guardada', 404);
@@ -189,6 +193,10 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
         const r = await fb().devolver(c.token_fb);
         estadoVivo(c.id).control = null;
         return json(res, 200, { ok: true, ...r });
+      }
+      if (req.method === 'POST' && seg[4] === 'cancelar') {
+        req._op = 'cancelar';
+        return json(res, 200, await servicio().cancelar(c.id, principal.username));
       }
       if (req.method === 'POST' && (seg[4] === 'ok' || seg[4] === 'no')) {
         await servicio().responderOk(c.id, seg[4] === 'ok');
