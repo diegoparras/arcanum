@@ -113,6 +113,12 @@ function validateDef(def) {
   if (!def.endpoints || !def.endpoints.homo || !def.endpoints.prod) throw err('Faltan endpoints homo y prod', 400);
   if (typeof def.endpoints !== 'object') throw err('endpoints invalido', 400);
   for (const u of Object.values(def.endpoints)) validarEndpoint(u);
+  // El enlace de documentacion se pinta como href en el panel: solo https (M-11).
+  const docs = def.activacion && def.activacion.docs;
+  if (docs != null && docs !== '') {
+    let u; try { u = new URL(String(docs)); } catch { u = null; }
+    if (!u || u.protocol !== 'https:') throw err('activacion.docs tiene que ser un enlace https', 400);
+  }
   if (!def.soapNamespace) throw err('Falta soapNamespace', 400);
   return def;
 }
@@ -179,6 +185,7 @@ module.exports = {
   list,
   endpoint,
   validarEndpoint,
+  validateDef,
   categorias,
   upsert,
   setEnabled,

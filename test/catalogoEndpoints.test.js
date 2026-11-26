@@ -48,3 +48,10 @@ test('el motor SOAP no usa un endpoint fuera de ARCA aunque ya este guardado en 
     await assert.rejects(engine.call('viejo_malo', 'Consultar', {}, { cuit: '20111111112' }), /ARCA/);
   } finally { catalog.get = original; }
 });
+
+test('activacion.docs solo acepta https (no javascript: ni data:)', () => {
+  const base = { id: 'x_docs', wsaaService: 'wsfe', soapNamespace: 'http://x/', endpoints: { homo: 'https://wswhomo.afip.gov.ar/a', prod: 'https://servicios1.afip.gov.ar/a' } };
+  assert.throws(() => catalog.validateDef({ ...base, activacion: { docs: 'javascript:alert(1)' } }), (e) => e.httpStatus === 400);
+  assert.throws(() => catalog.validateDef({ ...base, activacion: { docs: 'data:text/html,x' } }), (e) => e.httpStatus === 400);
+  assert.doesNotThrow(() => catalog.validateDef({ ...base, activacion: { docs: 'https://www.afip.gob.ar/ws/doc.pdf' } }));
+});

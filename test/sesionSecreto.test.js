@@ -34,9 +34,9 @@ after(() => {
 
 test('con ARCANUM_SESSION_SECRET, firma con ese valor', () => {
   const s = cargar({ ARCANUM_SESSION_SECRET: 'x'.repeat(64) });
-  const t = s.sign({ username: 'u', role: 'lectura' });
+  const t = s.sign({ username: 'u', role: 'lectura', sid: 'x1', origen: 'local' });
   assert.strictEqual(t.split('.')[1], firmaCon('x'.repeat(64), t));
-  assert.deepStrictEqual(s.verify(t), { username: 'u', role: 'lectura', cuitAllow: null });
+  assert.deepStrictEqual(s.verify(t), { username: 'u', role: 'lectura', cuitAllow: null, sid: 'x1', origen: 'local' });
 });
 
 test('con solo ARCANUM_API_KEY, la clave de API no sirve para forjar sesiones', () => {
@@ -55,17 +55,17 @@ test('con solo ARCANUM_MASTER_KEY, la master key no firma sesiones', () => {
 });
 
 test('sin secreto en el entorno, genera uno en el volumen con permisos 0600 y lo reusa al reiniciar', () => {
-  const t = cargar().sign({ username: 'u', role: 'operador' });
+  const t = cargar().sign({ username: 'u', role: 'operador', sid: 'x2', origen: 'local' });
   const archivo = path.join(dir, 'session-secret');
   assert.ok(fs.existsSync(archivo), 'no se guardo el secreto generado');
   assert.ok(fs.readFileSync(archivo, 'utf8').trim().length >= 64);
   if (process.platform !== 'win32') assert.strictEqual(fs.statSync(archivo).mode & 0o777, 0o600);
   // "Reinicio": se recarga el modulo y la sesion anterior sigue valiendo.
-  assert.deepStrictEqual(cargar().verify(t), { username: 'u', role: 'operador', cuitAllow: null });
+  assert.deepStrictEqual(cargar().verify(t), { username: 'u', role: 'operador', cuitAllow: null, sid: 'x2', origen: 'local' });
 });
 
 test('dos instalaciones sin configurar no comparten secreto', () => {
-  const t = cargar().sign({ username: 'u', role: 'superadmin' });
+  const t = cargar().sign({ username: 'u', role: 'superadmin', sid: 'x3' });
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arc-sesion-'));
   assert.strictEqual(cargar().verify(t), null);
 });

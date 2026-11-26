@@ -369,6 +369,17 @@ CREATE TABLE IF NOT EXISTS webhooks (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- 2.1.14: sesiones del panel con estado (auditoria 2026-11-26, M-06). La cookie lleva el sid.
+CREATE TABLE IF NOT EXISTS sesiones (
+  sid         TEXT PRIMARY KEY,
+  username    TEXT NOT NULL,
+  origen      TEXT NOT NULL,
+  creada      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expira      TIMESTAMPTZ NOT NULL,
+  revocada_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS sesiones_expira_idx ON sesiones (expira);
+
 -- 2.1.11: la clave de idempotencia vale por (cuit, entorno), no global (auditoria 2026-11-26,
 -- A-03). Las claves existentes ya eran unicas en todo el sistema, asi que los indices nuevos no
 -- chocan con datos viejos. Idempotente: en cada arranque los DROP no encuentran nada.

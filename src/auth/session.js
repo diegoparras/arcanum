@@ -43,7 +43,8 @@ function secret() {
 }
 
 function sign(principal) {
-  const payload = { u: principal.username, r: principal.role, c: principal.cuitAllow || null, exp: Date.now() + TTL_MS };
+  // s: identificador de la sesion en la tabla `sesiones` (auth/sesiones.js); o: origen (local u oidc).
+  const payload = { u: principal.username, r: principal.role, c: principal.cuitAllow || null, s: principal.sid || null, o: principal.origen || null, exp: Date.now() + TTL_MS };
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const mac = crypto.createHmac('sha256', secret()).update(data).digest('base64url');
   return `${data}.${mac}`;
@@ -58,7 +59,8 @@ function verify(token) {
   try {
     const p = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
     if (Date.now() > p.exp) return null;
-    return { username: p.u, role: p.r, cuitAllow: p.c || null };
+    if (!p.s) return null; // cookie de antes de 2.1.14, sin sesion registrada: no se puede revocar
+    return { username: p.u, role: p.r, cuitAllow: p.c || null, sid: p.s, origen: p.o || 'local' };
   } catch {
     return null;
   }

@@ -36,6 +36,9 @@ const emisores = require('./services/emisores');
 const importar = require('./services/importar');
 const metrics = require('./services/metrics');
 const webhooks = require('./services/webhooks');
+const sesiones = require('./auth/sesiones');
+const { chequearCsrf } = require('./lib/csrf');
+const { cabecerasComunes, CSP_PANEL, CSP_DOCS } = require('./lib/cabeceras');
 const lotes = require('./services/lotes');
 const apikeys = require('./auth/apikeys');
 const vistaPrevia = require('./services/vistaPrevia');
@@ -113,7 +116,17 @@ async function checkAuth(req, res) {
     return p;
   }
   const sess = session.fromRequest(req);
-  if (sess) return sess;
+  if (sess) {
+    // Sesion registrada y no revocada (M-06). Usuario local: rol y CUITs actuales de la base.
+    const ses = sesiones.servicio();
+    if (!(await ses.vigente(sess.sid))) throw Object.assign(new Error('La sesion se cerro o vencio: volvé a iniciar sesión.'), { httpStatus: 401 });
+    if (sess.origen === 'local') {
+      const u = await ses.usuarioLocal(sess.username);
+      if (!u) throw Object.assign(new Error('El usuario ya no existe.'), { httpStatus: 401 });
+      return { ...sess, role: u.role, cuitAllow: u.cuitAllow, via: 'sesion' };
+    }
+    return { ...sess, via: 'sesion' };
+  }
   throw Object.assign(new Error(MSG_SIN_CLAVE), { httpStatus: 401 });
 }
 
@@ -242,8 +255,9 @@ async function route(req, res, url) {
       throw Object.assign(new Error('OIDC: state invalido'), { httpStatus: 400 });
     }
     const principal = await oidc.exchangeCode(url.searchParams.get('code'), cookies.arcanum_oidc_verifier, oidcRedirect(req, url));
+    const sid = await sesiones.servicio().crear(principal, 'oidc');
     res.setHeader('Set-Cookie', [
-      session.cookieHeader(session.sign(principal)),
+      session.cookieHeader(session.sign({ ...principal, sid, origen: 'oidc' })),
       'arcanum_oidc_state=; Path=/; Max-Age=0',
       'arcanum_oidc_verifier=; Path=/; Max-Age=0',
     ]);
@@ -265,7 +279,8 @@ async function route(req, res, url) {
     try {
       const principal = await users.login(username, password);
       loginOk(key);
-      res.setHeader('Set-Cookie', session.cookieHeader(session.sign(principal)));
+      const sid = await sesiones.servicio().crear(principal, 'local');
+      res.setHeader('Set-Cookie', session.cookieHeader(session.sign({ ...principal, sid, origen: 'local' })));
       return sendJson(res, 200, { ok: true, usuario: { username: principal.username, role: principal.role } });
     } catch (e) {
       loginFailed(key);
@@ -273,6 +288,9 @@ async function route(req, res, url) {
     }
   }
   if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
+    // Revoca la sesion en el servidor: una copia de la cookie deja de valer (M-06).
+    const sess = session.fromRequest(req);
+    if (sess) await sesiones.servicio().revocar(sess.sid).catch(() => {});
     res.setHeader('Set-Cookie', session.clearCookieHeader());
     return sendJson(res, 200, { ok: true });
   }
@@ -284,6 +302,7 @@ async function route(req, res, url) {
   req._ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null;
   const principal = await checkAuth(req, res);
   req._user = principal.username;
+  chequearCsrf(req, principal); // sesion por cookie: solo desde el panel y con JSON (M-07)
   // Rol "lectura" (usuario o clave): solo GET/HEAD (mas una lista cerrada de POST que
   // no escriben, como la vista previa), en todas las rutas. Falla cerrado.
   assertPuedeEscribir(principal, req.method, url.pathname);
@@ -872,7 +891,7 @@ function serveDashboard(res) {
     const html = conVersionEnEstaticos(fs.readFileSync(p, 'utf8'), config.version);
     // El HTML lleva todo el JS/CSS inline: nunca servir una version cacheada vieja
     // (evita quedar con un bundle stale tras un update -> UI rara/lenta).
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, must-revalidate' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, must-revalidate', 'Content-Security-Policy': CSP_PANEL });
     res.end(html);
   } catch {
     sendError(res, Object.assign(new Error('UI no encontrada'), { httpStatus: 404 }));
@@ -907,9 +926,12 @@ function serveDocsPage(res) {
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     '</head><body style="margin:0">' +
     '<redoc spec-url="/openapi.yaml"></redoc>' +
-    '<script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>' +
+    // Version fija con SRI: "latest" paso a Redoc 3 (modulo ES) y dejo la pagina en blanco, y una
+    // version movil permite que el CDN cambie el script que corre en este origen.
+    '<script src="https://cdn.redoc.ly/redoc/v2.5.0/bundles/redoc.standalone.js" ' +
+    'integrity="sha384-4vOjrBu7SuDWXcAw1qFznVLA/sKL+0l4nn+J1HY8w7cpa6twQEYuh4b0Cwuo7CyX" crossorigin="anonymous"></script>' +
     '</body></html>';
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': CSP_DOCS });
   res.end(html);
 }
 
@@ -942,6 +964,7 @@ const server = http.createServer(async (req, res) => {
   let url;
   try {
     url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    cabecerasComunes(req, res); // M-08
     res.on('finish', () => logRequest(req, res, url, startedAt));
     await route(req, res, url);
   } catch (err) {

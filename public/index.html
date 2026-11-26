@@ -537,7 +537,7 @@ async function vServicios(){
         <div class="verif" style="font-size:13px;margin-top:6px"></div>
         <div class="pasos">${rel}<ol>${pasos}</ol>
           <p class="hint"><a target="_blank" href="https://serviciosweb.afip.gob.ar/clavefiscal/adminrel/main.aspx">Abrir Administrador de Relaciones</a>
-          ${s.activacion&&s.activacion.docs?` · <a target="_blank" rel="noopener" href="${esc(s.activacion.docs)}">documentación</a>`:''}</p></div></div>`;}
+          ${s.activacion&&/^https:\/\//i.test(s.activacion.docs||'')?` · <a target="_blank" rel="noopener" href="${esc(s.activacion.docs)}">documentación</a>`:''}</p></div></div>`;}
   }
   v.innerHTML=html;
 }

@@ -34,6 +34,7 @@ function baseSimulada() {
   const original = { query: db.query, tx: db.tx, withLock: db.withLock };
   db.query = async (sql, params = []) => {
     if (/INSERT INTO services/i.test(sql)) { servicios.set(params[0], params[1]); return { rows: [] }; }
+    if (/FROM sesiones/i.test(sql)) return { rows: [{}] }; // sesiones registradas (desde 2.1.14)
     if (/FROM services/i.test(sql)) {
       return { rows: [...servicios].map(([id, definition]) => ({ id, definition: JSON.parse(definition), enabled: true, origin: 'custom' })) };
     }
@@ -82,8 +83,8 @@ test('A-08: un admin que no es superadmin (ni una clave de API admin) no edita e
     req.end(cuerpo);
   });
   try {
-    const admin = `arcanum_sess=${session.sign({ username: 'adm', role: 'admin' })}`;
-    const operador = `arcanum_sess=${session.sign({ username: 'op', role: 'operador' })}`;
+    const admin = `arcanum_sess=${session.sign({ username: 'adm', role: 'admin', sid: 's-adm', origen: 'oidc' })}`;
+    const operador = `arcanum_sess=${session.sign({ username: 'op', role: 'operador', sid: 's-op', origen: 'oidc' })}`;
     assert.strictEqual(await pedir(operador), 403, 'control: un operador no edita el catalogo');
     assert.strictEqual(await pedir(admin), 403, 'el rol admin edito el catalogo, documentado como exclusivo del superadmin');
   } finally {

@@ -3,6 +3,30 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.14] - 2026-11-26
+
+### Seguridad
+- **Cerrar sesión cierra la sesión de verdad.** Antes la cookie no tenía estado: el logout solo la
+  borraba del navegador y una copia seguía valiendo 12 horas. Ahora cada sesión queda registrada
+  en el servidor (tabla `sesiones`) y el logout la revoca. Para los usuarios locales, el rol y los
+  CUITs se releen de la base: si le cambiás el rol a alguien o lo borrás, aplica en segundos.
+  **Al actualizar, todos tienen que volver a entrar una vez.** Las claves de API no cambian.
+- **CSRF:** con sesión del panel, un pedido que escribe tiene que venir del propio Arcanum
+  (`Sec-Fetch-Site` u `Origin`) y, si trae cuerpo, declararlo JSON. Un POST `text/plain` desde
+  una app hermana del mismo dominio ya no pasa. Las integraciones con clave de API no se ven
+  afectadas.
+- **Cabeceras de seguridad en todas las respuestas:** `X-Content-Type-Options`, `X-Frame-Options`
+  (el panel no se puede enmarcar), `Referrer-Policy`, `Permissions-Policy` y HSTS detrás de https.
+  El panel sale con una CSP que impide cargar scripts de otro origen y mandar datos a otro host.
+- **Catálogo:** el enlace de documentación de un servicio solo acepta `https://`.
+- **Webhooks:** la URL se guarda normalizada (`<`, `>` y comillas quedan codificados).
+
+### Corregido
+- **`/docs` estaba en blanco.** Cargaba Redoc "latest" desde su CDN, que pasó a la versión 3 (un
+  módulo ES que no corre así). Ahora usa una versión fija (2.5.0) con verificación de integridad
+  (SRI): el CDN no puede cambiar el script que corre en este origen.
+- La versión que muestra la documentación de la API estaba congelada en 0.10.6.
+
 ## [2.1.13] - 2026-11-26
 
 ### Seguridad

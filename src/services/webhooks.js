@@ -37,6 +37,7 @@ async function listar() {
 async function crear({ url, eventos, secret }) {
   if (!url || !/^https?:\/\//.test(url)) throw err('URL invalida', 400);
   assertSafeUrl(url); // anti-SSRF: rechaza localhost / IPs privadas / metadata
+  url = new URL(url).href; // se guarda la forma normalizada (codifica < > " del path): M-11
   const evs = (eventos && eventos.length ? eventos : EVENTOS).filter((e) => EVENTOS.includes(e));
   const { rows } = await db.query(
     'INSERT INTO webhooks (url, eventos, secret) VALUES ($1, $2, $3) RETURNING id, url, eventos, activo',
