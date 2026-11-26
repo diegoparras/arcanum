@@ -193,10 +193,16 @@ function validarIdentificacionConsumidorFinal(inv, tipoCbte) {
  * y persiste el resultado en la tabla comprobantes.
  * Si no se pasa `numero`, lo calcula como ultimo autorizado + 1.
  */
-/** Comprobante ya emitido con esta clave de idempotencia, o null. */
-async function previoIdempotente(idem) {
+/**
+ * Comprobante ya emitido por ESTE CUIT, en este entorno, con esta clave de idempotencia, o null.
+ * La clave vale por (cuit, entorno): la de otro CUIT es como si no existiera (auditoria
+ * 2026-11-26, A-03: antes era global y devolvia el comprobante de otro cliente).
+ */
+async function previoIdempotente(cuit, idem) {
   if (!idem) return null;
-  const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
+  const prev = await db.query(
+    'SELECT raw FROM comprobantes WHERE cuit = $1 AND entorno = $2 AND idempotency_key = $3',
+    [normalizeCuit(cuit), config.env, idem]);
   return prev.rows.length ? { ...prev.rows[0].raw, idempotente: true } : null;
 }
 
@@ -205,7 +211,7 @@ async function authorizeInvoice(cuit, inv) {
   const idem = inv.idempotencyKey || null;
 
   // Idempotencia: si ya emitimos con esta clave, devolvemos el resultado guardado.
-  const previo = await previoIdempotente(idem);
+  const previo = await previoIdempotente(c, idem);
   if (previo) return previo;
 
   validarImportes(inv);
@@ -290,7 +296,7 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
   // Re-chequeo de idempotencia YA DENTRO del lock: si un reintento llego mientras el
   // primer pedido seguia hablando con ARCA, espero al lock y devuelvo ese comprobante
   // en vez de emitir otro con el numero siguiente.
-  const previo = await previoIdempotente(idem);
+  const previo = await previoIdempotente(cuit, idem);
   if (previo) return previo;
 
   // Intento anterior con esta clave cuya respuesta no llego (timeout, corte, reinicio): se
@@ -298,10 +304,10 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
   const vuelos = require('./vuelo');
   const vrepo = vuelos.repoSql(db);
   if (idem) {
-    const r = await vuelos.resolver(await vrepo.obtener(idem), { consultar });
+    const r = await vuelos.resolver(await vrepo.obtener(cuit, idem), { consultar });
     if (r.estado === 'adoptar') {
       const raw = await registrarAdoptado(cuit, r.consultado, inv, idem);
-      await vrepo.borrar(idem);
+      await vrepo.borrar(cuit, idem);
       webhooks.emitir('comprobante_emitido', raw).catch(() => {});
       return { ...raw, idempotente: true };
     }
@@ -336,7 +342,7 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
     throw e; // el vuelo queda anotado: el proximo intento lo resuelve
   }
   // ARCA contesto (aprobado o rechazado): ya no hay duda sobre este intento.
-  if (idem) await vrepo.borrar(idem).catch(() => {});
+  if (idem) await vrepo.borrar(cuit, idem).catch(() => {});
 
   const topErrors = collectErrors(result);
   const det = result?.FeDetResp?.FECAEDetResponse;
@@ -603,9 +609,9 @@ function parseLoteCsv(text) {
 }
 
 /** ¿Hay una emision en vuelo sin resolver para esta clave? (la cola no usa CAEA si la hay) */
-async function hayVuelo(idem) {
+async function hayVuelo(cuit, idem) {
   if (!idem) return false;
-  return !!(await require('./vuelo').repoSql(db).obtener(idem));
+  return !!(await require('./vuelo').repoSql(db).obtener(cuit, idem));
 }
 
 module.exports = {

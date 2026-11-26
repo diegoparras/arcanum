@@ -14,3 +14,6 @@ AUDIT-*.md
 !data/cache/.gitkeep
 .superpowers/
 muestras/
+data/session-secret
+data/api-key-generada
+data/admin-clave-inicial

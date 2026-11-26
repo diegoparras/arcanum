@@ -3,6 +3,28 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.11] - 2026-11-26
+
+### Seguridad
+- **El secreto de las sesiones del panel ya no sale de otras claves.** Antes, sin
+  `ARCANUM_SESSION_SECRET`, las cookies se firmaban con la master key, con la clave de API o, sin
+  ninguna de las dos, con un texto fijo que está en el código público: con eso cualquiera podía
+  armarse una sesión de superadmin. Ahora se usa `ARCANUM_SESSION_SECRET`; si falta, Arcanum genera
+  uno aleatorio y lo guarda en el volumen (`/data/session-secret`, permisos 0600), así sobrevive a
+  los reinicios. Al actualizar, quien tenga el panel abierto tiene que volver a entrar.
+  Las integraciones que usan clave de API no se enteran: no usan la cookie.
+- **La clave de idempotencia vale por CUIT y entorno.** Antes era global: quien pudiera emitir o
+  pedir la vista previa para un CUIT recibía el comprobante de otro CUIT si mandaba su misma clave.
+  Ahora la clave de otro CUIT es como si no existiera, en la emisión (WSFEv1, WSFEX, WSMTXCA), la
+  vista previa, la cola de contingencia y las emisiones en vuelo. Migración automática al arrancar:
+  los índices únicos pasan a (cuit, entorno, clave); los datos existentes no cambian.
+
+### Cambiado
+- **Confirmaciones con el diálogo de Arcanum** en lugar del cuadro del navegador: guardar la master
+  key, borrar la clave fiscal, restaurar la receta, cancelar o reemitir en contingencia, emitir un
+  lote, dar de baja una clave de API y cambiar el entorno. Cada uno dice qué pasa si seguís, las
+  acciones que borran van en rojo con el foco en Cancelar, y Escape o un clic afuera cancelan.
+
 ## [2.1.10] - 2026-11-26
 
 ### Agregado

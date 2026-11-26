@@ -197,8 +197,8 @@ async function authorize(cuit, inv) {
   const c = normalizeCuit(cuit);
   const idem = inv.idempotencyKey || null;
   if (idem) {
-    const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
-    if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
+    const prev = await require('./wsfev1').previoIdempotente(c, idem);
+    if (prev) return prev;
   }
   // Nombre y domicilio del receptor con CUIT para el PDF, del padron si no vinieron (best-effort).
   inv = { ...inv, ...(await require('./datosImpresion').completarReceptor(c, inv)) };
@@ -212,8 +212,8 @@ async function authorize(cuit, inv) {
   return withTokenRetry(c, SERVICE, config.env, () => db.withLock(`emit:wsmtxca:${c}:${config.env}:${ptoVta}:${tipoCbte}`, async () => {
     // Re-chequeo de idempotencia dentro del lock (reintento concurrente -> mismo comprobante).
     if (idem) {
-      const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
-      if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
+      const prev = await require('./wsfev1').previoIdempotente(c, idem);
+      if (prev) return prev;
     }
     const numero = inv.numero ? parseInt(inv.numero, 10) : (await lastAuthorized(c, ptoVta, tipoCbte)).ultimoNumero + 1;
     const fechaEmision = inv.fecha ? isoDate(inv.fecha) : todayIso();

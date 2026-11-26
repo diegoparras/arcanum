@@ -152,7 +152,7 @@ Arcanum también te puede avisar a vos: configurás **webhooks** (firmados con H
 | `GET  /api/metrics` · `/metrics` | Métricas (JSON y Prometheus) |
 | `GET /docs` | OpenAPI interactivo |
 
-Toda la API se autentica con `X-API-Key`, con `Authorization: Bearer <clave>` o con la sesión del panel. Las emisiones aceptan el encabezado `Idempotency-Key` (o `idempotencyKey` en el cuerpo): un reintento devuelve el comprobante ya emitido, sin pedir otro CAE.
+Toda la API se autentica con `X-API-Key`, con `Authorization: Bearer <clave>` o con la sesión del panel. Las emisiones aceptan el encabezado `Idempotency-Key` (o `idempotencyKey` en el cuerpo): un reintento devuelve el comprobante ya emitido, sin pedir otro CAE. La clave vale por CUIT y entorno: la misma clave en otro CUIT no devuelve nada de ese CUIT.
 
 ---
 

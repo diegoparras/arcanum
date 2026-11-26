@@ -165,6 +165,20 @@
   pre{background:#1c1a17;color:#f0ebe1;padding:12px;border-radius:10px;overflow:auto;font-family:var(--mono);font-size:11.5px}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;place-items:center;z-index:20;padding:20px}
   .modal.open{display:grid}.modal .card{position:relative;max-width:620px;width:100%;max-height:85vh;overflow:auto}
+  /* Confirmacion: modal-card del canonico, apilada arriba de .modal. Tono por data-tono. */
+  .conf-back{z-index:140}.conf-back[hidden]{display:none}
+  .conf-card{width:min(420px,94vw);padding:24px 24px 20px}
+  .conf-ico{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;margin-bottom:14px;
+    background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent-ink)}
+  .conf-ico svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .conf-card[data-tono="peligro"] .conf-ico{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
+  .conf-card[data-tono="aviso"] .conf-ico{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+  .conf-card .modal-tit{text-transform:none;letter-spacing:-.01em;color:var(--ink);padding-right:0}
+  .conf-card .modal-cuerpo{color:var(--muted)}
+  .conf-card .modal-acciones{margin-top:22px}
+  .conf-card[data-tono="peligro"] #conf_si{background:var(--err);border-color:var(--err);color:#fff}
+  .conf-card[data-tono="peligro"] #conf_si:hover{filter:brightness(.92)}
+  @media (max-width:480px){.conf-card .modal-acciones{flex-direction:column-reverse}.conf-card .modal-acciones button{width:100%}}
   .nov-ver{margin:14px 0 4px;display:flex;align-items:baseline;gap:10px}
   .nov-ver b{font-family:var(--mono);font-size:14px}.nov-ver span{color:var(--muted);font-size:12.5px}
   .nov-sec{margin:8px 0 2px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
@@ -219,6 +233,15 @@
 </div>
 
 <div class="modal" id="modal"><div class="card" id="modalBody"></div></div>
+<!-- Confirmacion propia (reemplaza a confirm() del navegador): se apila sobre cualquier modal abierto. -->
+<div class="modal-back conf-back" id="conf" hidden>
+  <div class="modal-card conf-card" role="alertdialog" aria-modal="true" aria-labelledby="conf_t" aria-describedby="conf_c">
+    <div class="conf-ico" id="conf_ico" aria-hidden="true"></div>
+    <h3 class="modal-tit" id="conf_t"></h3>
+    <div class="modal-cuerpo" id="conf_c"></div>
+    <div class="modal-acciones"><button type="button" id="conf_no">Cancelar</button><button type="button" class="primary" id="conf_si">Aceptar</button></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -236,6 +259,28 @@ function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast sho
 function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.add('open');}
 function closeModal(){$('#modal').classList.remove('open');}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
+/* confirmar({titulo, texto, si, no, tono}) -> Promise<boolean>. tono: 'info' | 'aviso' | 'peligro'.
+   Esc, clic afuera o Cancelar = false. En 'peligro' el foco arranca en Cancelar. texto se escapa. */
+const CONF_ICO={
+  info:'<svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+  aviso:'<svg viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17.5v.01"/></svg>',
+  peligro:'<svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>'};
+function confirmar({titulo,texto='',si='Aceptar',no='Cancelar',tono='info'}={}){
+  return new Promise(resolve=>{
+    const back=$('#conf'),card=back.firstElementChild,bSi=$('#conf_si'),bNo=$('#conf_no'),previo=document.activeElement;
+    card.dataset.tono=tono;$('#conf_ico').innerHTML=CONF_ICO[tono]||CONF_ICO.info;
+    $('#conf_t').textContent=titulo;$('#conf_c').innerHTML=String(texto).split('\n').map(p=>`<p>${esc(p)}</p>`).join('');
+    bSi.textContent=si;bNo.textContent=no;back.hidden=false;
+    const fin=v=>{back.hidden=true;removeEventListener('keydown',tecla,true);bSi.onclick=bNo.onclick=back.onclick=null;if(previo&&previo.focus)previo.focus();resolve(v);};
+    function tecla(e){
+      if(e.key==='Escape'){e.preventDefault();e.stopPropagation();fin(false);}
+      else if(e.key==='Tab'){e.preventDefault();(document.activeElement===bSi?bNo:bSi).focus();}
+    }
+    addEventListener('keydown',tecla,true);
+    bSi.onclick=()=>fin(true);bNo.onclick=()=>fin(false);back.onclick=e=>{if(e.target===back)fin(false);};
+    (tono==='peligro'?bNo:bSi).focus();
+  });
+}
 
 function showLogin(){$('#loginView').classList.remove('hidden');$('#appView').classList.add('hidden');
   fetch('/api/auth/config').then(r=>r.json()).then(c=>{
@@ -730,7 +775,7 @@ async function mcGuardarClave(){
   catch(e){toast(e.message,true);}
 }
 async function mcBorrarClave(){
-  if(!confirm('¿Borrar la clave fiscal de este CUIT? La sincronización diaria deja de andar.'))return;
+  if(!await confirmar({titulo:'Borrar la clave fiscal',texto:'La sincronización diaria de Mis Comprobantes de este CUIT deja de andar hasta que la cargues de nuevo.',si:'Borrar clave',tono:'peligro'}))return;
   try{await api(`/api/mis-comprobantes/${MC.cuit}/credencial`,{method:'DELETE'});toast('Clave borrada');mcCredencial(true);}catch(e){toast(e.message,true);}
 }
 async function mcSincronizar(){
@@ -1162,7 +1207,7 @@ async function verBackups(){
    <p class="hint">Restaurar: <span class="mono">docker compose exec arcanum node src/tools/restaurar-backup.js /data/backups/ARCHIVO</span> (simulacro) y después con <span class="mono">--confirmar</span>.</p>`);
 }
 async function confirmarMasterKey(){
-  if(!confirm('¿Confirmás que guardaste la master key fuera de este servidor (gestor de contraseñas, papel en lugar seguro)?'))return;
+  if(!await confirmar({titulo:'¿Guardaste la master key?',texto:'Sin ella no se pueden abrir los certificados ni los backups. Confirmá solo si ya tenés una copia fuera de este servidor: en tu gestor de contraseñas o en papel, en un lugar seguro.',si:'Sí, la guardé',no:'Todavía no',tono:'aviso'}))return;
   try{await api('/api/sistema/master-key',{method:'POST',body:JSON.stringify({confirmo:true})});toast('Listo');verBackups();if(location.hash==='#panel')go('panel');}catch(e){toast(e.message,true);}
 }
 async function crearBackup(){
@@ -1205,7 +1250,7 @@ async function ajGuardarFb(){const b={url:$('#aj_fburl').value.trim()};const t=$
 // Tras cambiar la conexion con Fisherboy, el panel lateral muestra u oculta Mis Comprobantes.
 async function refrescarFunciones(){try{const me=await api('/api/auth/me');FUNC=me.funciones||{};renderNav((location.hash||'#panel').slice(1));}catch{}}
 async function ajGuardarReceta(){try{const r=JSON.parse($('#aj_receta').value);await api('/api/mis-comprobantes/receta',{method:'PUT',body:JSON.stringify(r)});toast('Receta guardada');}catch(e){toast(e.message||'JSON inválido',true);}}
-async function ajRestaurarReceta(){if(!confirm('¿Volver a la receta de fábrica?'))return;try{const {receta}=await api('/api/mis-comprobantes/receta',{method:'DELETE'});$('#aj_receta').value=JSON.stringify(receta,null,2);toast('Receta restaurada');}catch(e){toast(e.message,true);}}
+async function ajRestaurarReceta(){if(!await confirmar({titulo:'Restaurar la receta de fábrica',texto:'Se reemplaza la receta actual por la que trae Arcanum. Los cambios que le hayas hecho se pierden.',si:'Restaurar',tono:'aviso'}))return;try{const {receta}=await api('/api/mis-comprobantes/receta',{method:'DELETE'});$('#aj_receta').value=JSON.stringify(receta,null,2);toast('Receta restaurada');}catch(e){toast(e.message,true);}}
 async function ajGuardarCats(){try{const c=JSON.parse($('#aj_cats').value);await api('/api/monotributo/categorias',{method:'PUT',body:JSON.stringify(c)});toast('Topes guardados');}catch(e){toast(e.message||'JSON inválido',true);}}
 
 /* ---------- FACTURAS RECIBIDAS (via Factorum) ---------- */
@@ -1430,8 +1475,8 @@ async function clCargar(){
   }catch(e){$('#cl_tabla').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
 async function clAccion(id,a){
-  if(a==='cancelar'&&!confirm('¿Cancelar este comprobante? No se va a emitir.'))return;
-  if(a==='hoy'&&!confirm('ARCA ya no acepta la fecha original. ¿Emitirlo con la fecha de hoy?'))return;
+  if(a==='cancelar'&&!await confirmar({titulo:'Cancelar este comprobante',texto:'Sale de la cola de contingencia y no se va a emitir.',si:'Cancelar comprobante',no:'Volver',tono:'peligro'}))return;
+  if(a==='hoy'&&!await confirmar({titulo:'Emitir con la fecha de hoy',texto:'ARCA ya no acepta la fecha original de este comprobante. Si seguís, se emite con la fecha de hoy.',si:'Emitir hoy',tono:'aviso'}))return;
   try{const r=await api(`/api/cola/${id}/${a==='cancelar'?'cancelar':'reintentar'}`,{method:'POST',body:JSON.stringify(a==='hoy'?{fechaHoy:true}:{})});
     toast(r.item.estado==='emitido'?'Emitido':r.item.estado==='cancelado'?'Cancelado':'Sigue en la cola: '+(r.item.ultimo_error||r.item.estado));clCargar();}
   catch(e){toast(e.message,true);}
@@ -1600,7 +1645,7 @@ async function itemAccion(loteId,itemId,accion){
   try{await api(`/api/lotes/${loteId}/items/${itemId}/${accion}`,{method:'POST',body:'{}'});
     toast(accion==='emitir'?'Comprobante emitido':accion==='solicitar'?'Solicitud enviada':'OK');verLote(loteId);}catch(e){toast(e.message,true);}
 }
-async function emitirTodo(id){if(!confirm('¿Emitir el CAE de todos los pendientes de este lote?'))return;
+async function emitirTodo(id){if(!await confirmar({titulo:'Emitir el lote',texto:'Se pide el CAE a ARCA de todos los comprobantes pendientes de este lote.',si:'Emitir todo'}))return;
   try{const r=await api('/api/lotes/'+id+'/emitir',{method:'POST',body:'{}'});toast(`Emitidos ${r.emitidos}/${r.total}`);verLote(id);}catch(e){toast(e.message,true);}
 }
 
@@ -1685,7 +1730,7 @@ async function usoClave(id){
   }catch(e){toast(e.message,true);}
 }
 async function bajaClave(id,nombre){
-  if(!confirm(`¿Dar de baja la clave "${nombre}"? Deja de funcionar al instante y no se puede reactivar.`))return;
+  if(!await confirmar({titulo:'Dar de baja la clave',texto:`La clave "${nombre}" deja de funcionar al instante y no se puede reactivar. Lo que la use va a recibir 401.`,si:'Dar de baja',tono:'peligro'}))return;
   try{await api('/api/claves/'+id,{method:'DELETE'});toast('Clave dada de baja');cargarClaves();}catch(e){toast(e.message,true);}
 }
 async function addUser(){try{await api('/api/usuarios',{method:'POST',body:JSON.stringify({username:$('#u_user').value,password:$('#u_pass').value,role:$('#u_role').value})});toast('Usuario creado');vUsuarios();}catch(e){toast(e.message,true);}}
@@ -1852,7 +1897,7 @@ async function acercaDe(){
    <p class="about-foot">Diego Parras · Ecosistema Escriba</p>`);
 }
 async function cambiarEntorno(v){
-  if(!confirm('¿Cambiar el entorno de ARCA a '+v.toUpperCase()+'? Afecta a toda la instancia.')){renderMenu();return;}
+  if(!await confirmar({titulo:'Cambiar el entorno de ARCA a '+v.toUpperCase(),texto:v==='prod'?'Afecta a toda la instancia: desde ahora se emiten comprobantes reales.':'Afecta a toda la instancia: desde ahora todo va al entorno de homologación.',si:'Cambiar a '+v.toUpperCase(),tono:'aviso'})){renderMenu();return;}
   try{ await api('/api/config/entorno',{method:'POST',body:JSON.stringify({entorno:v})}); toast('Entorno: '+v.toUpperCase()); location.reload(); }
   catch(e){ toast(e.message,true); renderMenu(); }
 }

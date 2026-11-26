@@ -110,8 +110,10 @@ CREATE TABLE IF NOT EXISTS comprobantes (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (cuit, entorno, punto_venta, tipo_cbte, numero)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS comprobantes_idem_idx
-  ON comprobantes (idempotency_key) WHERE idempotency_key IS NOT NULL;
+-- La clave de idempotencia vale por (cuit, entorno) (auditoria 2026-11-26, A-03). El indice
+-- global viejo (comprobantes_idem_idx) se borra en la migracion del final.
+CREATE UNIQUE INDEX IF NOT EXISTS comprobantes_idem_cuit_idx
+  ON comprobantes (cuit, entorno, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS service_status (
   id          BIGSERIAL PRIMARY KEY,
@@ -292,7 +294,7 @@ CREATE INDEX IF NOT EXISTS mc_comprobantes_fecha_idx ON mc_comprobantes (cuit, t
 
 -- Emisiones en vuelo (0.10): pedido mandado a ARCA cuya respuesta todavia no se conoce.
 CREATE TABLE IF NOT EXISTS emisiones_en_vuelo (
-  idempotency_key TEXT PRIMARY KEY,
+  idempotency_key TEXT NOT NULL,
   cuit            TEXT NOT NULL,
   entorno         TEXT NOT NULL,
   punto_venta     INTEGER NOT NULL,
@@ -309,7 +311,7 @@ CREATE TABLE IF NOT EXISTS emision_cola (
   id                 SERIAL PRIMARY KEY,
   cuit               TEXT NOT NULL,
   entorno            TEXT NOT NULL,
-  idempotency_key    TEXT NOT NULL UNIQUE,
+  idempotency_key    TEXT NOT NULL,
   cuerpo             JSONB NOT NULL,
   fecha              DATE,
   concepto           INTEGER,
@@ -366,6 +368,15 @@ CREATE TABLE IF NOT EXISTS webhooks (
   activo      BOOLEAN NOT NULL DEFAULT true,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 2.1.11: la clave de idempotencia vale por (cuit, entorno), no global (auditoria 2026-11-26,
+-- A-03). Las claves existentes ya eran unicas en todo el sistema, asi que los indices nuevos no
+-- chocan con datos viejos. Idempotente: en cada arranque los DROP no encuentran nada.
+DROP INDEX IF EXISTS comprobantes_idem_idx;
+ALTER TABLE emision_cola DROP CONSTRAINT IF EXISTS emision_cola_idempotency_key_key;
+CREATE UNIQUE INDEX IF NOT EXISTS emision_cola_idem_cuit_idx ON emision_cola (cuit, entorno, idempotency_key);
+ALTER TABLE emisiones_en_vuelo DROP CONSTRAINT IF EXISTS emisiones_en_vuelo_pkey;
+CREATE UNIQUE INDEX IF NOT EXISTS emisiones_en_vuelo_idem_cuit_idx ON emisiones_en_vuelo (cuit, entorno, idempotency_key);
 `;
 
 async function migrate() {

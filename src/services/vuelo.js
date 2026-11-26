@@ -43,22 +43,25 @@ async function resolver(v, { consultar }) {
   return coincide(v, c) ? { estado: 'adoptar', consultado: c } : { estado: 'libre' };
 }
 
+// Las claves valen por (cuit, entorno), igual que en comprobantes y en la cola (auditoria 2026-11-26, A-03).
 function repoSql(db = require('../db')) {
+  const entorno = () => require('../config').config.env;
   return {
-    async obtener(idem) {
-      const { rows } = await db.query('SELECT * FROM emisiones_en_vuelo WHERE idempotency_key = $1', [idem]);
+    async obtener(cuit, idem) {
+      const { rows } = await db.query(
+        'SELECT * FROM emisiones_en_vuelo WHERE cuit = $1 AND entorno = $2 AND idempotency_key = $3', [cuit, entorno(), idem]);
       return rows[0] || null;
     },
     async anotar(idem, d) {
       await db.query(
         `INSERT INTO emisiones_en_vuelo (idempotency_key, cuit, entorno, punto_venta, tipo_cbte, numero, importe_total, doc_nro, fecha)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (idempotency_key) DO UPDATE SET numero = EXCLUDED.numero, importe_total = EXCLUDED.importe_total,
+         ON CONFLICT (cuit, entorno, idempotency_key) DO UPDATE SET numero = EXCLUDED.numero, importe_total = EXCLUDED.importe_total,
            doc_nro = EXCLUDED.doc_nro, fecha = EXCLUDED.fecha, punto_venta = EXCLUDED.punto_venta, tipo_cbte = EXCLUDED.tipo_cbte, creado_at = now()`,
         [idem, d.cuit, d.entorno, d.puntoVenta, d.tipoCbte, d.numero, d.importeTotal, d.docNro, d.fecha]);
     },
-    async borrar(idem) {
-      await db.query('DELETE FROM emisiones_en_vuelo WHERE idempotency_key = $1', [idem]);
+    async borrar(cuit, idem) {
+      await db.query('DELETE FROM emisiones_en_vuelo WHERE cuit = $1 AND entorno = $2 AND idempotency_key = $3', [cuit, entorno(), idem]);
     },
   };
 }

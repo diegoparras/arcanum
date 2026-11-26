@@ -105,7 +105,7 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
         // 3. ARCA sigue sin responder: CAEA, si el CUIT lo prendio y ya se espero lo suficiente.
         //    NUNCA si hubo un intento ambiguo con CAE (o una emision en vuelo sin resolver): ese
         //    CAE pudo haberse otorgado y saldrian dos comprobantes para la misma venta.
-        const enVuelo = wsfev1.hayVuelo ? await wsfev1.hayVuelo(item.idempotency_key).catch(() => true) : false;
+        const enVuelo = wsfev1.hayVuelo ? await wsfev1.hayVuelo(cuit, item.idempotency_key).catch(() => true) : false;
         const ambiguo = !!(e.numeroIntentado || item.numero_intentado || enVuelo);
         if (caea && !ambiguo && (await caea.corresponde(item, ahora()))) {
           const out = await caea.emitirConCaea(cuit, item);
@@ -162,7 +162,7 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
   return {
     encolar, procesar, procesarPendientes, reintentar, cancelar,
     obtener: (id) => repo.obtener(id),
-    porClave: (k) => (repo.porClave ? repo.porClave(k) : null),
+    porClave: (cuit, k) => (repo.porClave ? repo.porClave(cuit, k) : null),
     listar: (f) => repo.listar(f || {}),
     reencolarProcesando: () => repo.reencolarProcesando(),
   };
@@ -178,7 +178,7 @@ function repoSql() {
       const { rows } = await db.query(
         `INSERT INTO emision_cola (cuit, entorno, idempotency_key, cuerpo, fecha, concepto, estado, numero_intentado, proximo_intento_at, creado_por, origen)
          VALUES ($1,$2,$3,$4,to_date($5,'YYYYMMDD'),$6,'pendiente',$7,$8,$9,$10)
-         ON CONFLICT (idempotency_key) DO UPDATE SET
+         ON CONFLICT (cuit, entorno, idempotency_key) DO UPDATE SET
            numero_intentado = COALESCE(EXCLUDED.numero_intentado, emision_cola.numero_intentado)
          RETURNING *, (xmax = 0) AS insertado`,
         [it.cuit, config.env, it.idempotency_key, json(it.cuerpo), it.fecha, it.concepto, it.numero_intentado, it.proximo_intento_at, it.creado_por, it.origen]);
@@ -194,8 +194,9 @@ function repoSql() {
         `UPDATE emision_cola SET ${set} WHERE id = $1 AND estado IN ('pendiente', 'requiere_humano') RETURNING *`, [id, ...vals]);
       return rows[0] || null;
     },
-    async porClave(k) {
-      const { rows } = await db.query('SELECT * FROM emision_cola WHERE idempotency_key = $1', [k]);
+    async porClave(cuit, k) {
+      const { rows } = await db.query(
+        'SELECT * FROM emision_cola WHERE cuit = $1 AND entorno = $2 AND idempotency_key = $3', [cuit, config.env, k]);
       return rows[0] || null;
     },
     async obtener(id) {

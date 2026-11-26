@@ -174,8 +174,8 @@ async function authorize(cuit, inv) {
   const c = normalizeCuit(cuit);
   const idem = inv.idempotencyKey || null;
   if (idem) {
-    const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
-    if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
+    const prev = await require('./wsfev1').previoIdempotente(c, idem);
+    if (prev) return prev;
   }
   if (inv.pdf) require('./pdf').preferencias(inv.pdf); // validar ANTES de pedir el CAE
   if (!inv.cliente) throw new SoapError('Falta `cliente` (razon social del cliente del exterior)', 422);
@@ -187,8 +187,8 @@ async function authorize(cuit, inv) {
   return withTokenRetry(c, SERVICE, config.env, () => db.withLock(`emit:wsfex:${c}:${config.env}:${ptoVta}`, async () => {
     // Re-chequeo de idempotencia dentro del lock (reintento concurrente -> mismo comprobante).
     if (idem) {
-      const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
-      if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
+      const prev = await require('./wsfev1').previoIdempotente(c, idem);
+      if (prev) return prev;
     }
     const numero = inv.numero ? parseInt(inv.numero, 10) : (await lastAuthorized(c, ptoVta)).ultimoNumero + 1;
     const id = inv.id ? parseInt(inv.id, 10) : (await lastId(c)) + 1;

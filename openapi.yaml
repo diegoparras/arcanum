@@ -42,7 +42,7 @@ components:
       in: header
       required: false
       schema: { type: string }
-      description: Un reintento con la misma clave devuelve el comprobante ya emitido (no pide otro CAE). Equivale a idempotencyKey en el cuerpo.
+      description: Un reintento con la misma clave devuelve el comprobante ya emitido (no pide otro CAE). Equivale a idempotencyKey en el cuerpo. La clave vale por CUIT y entorno - la misma clave en otro CUIT es otra emision.
   schemas:
     AlicuotaIva:
       type: object

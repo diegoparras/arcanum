@@ -93,7 +93,8 @@ test('operador solo ve y opera sus CUIT', async () => {
 
 test('reintento del cliente con la misma clave: devuelve el estado real de la cola, no emite', async () => {
   const cola = colaFalsa();
-  cola.porClave = async (k) => (k === 'K1' ? { id: 5, estado: 'pendiente', idempotency_key: 'K1' } : k === 'K2' ? { id: 6, estado: 'emitido', resultado: { aprobado: true, cae: '9' } } : k === 'K3' ? { id: 7, estado: 'cancelado' } : null);
+  // La cola se consulta por (cuit, clave): con otro CUIT la misma clave no existe (A-03).
+  cola.porClave = async (cuit, k) => (cuit !== '20263630743' ? null : k === 'K1' ? { id: 5, estado: 'pendiente', idempotency_key: 'K1' } : k === 'K2' ? { id: 6, estado: 'emitido', resultado: { aprobado: true, cae: '9' } } : k === 'K3' ? { id: 7, estado: 'cancelado' } : null);
   let emitidos = 0;
   const wsfev1 = { authorizeInvoice: async () => { emitidos += 1; return { aprobado: true }; } };
   const r1 = await emitirOEncolar('20263630743', { idempotencyKey: 'K1' }, { contingencia: true }, { wsfev1, cola });
@@ -104,4 +105,8 @@ test('reintento del cliente con la misma clave: devuelve el estado real de la co
   assert.strictEqual(r2.body.comprobante.cae, '9');
   await assert.rejects(emitirOEncolar('20263630743', { idempotencyKey: 'K3' }, { contingencia: true }, { wsfev1, cola }), (e) => e.httpStatus === 409);
   assert.strictEqual(emitidos, 0);
+  // Otro CUIT con la clave K2 no recibe el comprobante de la cola ajena: se emite como nuevo.
+  const r4 = await emitirOEncolar('20111111112', { idempotencyKey: 'K2' }, { contingencia: true }, { wsfev1, cola });
+  assert.strictEqual(r4.body.desdeCola, undefined);
+  assert.strictEqual(emitidos, 1);
 });

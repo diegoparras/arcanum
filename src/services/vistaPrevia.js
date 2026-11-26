@@ -165,7 +165,7 @@ function revisarComprobante(inv = {}, o = {}) {
  */
 async function vistaPrevia(cuit, inv) {
   const emisor = normalizeCuit(cuit);
-  const previo = await wsfev1.previoIdempotente(inv.idempotencyKey || null);
+  const previo = await wsfev1.previoIdempotente(emisor, inv.idempotencyKey || null);
   if (previo) {
     return {
       valido: false,
