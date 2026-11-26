@@ -6,7 +6,8 @@ info:
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
   license:
-    name: Apache-2.0
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 servers:
   - url: http://localhost:8094
     description: Instancia local

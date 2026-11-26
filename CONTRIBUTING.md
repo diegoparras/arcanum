@@ -1,6 +1,6 @@
 # Contribuir a Arcanum
 
-Gracias por querer aportar. Arcanum es parte de la suite **Escriba** (Apache-2.0).
+Gracias por querer aportar. Arcanum es parte de la suite **Escriba** y se publica con licencia MIT. Al enviar un aporte aceptás que se distribuya bajo esa licencia.
 
 ## Desarrollo
 

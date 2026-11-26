@@ -8,6 +8,7 @@
 //   PUT/DEL  /api/mis-comprobantes/receta               superadmin (DELETE = restaurar)
 //   GET      /api/mis-comprobantes/corridas/:id         quien pueda operar ese CUIT
 //   GET      /api/mis-comprobantes/corridas/:id/frame   vista en vivo (JPEG, 204 si no cambio)
+//   GET      /api/mis-comprobantes/corridas/:id/captura pantalla del robot al fallar (JPEG, 404 si no hay)
 //   POST     /api/mis-comprobantes/corridas/:id/{evento,tomar-control,devolver}
 //   GET      /api/mis-comprobantes/:cuit                comprobantes bajados (cualquier rol, con scope)
 //   GET      /api/mis-comprobantes/:cuit/export.csv
@@ -110,6 +111,13 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
     if (seg[2] === 'corridas' && seg[3]) {
       const c = await corridaOperable(principal, seg[3]);
       if (req.method === 'GET' && !seg[4]) return json(res, 200, { ok: true, corrida: c });
+      if (req.method === 'GET' && seg[4] === 'captura' && !seg[5]) {
+        const img = await servicio().captura(c.id);
+        if (!img) throw err('Esta corrida no tiene pantalla guardada', 404);
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+        res.end(img);
+        return true;
+      }
       if (!c.token_fb) throw err('La corrida todavia no tiene navegador', 409);
       if (req.method === 'GET' && seg[4] === 'frame') {
         const fr = await fb().frame(c.token_fb, url.searchParams.get('desde') || 0);

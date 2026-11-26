@@ -256,6 +256,13 @@ ALTER TABLE mc_corridas ADD COLUMN IF NOT EXISTS latido_at TIMESTAMPTZ;
 ALTER TABLE mc_corridas ADD COLUMN IF NOT EXISTS progreso JSONB;
 ALTER TABLE mc_credenciales ADD COLUMN IF NOT EXISTS rechazo_motivo TEXT;
 CREATE INDEX IF NOT EXISTS mc_corridas_cuit_idx ON mc_corridas (cuit, iniciada_at DESC);
+-- Ultima pantalla del navegador de Fisherboy cuando una corrida falla (JPEG). Aparte de
+-- mc_corridas para que el detalle de la corrida no arrastre la imagen. Se purga a los 30 dias.
+CREATE TABLE IF NOT EXISTS mc_capturas (
+  corrida_id INTEGER PRIMARY KEY REFERENCES mc_corridas(id) ON DELETE CASCADE,
+  img        BYTEA NOT NULL,
+  tomada_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS mc_comprobantes (
   id             SERIAL PRIMARY KEY,
   cuit           TEXT NOT NULL,

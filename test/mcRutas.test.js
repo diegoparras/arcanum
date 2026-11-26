@@ -173,3 +173,22 @@ test('rango sugerido: respeta el cuit_allow y devuelve la proxima sincronizacion
     assert.deepStrictEqual([r.rango.desde, r.rango.tipo], ['2026-10-26', 'emitidos']);
   });
 });
+
+test('pantalla del error: JPEG sin cache, 404 si no hay, y respeta el cuit_allow', async () => {
+  const mc = mcFalso();
+  mc.corrida = async (id) => ({ id: Number(id), cuit: '20263630743', estado: 'error', token_fb: null });
+  mc.captura = async (id) => (Number(id) === 8 ? Buffer.from('JPEG-del-error') : null);
+  await conServidor(ADMIN, { mc, fisherboy: fbFalso() }, async (base) => {
+    const r = await pedir(base, 'GET', '/api/mis-comprobantes/corridas/8/captura');
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.headers.get('content-type'), 'image/jpeg');
+    assert.match(r.headers.get('cache-control'), /no-store/);
+    assert.strictEqual(Buffer.from(await r.arrayBuffer()).toString(), 'JPEG-del-error');
+    const n = await pedir(base, 'GET', '/api/mis-comprobantes/corridas/9/captura');
+    assert.strictEqual(n.status, 404);
+  });
+  await conServidor(OPERADOR, { mc, fisherboy: fbFalso() }, async (base) => {
+    const r = await pedir(base, 'GET', '/api/mis-comprobantes/corridas/8/captura');
+    assert.strictEqual(r.status, 403);
+  });
+});

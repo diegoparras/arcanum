@@ -17,6 +17,7 @@ const { desdeArchivo } = require('./mcParser');
 const ESTADOS_VIVOS = ['iniciando', 'corriendo', 'esperando_humano', 'humano', 'esperando_ok'];
 const TIPOS = { emitidos: 'emitido', recibidos: 'recibido' };
 const BOTON = { emitido: 'Emitidos', recibido: 'Recibidos' };
+const SECCION = { emitido: 'E', recibido: 'R' };
 const TIMEOUT_SESION_MS = 25 * 60 * 1000;
 // Si el registro de Fisherboy no suma ni una linea en este tiempo (y no hay una persona al
 // mando), la sesion esta trabada: se corta con el paso donde quedo en vez de esperar los 25 min.
@@ -27,6 +28,8 @@ const TRAMO_DIAS = Number(process.env.ARCANUM_MC_TRAMO_DIAS) || 365;
 // ARCA muestra algunos comprobantes dias despues de su fecha (CAEA, servicios con fecha atras).
 // Repetir dias no duplica: el guardado es sin duplicados.
 const MESES_PRIMERA = 12;
+// Tope de la foto del error que se guarda (una pantalla JPEG de Fisherboy pesa ~100 KB).
+const MAX_CAPTURA = 3 * 1024 * 1024;
 const SOLAPE_DIAS = Number(process.env.ARCANUM_MC_SOLAPE_DIAS) >= 0 && process.env.ARCANUM_MC_SOLAPE_DIAS !== undefined && process.env.ARCANUM_MC_SOLAPE_DIAS !== '' ? Number(process.env.ARCANUM_MC_SOLAPE_DIAS) : 30;
 
 function err(message, httpStatus) {
@@ -132,8 +135,20 @@ function repoSql() {
       return rowCount;
     },
     async corrida(id) {
-      const { rows } = await db.query('SELECT * FROM mc_corridas WHERE id = $1', [id]);
+      const { rows } = await db.query(
+        `SELECT c.*, EXISTS (SELECT 1 FROM mc_capturas k WHERE k.corrida_id = c.id) AS tiene_captura
+           FROM mc_corridas c WHERE c.id = $1`, [id]);
       return rows[0] || null;
+    },
+    async guardarCaptura(id, img) {
+      await db.query(`DELETE FROM mc_capturas WHERE tomada_at < now() - interval '30 days'`);
+      await db.query(
+        `INSERT INTO mc_capturas (corrida_id, img) VALUES ($1, $2)
+         ON CONFLICT (corrida_id) DO UPDATE SET img = EXCLUDED.img, tomada_at = now()`, [id, img]);
+    },
+    async captura(id) {
+      const { rows } = await db.query('SELECT img FROM mc_capturas WHERE corrida_id = $1', [id]);
+      return rows[0] ? rows[0].img : null;
     },
     async actualizarCorrida(id, campos) {
       const cols = Object.keys(campos);
@@ -192,7 +207,8 @@ function repoSql() {
     },
     async corridas(cuit, limite = 20) {
       const { rows } = await db.query(
-        `SELECT id, cuit, tipo, desde, hasta, estado, origen, usuario, iniciada_at, terminada_at, cantidad, error, progreso
+        `SELECT id, cuit, tipo, desde, hasta, estado, origen, usuario, iniciada_at, terminada_at, cantidad, error, progreso,
+                EXISTS (SELECT 1 FROM mc_capturas k WHERE k.corrida_id = mc_corridas.id) AS tiene_captura
            FROM mc_corridas WHERE cuit = $1 ORDER BY id DESC LIMIT $2`, [cuit, Math.min(Number(limite) || 20, 200)]);
       return rows;
     },
@@ -344,7 +360,9 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
   }
 
   async function correrSesion(id, corrida, cred, tipo, tramo, r, secretos, avisado) {
-    const variables = { cuit_login: cred.cuit_login || corrida.cuit, cuit: corrida.cuit, tipo_boton: BOTON[tipo], rango: `${ddmmaaaa(tramo.desde)} - ${ddmmaaaa(tramo.hasta)}` };
+    const variables = { cuit_login: cred.cuit_login || corrida.cuit, cuit: corrida.cuit, tipo_boton: BOTON[tipo], t: SECCION[tipo], rango: `${ddmmaaaa(tramo.desde)} - ${ddmmaaaa(tramo.hasta)}` };
+    // Como lo arma el formulario de ARCA: barras codificadas y espacios como '+'.
+    variables.rango_url = encodeURIComponent(variables.rango).replace(/%20/g, '+');
     const { token } = await fisherboy.iniciar({
       url: r.url,
       receta: r.pasos,
@@ -381,7 +399,8 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
           await webhooks.emitir('mis_comprobantes_fallo', { cuit: corrida.cuit, corrida: id, necesitaHumano: true, motivo: `Fisherboy pide un OK para tocar "${pedido.texto}"` }).catch(() => {});
         }
         if (!pideOk) okDado = false;
-        if (Date.now() - avance > sinAvanceMs) {
+        // Con una persona al mando (o un OK pendiente) no hay corte: la espera es de ella, no del robot.
+        if (!conPersona && Date.now() - avance > sinAvanceMs) {
           const min = Math.max(1, Math.round(sinAvanceMs / 60000));
           const e = err(`Sin avance hace ${min} min en el paso ${progreso.paso} de ${progreso.total} (${progreso.descripcion})${progreso.error ? `: ${progreso.error}` : ''}. Se corto la sesion para no dejarla abierta.`, 504);
           e.logFb = (st.log || []).slice(-40);
@@ -416,8 +435,25 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
         n += await repo.guardarComprobantes(corrida.cuit, tipo, id, filas);
       }
       return { n, log: st.log || [] };
+    } catch (e) {
+      // Antes de cerrar: la ultima pantalla del navegador es lo unico que muestra que vio el
+      // robot cuando fallo (un cartel de ARCA, una tabla que no llego, etc.).
+      if (!e.captura) e.captura = await ultimaPantalla(token);
+      throw e;
     } finally {
       await Promise.resolve(fisherboy.cerrar(token)).catch(() => {});
+    }
+  }
+
+  /** JPEG de la ultima foto de la sesion, o null si no hay o Fisherboy no la da. Nunca tira. */
+  async function ultimaPantalla(token) {
+    if (typeof fisherboy.frame !== 'function') return null;
+    try {
+      const fr = await fisherboy.frame(token, 0);
+      const img = fr && fr.status === 200 && fr.body ? Buffer.from(fr.body) : null;
+      return img && img.length > 0 && img.length <= MAX_CAPTURA ? img : null;
+    } catch {
+      return null;
     }
   }
 
@@ -449,8 +485,16 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       let msg = String(e.message || e);
       if (total > 0) msg += ` Se guardaron ${total} comprobantes de los tramos que terminaron antes del error; el resto no se bajo.`;
       await repo.actualizarCorrida(id, { estado: 'error', cantidad: total, terminada_at: ahora(), log, error: msg.slice(0, 600) });
+      if (e.captura && typeof repo.guardarCaptura === 'function') {
+        await repo.guardarCaptura(id, e.captura).catch((x) => console.error('[arcanum] mis comprobantes: no se guardo la pantalla de la corrida', id, x.message));
+      }
       await webhooks.emitir('mis_comprobantes_fallo', { cuit: fila.cuit, corrida: id, error: String(e.message || e).slice(0, 300) }).catch(() => {});
     }
+  }
+
+  /** JPEG de la pantalla del robot cuando fallo la corrida, o null. */
+  async function captura(id) {
+    return typeof repo.captura === 'function' ? repo.captura(Number(id)) : null;
   }
 
   /** La persona responde el OK que pidio Fisherboy (si = true). */
@@ -475,7 +519,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     receta, guardarReceta, restaurarReceta,
     estadoCredencial, guardarCredencial,
     borrarCredencial: async (cuit) => repo.borrarCredencial(cuitDe(cuit)),
-    sincronizar, seguir, lanzar, responderOk, rangoSugerido,
+    sincronizar, seguir, lanzar, responderOk, rangoSugerido, captura,
     /** Al arrancar: las corridas que seguian vivas perdieron su seguimiento (estaba en memoria). */
     marcarHuerfanas: async () => repo.marcarHuerfanas('Arcanum se reinicio durante la corrida: volve a sincronizar'),
     corrida: async (id) => repo.corrida(Number(id)),

@@ -9,7 +9,7 @@
 // CUIT a consultar como <tem:cuit>. Ojo: si va en minuscula/sin namespace o en SOAP
 // 1.1, ARCA responde codigo 201 "Object reference" (no lee Token/Sign). Reusamos el
 // cache de TA (getAccessTicket) para NO pedir token nuevo por consulta (anti-baneo).
-// Fix del formato: PR #1 de francomeretta1-spec.
+// Fix del formato: PR #1 de francomeretta1-spec, aportado bajo Apache-2.0 (ver LICENSE).
 
 const { config } = require('../config');
 const { getAccessTicket } = require('../auth/wsaa');

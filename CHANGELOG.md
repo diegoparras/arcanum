@@ -3,6 +3,35 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.1] - 2026-11-25
+
+> Requiere **Fisherboy 1.12.0** o superior (paso de receta `fetch`). Actualizá Fisherboy antes.
+
+### Cambiado
+- **Mis Comprobantes pide los datos directo a ARCA.** El robot ya no maneja el calendario, el
+  boton Buscar, la tabla ni el boton de exportar CSV, que era donde se trababa. Despues del login
+  entra a la seccion (Emitidos o Recibidos) y pide los comprobantes con la misma llamada que hace
+  la pagina al apretar Buscar (`generarConsulta` y `listaResultados`), que devuelve todo en JSON
+  en menos de un segundo. Es como trabajan los demas robots de Mis Comprobantes. Verificado
+  sobre ARCA real: 140 emitidos y 199 recibidos de un año. La receta paso de 9 pasos frágiles a 2.
+- Arcanum lee ese JSON por posicion, con las columnas que define la propia pagina de ARCA
+  (49 en Emitidos, 52 en Recibidos). Si ARCA cambia el formato o devuelve un error, la corrida
+  falla con el motivo, nunca con un cero silencioso. El CSV y el ZIP se siguen leyendo.
+
+### Agregado
+- **Pantalla del robot al fallar.** Cuando una corrida falla, Arcanum guarda la ultima foto del
+  navegador de Fisherboy antes de cerrar la sesion, y en Sincronizaciones aparece **Ver
+  pantalla**. La imagen queda aparte del detalle de la corrida, respeta los permisos por CUIT y
+  se borra a los 30 dias.
+
+### Licencia
+- **Arcanum pasa a licencia MIT** (antes Apache-2.0): cualquiera puede usarlo, modificarlo y
+  comercializarlo manteniendo el aviso de copyright. El aporte de un tercero en
+  `src/services/apoc.js`, hecho bajo Apache-2.0, conserva su aviso al final de LICENSE.
+
+### Corregido
+- Mientras la corrida espera a una persona (captcha u OK), el control de "sin avance" ya no puede
+  cortarla aunque el servidor tarde en responder.
 ## [2.1.0] - 2026-11-25
 
 ### Nuevo

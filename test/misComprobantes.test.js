@@ -144,7 +144,7 @@ test('receta default usa el secreto y no un valor', () => {
   const texto = JSON.stringify(RECETA_DEFAULT);
   assert.match(texto, /\{\{secret:clave_fiscal\}\}/);
   assert.match(RECETA_DEFAULT.url, /^https:\/\/auth\.afip\.gob\.ar\//);
-  assert.ok(RECETA_DEFAULT.pasos.some((p) => p.do === 'download'));
+  assert.ok(RECETA_DEFAULT.pasos.some((p) => p.do === 'fetch' && p.name));
   assert.ok(RECETA_DEFAULT.pasos.some((p) => p.do === 'human_if'));
   assert.ok(RECETA_DEFAULT.pasos.some((p) => p.do === 'switch_tab'));
 });
@@ -258,15 +258,15 @@ test('progresoDe: paso siguiente al ultimo que salio bien', () => {
 });
 
 test('progresoDe: paso que fallo, reintentos de la IA y variables reemplazadas', () => {
-  const nFecha = RECETA_DEFAULT.pasos.findIndex((x) => x.sel === '#fechaEmision') + 1;
-  const log = [...Array.from({ length: nFecha - 1 }, (_, i) => OK(i + 1)),
-    { n: nFecha, do: 'fill', ok: false, error: 'Element is not editable', origen: 'receta' },
+  const nConsulta = RECETA_DEFAULT.pasos.findIndex((x) => x.do === 'fetch' && x.guardar === 'consulta') + 1;
+  const log = [...Array.from({ length: nConsulta - 1 }, (_, i) => OK(i + 1)),
+    { n: nConsulta, do: 'fetch', ok: false, error: 'la respuesta no es JSON (HTTP 200)', origen: 'receta' },
     { do: 'ia:click', ok: false, origen: 'ia' }, { do: 'ia:fill', ok: true, origen: 'ia' }];
   const p = mc.progresoDe(log, RECETA_DEFAULT.pasos, { rango: '01/10/2026 - 25/11/2026' });
-  assert.strictEqual(p.paso, nFecha);
+  assert.strictEqual(p.paso, nConsulta);
   assert.strictEqual(p.ia, 2);
-  assert.strictEqual(p.error, 'Element is not editable');
-  assert.strictEqual(p.descripcion, 'Cargar el rango de fechas 01/10/2026 - 25/11/2026 en Fecha de Emision');
+  assert.strictEqual(p.error, 'la respuesta no es JSON (HTTP 200)');
+  assert.strictEqual(p.descripcion, 'Pedir a ARCA la consulta de comprobantes del rango 01/10/2026 - 25/11/2026');
 });
 
 test('progresoDe: la descripcion nunca muestra un secreto', () => {
@@ -416,24 +416,31 @@ test('sincronizar sin rango usa el sugerido (lo que usa la diaria)', async () =>
   assert.deepStrictEqual([c.desde, c.hasta], ['2026-10-21', '2026-11-25']);
 });
 
-test('el rango de fechas se carga con una tecla despues, para que el calendario de ARCA lo lea', () => {
+test('la receta pide los datos a ARCA directo: sin calendario, sin Buscar, sin tabla ni CSV', () => {
   const pasos = RECETA_DEFAULT.pasos;
-  const i = pasos.findIndex((p) => p.sel === '#fechaEmision' && p.do === 'fill');
-  assert.ok(i >= 0);
-  // fill solo cambia el valor; el daterangepicker de ARCA parsea el campo en keyup.
-  assert.deepStrictEqual({ do: pasos[i + 1].do, sel: pasos[i + 1].sel }, { do: 'press', sel: '#fechaEmision' });
-  assert.ok(pasos[i + 1].key && pasos[i + 1].key !== 'Enter' && pasos[i + 1].key !== 'Tab', 'una tecla que no envie ni mueva el foco');
+  assert.ok(!pasos.some((p) => p.sel === '#fechaEmision' || p.sel === '#buscarComprobantes' || p.sel === '#tablaDataTables'), 'nada de la pantalla de consulta');
+  assert.ok(!pasos.some((p) => p.do === 'download'), 'sin exportar CSV');
+  const i = pasos.findIndex((p) => p.do === 'click' && p.sel === '#btn{{var:tipo_boton}}');
+  assert.ok(i >= 0, 'primero entra a la seccion: ARCA ata la consulta a la seccion abierta');
+  const [gen, lista] = pasos.slice(i + 1).filter((p) => p.do === 'fetch');
+  assert.match(gen.url, /^ajax\.do\?f=generarConsulta&t=\{\{var:t\}\}&fechaEmision=\{\{var:rango_url\}\}&tiposComprobantes=&cuitConsultada=\{\{var:cuit\}\}$/);
+  assert.strictEqual(gen.guardar, 'consulta');
+  assert.strictEqual(lista.url, 'ajax.do?f=listaResultados&id={{res:consulta.datos.idConsulta}}');
+  assert.ok(lista.name && /\.json$/.test(lista.name), 'lo que vuelve queda como archivo para Arcanum');
+  assert.strictEqual(pasos[pasos.length - 1], lista, 'es el ultimo paso');
 });
 
-test('la descarga usa el boton real de ARCA y reintenta una vez (el primer pedido puede dar 503)', () => {
-  const pasos = RECETA_DEFAULT.pasos;
-  const descargas = pasos.map((p, i) => [p, i]).filter(([p]) => p.do === 'download');
-  assert.strictEqual(descargas.length, 2);
-  for (const [p] of descargas) assert.strictEqual(p.sel, 'button[title="Exportar como CSV"]');
-  const [[primera, i1], [segunda, i2]] = descargas;
-  assert.strictEqual(primera.optional, true, 'si el primero falla, sigue sin pasarle el paso a la IA');
-  assert.ok(!segunda.optional, 'el segundo es el que vale');
-  assert.ok(pasos.slice(i1 + 1, i2).some((p) => p.do === 'wait'), 'espera entre intentos');
+test('las variables de la sesion llevan la seccion (E/R) y el rango ya codificado para la URL', async () => {
+  const repo = repoFalso();
+  const fb = fisherboyFalso([TERMINADO, TERMINADO]);
+  const { s } = servicio(repo, fb);
+  const c = await s.sincronizar('20263630743', { tipo: 'ambos', desde: '2025-11-01', hasta: '2026-10-31' });
+  await s.seguir(c.id);
+  const [e, r] = fb.iniciados.map((o) => o.variables);
+  assert.strictEqual(e.t, 'E');
+  assert.strictEqual(r.t, 'R');
+  assert.strictEqual(e.rango_url, '01%2F11%2F2025+-+31%2F10%2F2026');
+  assert.strictEqual(decodeURIComponent(e.rango_url.replace(/\+/g, ' ')), '01/11/2025 - 31/10/2026');
 });
 
 test('dos descargas del mismo periodo no duplican: se procesan las dos y el guardado deduplica', async () => {
@@ -468,4 +475,52 @@ test('la receta corre sin IA por defecto (RPA puro); ARCANUM_MC_IA=1 la habilita
   assert.strictEqual(mc.iaPorEntorno({}), false);
   assert.strictEqual(mc.iaPorEntorno({ ARCANUM_MC_IA: '1' }), true);
   assert.strictEqual(mc.iaPorEntorno({ ARCANUM_MC_IA: '0' }), false);
+});
+
+test('si la corrida falla, guarda la ultima pantalla de Fisherboy antes de cerrar la sesion', async () => {
+  const repo = repoFalso();
+  repo.capturas = {};
+  repo.guardarCaptura = async (id, img) => { repo.capturas[id] = img; };
+  const fb = fisherboyFalso([{ estado: 'error', error: 'paso #17 (wait_for): Timeout 60000ms exceeded' }]);
+  const orden = [];
+  fb.frame = async (t, desde) => { orden.push(['frame', t, desde]); return { status: 200, body: Buffer.from('JPEG-del-error') }; };
+  const cerrar = fb.cerrar;
+  fb.cerrar = async (t) => { orden.push(['cerrar', t]); return cerrar(t); };
+  const { s } = servicio(repo, fb);
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.corridas[c.id].estado, 'error');
+  assert.strictEqual(String(repo.capturas[c.id]), 'JPEG-del-error');
+  assert.deepStrictEqual(orden, [['frame', 'tok-1', 0], ['cerrar', 'tok-1']], 'la foto se pide antes de cerrar');
+});
+
+test('si no hay pantalla o Fisherboy no la da, el error de la corrida se guarda igual', async () => {
+  for (const frame of [async () => ({ status: 204, body: Buffer.alloc(0) }), async () => { throw new Error('ECONNRESET'); }]) {
+    const repo = repoFalso();
+    repo.capturas = {};
+    repo.guardarCaptura = async (id, img) => { repo.capturas[id] = img; };
+    const fb = fisherboyFalso([{ estado: 'error', error: 'paso #17 (wait_for): Timeout' }]);
+    fb.frame = frame;
+    const { s } = servicio(repo, fb);
+    const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+    await s.seguir(c.id);
+    assert.strictEqual(repo.corridas[c.id].estado, 'error');
+    assert.match(repo.corridas[c.id].error, /paso #17/);
+    assert.deepStrictEqual(repo.capturas, {});
+  }
+});
+
+test('una corrida que termina bien no pide ni guarda pantalla', async () => {
+  const repo = repoFalso();
+  repo.capturas = {};
+  repo.guardarCaptura = async (id, img) => { repo.capturas[id] = img; };
+  const fb = fisherboyFalso([TERMINADO]);
+  let pedidas = 0;
+  fb.frame = async () => { pedidas += 1; return { status: 200, body: Buffer.from('x') }; };
+  const { s } = servicio(repo, fb);
+  const c = await s.sincronizar('20263630743', { tipo: 'emitidos', desde: '2026-11-01', hasta: '2026-11-18' });
+  await s.seguir(c.id);
+  assert.strictEqual(repo.corridas[c.id].estado, 'terminado');
+  assert.strictEqual(pedidas, 0);
+  assert.deepStrictEqual(repo.capturas, {});
 });

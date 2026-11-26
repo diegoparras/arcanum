@@ -1,6 +1,7 @@
 'use strict';
 
-// Parser de lo que exporta Mis Comprobantes de ARCA: CSV (separador ';' o ',', coma decimal,
+// Parser de lo que entrega Mis Comprobantes de ARCA: el JSON de ajax.do?f=listaResultados (lo que
+// pide la receta), o lo que exporta la pantalla: CSV (separador ';' o ',', coma decimal,
 // encabezados en castellano con o sin tildes) o un ZIP con el CSV adentro.
 //
 // Los encabezados se reconocen por palabra clave y no por posicion: ARCA ya cambio el orden y
@@ -149,6 +150,79 @@ function normalizarFila(fila, tipo) {
   };
 }
 
+// Posiciones de las filas del JSON de listaResultados. Salen de las variables rowXxx del JS de
+// cada pagina de ARCA (comprobantesEmitidos.do / comprobantesRecibidos.do), verificadas en vivo:
+// Emitidos trae 49 columnas y Recibidos 52 (suma CUIT y doc del emisor). Las columnas *Styled
+// son el mismo valor con formato y se ignoran.
+const COLUMNAS_JSON = {
+  emitido: {
+    largo: 49, fecha: 0, cbteTipo: 1, puntoVenta: 3, numeroDesde: 4, numeroHasta: 5, cae: 8,
+    docTipo: 10, docNro: 11, contraparte: 12, tipoCambio: 13, moneda: 14,
+    netoGravado: 37, noGravado: 39, exento: 41, iva: 45, total: 47,
+  },
+  recibido: {
+    largo: 52, fecha: 0, cbteTipo: 1, puntoVenta: 3, numeroDesde: 4, numeroHasta: 5, cae: 8,
+    docTipo: 10, docNro: 11, contraparte: 12, tipoCambio: 16, moneda: 17,
+    netoGravado: 40, noGravado: 42, exento: 44, iva: 48, total: 50,
+  },
+};
+
+/** Numero del JSON: punto decimal siempre ("100.500" es 100,5, no cien mil quinientos). */
+function numeroJson(v) {
+  const n = Number(v == null || v === '' ? 0 : v);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}
+
+/** Fila posicional del JSON de listaResultados -> comprobante normalizado. */
+function normalizarFilaJson(fila, tipo) {
+  const k = COLUMNAS_JSON[tipo];
+  const v = (campo) => fila[k[campo]];
+  const desde = entero(v('numeroDesde'));
+  const moneda = String(v('moneda') || '').trim();
+  return {
+    tipo,
+    fecha: fecha(v('fecha')),
+    cbteTipo: entero(v('cbteTipo')),
+    puntoVenta: entero(v('puntoVenta')),
+    numeroDesde: desde,
+    numeroHasta: entero(v('numeroHasta')) || desde,
+    cae: String(v('cae') || '').replace(/\D/g, '') || null,
+    docTipo: entero(v('docTipo')),
+    docNro: String(v('docNro') || '').replace(/\D/g, '') || '',
+    contraparte: String(v('contraparte') || '').trim(),
+    moneda: !moneda || moneda === '$' ? 'PES' : moneda,
+    tipoCambio: numeroJson(v('tipoCambio')) || 1,
+    netoGravado: numeroJson(v('netoGravado')),
+    noGravado: numeroJson(v('noGravado')),
+    exento: numeroJson(v('exento')),
+    iva: numeroJson(v('iva')),
+    total: numeroJson(v('total')),
+  };
+}
+
+/** JSON de listaResultados -> comprobantes, o null si el texto no es ese JSON. */
+function desdeJson(texto, tipo) {
+  let doc;
+  try { doc = JSON.parse(texto); } catch { return null; }
+  if (!doc || typeof doc !== 'object' || !('estado' in doc)) return null;
+  if (doc.estado !== 'ok') {
+    throw e422(`ARCA no devolvio los comprobantes: ${String(doc.mensajeError || doc.estado).slice(0, 200)}`);
+  }
+  const data = doc.datos && doc.datos.data;
+  if (!Array.isArray(data)) throw e422('La respuesta de Mis Comprobantes no trae la lista de comprobantes');
+  const k = COLUMNAS_JSON[tipo];
+  if (!k) throw e422(`Tipo de Mis Comprobantes desconocido: ${tipo}`);
+  const raras = data.find((f) => !Array.isArray(f) || f.length !== k.largo);
+  if (raras) {
+    throw e422(`Mis Comprobantes devolvio filas de ${Array.isArray(raras) ? raras.length : 0} columnas y se esperaban ${k.largo} (${tipo}s): ARCA puede haber cambiado el formato`);
+  }
+  const filas = data.map((f) => normalizarFilaJson(f, tipo));
+  if (filas.some((c) => !c.cbteTipo || c.numeroDesde == null || !c.fecha)) {
+    throw e422('Mis Comprobantes devolvio filas sin tipo, numero o fecha donde se esperaban: ARCA puede haber cambiado el formato');
+  }
+  return filas;
+}
+
 /** UTF-8, y si no es UTF-8 valido (ARCA a veces exporta en Latin-1), Latin-1. */
 function decodificar(buf) {
   const t = buf.toString('utf8');
@@ -159,13 +233,17 @@ function e422(message) {
   return Object.assign(new Error(message), { httpStatus: 422 });
 }
 
-/** Archivo descargado (CSV o ZIP) -> comprobantes. Solo encabezado = [] (rango vacio); filas que
+/** Archivo de Mis Comprobantes (JSON, CSV o ZIP) -> comprobantes. Solo encabezado = [] (rango vacio); filas que
  *  no se entienden, o una pagina en vez de un CSV, son un error: nunca un "0" silencioso. */
 function desdeArchivo(buf, nombre, tipo) {
   const b = Buffer.from(buf);
   const esZip = b.length >= 4 && b.readUInt32LE(0) === 0x04034b50;
   if (!esZip && /\.xlsx?$/i.test(String(nombre || ''))) {
     throw e422('Mis Comprobantes entrego un Excel: la receta tiene que exportar CSV');
+  }
+  if (!esZip) {
+    const deJson = desdeJson(decodificar(b), tipo);
+    if (deJson) return deJson;
   }
   const textos = esZip
     ? leerZip(b).filter((a) => /\.(csv|txt)$/i.test(a.nombre)).map((a) => decodificar(a.datos))
@@ -181,4 +259,4 @@ function desdeArchivo(buf, nombre, tipo) {
   return filas;
 }
 
-module.exports = { parsearCsv, leerZip, normalizarFila, desdeArchivo, _numero: numero };
+module.exports = { parsearCsv, leerZip, normalizarFila, desdeArchivo, COLUMNAS_JSON, _numero: numero };

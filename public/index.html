@@ -665,10 +665,19 @@ async function mcCorridas(retomar){
       <td class="mono">${c.id}</td><td>${esc(c.tipo)}</td><td class="mono">${String(c.desde).slice(0,10)} a ${String(c.hasta).slice(0,10)}</td>
       <td><span class="tag ${c.estado==='terminado'?'ok':c.estado==='error'?'no':'warn'}">${esc(MC_ESTADO[c.estado]||c.estado)}</span></td>
       <td class="mono">${c.cantidad}</td><td class="hint">${new Date(c.iniciada_at).toLocaleString('es-AR')}</td>
-      <td class="hint">${esc(c.error||mcAvance(c,true))}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${c.id})">Ver en vivo</button>`:''}</td></tr>`).join('')}</table>`:'<p class="hint">Todavía no se sincronizó este CUIT.</p>';
+      <td class="hint">${esc(c.error||mcAvance(c,true))}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${c.id})">Ver en vivo</button>`:''}${c.tiene_captura?` <button class="ghost" onclick="mcCaptura(${c.id})">Ver pantalla</button>`:''}</td></tr>`).join('')}</table>`:'<p class="hint">Todavía no se sincronizó este CUIT.</p>';
     const viva=corridas.find(c=>MC_VIVOS.includes(c.estado));
     if(retomar&&viva)mcSeguir(viva.id);
   }catch(e){$('#mc_corridas').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+async function mcCaptura(id){
+  try{const r=await fetch(`/api/mis-comprobantes/corridas/${id}/captura`,{credentials:'include'});
+    if(!r.ok)throw new Error('Esta corrida no tiene pantalla guardada');
+    const url=URL.createObjectURL(await r.blob());
+    modal(`<button class="modal-x" type="button" aria-label="Cerrar" onclick="closeModal()">&times;</button><h3 style="text-transform:none">Pantalla del robot al fallar · corrida ${id}</h3>
+      <p class="hint">Lo último que vio el navegador de Fisherboy antes de cortar la sesión.</p>
+      <img src="${url}" alt="Pantalla de ARCA al fallar la corrida ${id}" style="display:block;width:100%;max-width:100%;height:auto;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;margin-top:8px">`);
+  }catch(e){toast(e.message,true);}
 }
 function mcHace(iso){const s=Math.max(0,Math.round((Date.now()-new Date(iso))/1000));return s<60?`${s} s`:`${Math.floor(s/60)} min ${s%60} s`;}
 function mcAvance(c,corto){const p=c&&c.progreso;if(!p||!MC_VIVOS.includes(c.estado))return '';

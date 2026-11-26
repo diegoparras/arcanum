@@ -6,7 +6,7 @@
 
 Self-hosted · Firma WSAA 100% local · Sin terceros · Sin suscripciones · Para automatizar con n8n
 
-Parte de la suite **Escriba** · Licencia Apache-2.0
+Parte de la suite **Escriba** · Licencia MIT
 
 </div>
 
@@ -206,10 +206,11 @@ curl -s -X POST https://tu-arcanum/mcp \
 
 ARCA no publica Mis Comprobantes por Web Service, así que Arcanum lo baja **operando la página**, con la *sesión de agente* de [Fisherboy](https://github.com/diegoparras/fisherboy/blob/main/docs/AGENT.md) (Arcanum no trae navegador propio):
 
-1. Fisherboy corre una **receta** fija: login, portal, Mis Comprobantes (que se abre en otra pestaña), representado, Emitidos o Recibidos, rango de fechas, exportar CSV.
+1. Fisherboy corre una **receta** fija: login, portal, Mis Comprobantes (que se abre en otra pestaña), representado y la sección (Emitidos o Recibidos). Ahí pide los comprobantes **directo a ARCA**, con la misma llamada que hace la página al apretar Buscar, y los recibe en JSON: no maneja el calendario, la tabla ni el botón de exportar. ARCA exige que la consulta sea de la sección abierta y de 365 días como máximo; Arcanum parte los rangos largos en tramos. Requiere Fisherboy 1.12.0 o superior.
 2. **Por defecto es RPA puro:** si un paso falla, la corrida termina con el error del paso, sin IA. Con `ARCANUM_MC_IA=1`, si un paso falla y Fisherboy tiene IA configurada (cualquier proveedor compatible con OpenAI, incluido Ollama local), la IA intenta cumplir el **objetivo** de ese paso y la receta sigue. La IA ve la página como texto, con los CUIT y otros datos personales reemplazados por marcadores, y **nunca ve la clave**: la escribe por su marcador `{{secret:clave_fiscal}}`.
 3. Si ARCA pide un **captcha** o un segundo factor, la sesión se pausa y lo resolvés en la pestaña **Mis Comprobantes**, que muestra el navegador **en vivo**. Con **Tomar el control** manejás vos y con **Devolver a la receta** sigue sola.
 4. El CSV se parsea y se guarda sin duplicar (re-sincronizar actualiza importes).
+5. Si una corrida falla, Arcanum guarda la **última pantalla** del navegador de Fisherboy antes de cerrar la sesión, y en Sincronizaciones aparece **Ver pantalla**: muestra qué vio el robot cuando falló (un cartel de ARCA, una tabla que no llegó). Se borra a los 30 días.
 
 La **clave fiscal** se carga por CUIT (admin), se guarda cifrada con la master key y no vuelve nunca por la API ni queda en logs. Si **ARCA rechaza la clave**, la credencial queda bloqueada y no se reintenta (ni a mano ni en la sincronización diaria) hasta que la vuelvas a cargar: repetir una clave mala puede bloquear la clave fiscal. La sincronización es **incremental**: la primera trae los últimos 12 meses (o desde la fecha que elijas) y las siguientes arrancan en lo último bajado de cada tipo menos `ARCANUM_MC_SOLAPE_DIAS` (30 por defecto), porque ARCA muestra algunos comprobantes días después de su fecha; repetir días no duplica. Con **Sincronizar todos los días**, el daemon hace eso a las `ARCANUM_MC_HORA` (6 por defecto, hora argentina). Mientras corre, la vista en vivo muestra en qué paso va la receta, si la IA está reintentando uno que falló y hace cuánto fue el último avance; si el registro de Fisherboy no avanza en `ARCANUM_MC_SIN_AVANCE_MIN` minutos (5 por defecto) sin una persona al mando, la corrida se corta y el error dice en qué paso quedó. Si Fisherboy frena antes de tocar un botón que podría no deshacerse, Arcanum da el OK solo cuando es una consulta (Buscar, Consultar, Filtrar); para cualquier otro, la vista en vivo pide **Sí, dale** / **No** a una persona. Fisherboy solo navega a `afip.gob.ar` y `arca.gob.ar`.
 
@@ -326,4 +327,6 @@ npm install && npm test
 ```
 
 ## Licencia
-Apache-2.0. Arcanum no está afiliado ni respaldado por ARCA/AFIP.
+[MIT](LICENSE): podés usarlo, modificarlo, redistribuirlo y venderlo, también como parte de un producto o servicio propio, siempre que mantengas el aviso de copyright y la licencia. Arcanum no está afiliado ni respaldado por ARCA/AFIP.
+
+Hasta la versión 2.1.0 Arcanum se publicó con licencia Apache-2.0. `src/services/apoc.js` incluye un aporte de un tercero hecho bajo esa licencia; el detalle está al final de [LICENSE](LICENSE).
