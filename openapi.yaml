@@ -680,6 +680,8 @@ paths:
       responses: { '200': { description: "constatacion: { cantidad, validos, invalidos, conError, emisoresApocrifos, resultados }" }, '413': { description: mas de 500 } }
   /api/mis-comprobantes/{cuit}/constatar:
     post: { tags: [Mis Comprobantes], summary: Constata los recibidos de Mis Comprobantes que no se constataron y guarda el resultado, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "constatacion: { cantidad, validos, invalidos, pendientes, observados }" } } }
+  /api/mis-comprobantes/{cuit}/constatar/detener:
+    post: { tags: [Mis Comprobantes], summary: Detiene la constatacion de recibidos en curso (lo constatado queda; el resto sigue pendiente), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "constatacion: { estado, deteniendo, hechos, total }" }, '409': { description: no hay una constatacion corriendo } } }
 
   /api/cola:
     get:

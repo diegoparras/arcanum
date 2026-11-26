@@ -131,3 +131,109 @@ test('sin recibidos pendientes termina enseguida con total cero', async () => {
   assert.deepStrictEqual([r.estado, r.total], ['terminado', 0]);
   assert.strictEqual(cons.estadoConstatacion('99999999999'), null);
 });
+
+// ---- Reintento con otro documento del receptor ----
+
+test('si ARCA rechaza con el CUIT del receptor, reintenta con su DNI y da OK si coincide', async () => {
+  const d = deps();
+  d.constatar = async (c, it) => {
+    d.wscdc.push([it.docTipo, it.docNro]);
+    return it.docTipo === 96 ? { valido: true, resultado: 'A', observaciones: [] }
+      : { valido: false, resultado: 'R', observaciones: [{ code: 1, message: 'El documento del receptor no coincide' }] };
+  };
+  const r = await cons.constatarLista('20263630743', [item(1)], { pausaMs: 0, deps: d });
+  const x = r.resultados[0];
+  assert.strictEqual(x.valido, true);
+  assert.deepStrictEqual(x.receptor, { como: 'DNI', docTipo: 96, docNro: '26363074' });
+  assert.deepStrictEqual(x.receptorProbado, ['CUIT', 'DNI']);
+  assert.deepStrictEqual(d.wscdc, [[80, '20263630743'], [96, '26363074']], 'no prueba consumidor final si el DNI ya dio OK');
+  assert.strictEqual(r.validos, 1);
+});
+
+test('si no coincide ni con CUIT ni con DNI, prueba como consumidor final', async () => {
+  const d = deps();
+  d.constatar = async (c, it) => {
+    d.wscdc.push(it.docTipo);
+    return it.docTipo === 99 && it.docNro === '0' ? { valido: true, resultado: 'A', observaciones: [] } : { valido: false, resultado: 'R', observaciones: [] };
+  };
+  const r = await cons.constatarLista('20263630743', [item(1)], { pausaMs: 0, deps: d });
+  assert.strictEqual(r.resultados[0].receptor.como, 'consumidor_final');
+  assert.deepStrictEqual(d.wscdc, [80, 96, 99]);
+});
+
+test('si no coincide de ninguna forma queda NO CONSTA con el motivo original de ARCA', async () => {
+  const d = deps();
+  d.constatar = async (c, it) => ({ valido: false, resultado: 'R', observaciones: [{ code: it.docTipo, message: `rechazo ${it.docTipo}` }] });
+  const r = await cons.constatarLista('20263630743', [item(1)], { pausaMs: 0, deps: d });
+  const x = r.resultados[0];
+  assert.strictEqual(x.valido, false);
+  assert.strictEqual(x.receptor, undefined);
+  assert.deepStrictEqual(x.receptorProbado, ['CUIT', 'DNI', 'consumidor_final']);
+  assert.deepStrictEqual(x.observaciones, [{ code: 80, message: 'rechazo 80' }], 'se muestra el rechazo con el CUIT, no el de la ultima variante');
+});
+
+test('una empresa receptora no tiene DNI: solo se prueba como consumidor final', async () => {
+  const d = deps();
+  d.constatar = async (c, it) => { d.wscdc.push(it.docTipo); return { valido: false, resultado: 'R', observaciones: [] }; };
+  await cons.constatarLista('30711111118', [{ ...item(1), docNro: '30711111118' }], { pausaMs: 0, deps: d });
+  assert.deepStrictEqual(d.wscdc, [80, 99]);
+});
+
+test('lo aprobado a la primera, o un error de ARCA, no dispara reintentos', async () => {
+  const d = deps();
+  const r = await cons.constatarLista('20263630743', [item(1)], { pausaMs: 0, deps: d });
+  assert.strictEqual(r.resultados[0].receptorProbado, undefined);
+  assert.strictEqual(d.wscdc.length, 1);
+  const e = deps();
+  e.constatar = async (c, it) => { e.wscdc.push(it); throw new Error('WSCDC no responde'); };
+  const r2 = await cons.constatarLista('20263630743', [item(1)], { pausaMs: 0, deps: e });
+  assert.strictEqual(r2.resultados[0].valido, null);
+  assert.strictEqual(e.wscdc.length, 1);
+});
+
+test('lo que se guarda dice con que documento dio OK y que se probo', async () => {
+  const d = deps();
+  d.constatar = async (c, it) => (it.docTipo === 96 ? { valido: true, resultado: 'A', observaciones: [] } : { valido: false, resultado: 'R', observaciones: [] });
+  const repo = repoFalso([fila(31, 1)]);
+  const completos = [];
+  repo.guardar = async (id, c) => { completos.push([id, c]); };
+  await cons.iniciarConstatacion('20444444441', { pausaMs: 0, deps: d, repo });
+  await cons.esperarConstatacion('20444444441');
+  const [, g] = completos[0];
+  assert.strictEqual(g.valido, true);
+  assert.deepStrictEqual(g.receptor, { como: 'DNI', docTipo: 96, docNro: '26363074' });
+  assert.deepStrictEqual(g.receptorProbado, ['CUIT', 'DNI']);
+});
+
+// ---- Detener y seguir despues ----
+
+test('detener corta entre un comprobante y el siguiente: lo hecho queda y el resto sigue pendiente', async () => {
+  const d = deps();
+  let soltar;
+  const compuerta = new Promise((r) => { soltar = r; });
+  const constatar = d.constatar;
+  d.constatar = async (c, it) => { if (it.numero === 1) await compuerta; return constatar(c, it); };
+  const repo = repoFalso([fila(41, 1), fila(42, 3), fila(43, 4)]);
+  const cuit = '20555555551';
+  await cons.iniciarConstatacion(cuit, { pausaMs: 0, deps: d, repo });
+  await new Promise((r) => setTimeout(r, 5));
+  const pedido = cons.detenerConstatacion(cuit);
+  assert.strictEqual(pedido.deteniendo, true);
+  assert.strictEqual(pedido.detener, undefined, 'la marca interna no se muestra');
+  soltar();
+  await cons.esperarConstatacion(cuit);
+  const fin = cons.estadoConstatacion(cuit);
+  assert.strictEqual(fin.estado, 'detenido');
+  assert.strictEqual(fin.hechos, 1, 'termino el que estaba en curso y paro');
+  assert.deepStrictEqual(repo.guardados, [[41, true]], 'los demas no se tocaron: quedan pendientes');
+  assert.ok(fin.terminada);
+  assert.throws(() => cons.detenerConstatacion(cuit), (e) => e.httpStatus === 409, 'ya no hay nada corriendo');
+  // Se puede volver a arrancar enseguida.
+  const otra = await cons.iniciarConstatacion(cuit, { pausaMs: 0, deps: deps(), repo: repoFalso([fila(42, 3)]) });
+  assert.strictEqual(otra.estado, 'corriendo');
+  await cons.esperarConstatacion(cuit);
+});
+
+test('detener sin nada corriendo responde 409', () => {
+  assert.throws(() => cons.detenerConstatacion('20666666661'), (e) => e.httpStatus === 409);
+});

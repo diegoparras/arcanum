@@ -129,6 +129,7 @@ test('constatacion: lista por JSON o CSV con scope, y constatar recibidos', asyn
     parsearListaCsv: (csv, cuit) => { llamadas.push(['csv', cuit]); return [{ cuitEmisor: '1' }, { cuitEmisor: '2' }]; },
     iniciarConstatacion: async (cuit, o) => { llamadas.push(['recibidos', cuit, o.filtros]); return { estado: 'corriendo', total: 3, hechos: 0 }; },
     estadoConstatacion: (cuit) => ({ estado: 'corriendo', total: 3, hechos: 1, cuit }),
+    detenerConstatacion: (cuit) => { llamadas.push(['detener', cuit]); return { estado: 'corriendo', deteniendo: true, total: 3, hechos: 1 }; },
   };
   await conServidor(OPERADOR, { mc: mcFalso(), fisherboy: fbFalso(), constatacion }, async (base) => {
     assert.strictEqual((await pedir(base, 'POST', '/api/constatacion', { cuit: '20263630743', items: [{}] })).status, 403);
@@ -140,13 +141,19 @@ test('constatacion: lista por JSON o CSV con scope, y constatar recibidos', asyn
     const e = await pedir(base, 'GET', '/api/mis-comprobantes/30711111118/constatar');
     assert.strictEqual((await e.json()).constatacion.hechos, 1);
     assert.strictEqual((await pedir(base, 'GET', '/api/mis-comprobantes/20263630743/constatar')).status, 403);
+    const det = await pedir(base, 'POST', '/api/mis-comprobantes/30711111118/constatar/detener');
+    assert.strictEqual(det.status, 200);
+    assert.strictEqual((await det.json()).constatacion.deteniendo, true);
+    assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/20263630743/constatar/detener')).status, 403, 'solo sus CUITs');
   });
-  assert.deepStrictEqual(llamadas, [['lista', '30711111118', 1], ['csv', '30711111118'], ['lista', '30711111118', 2], ['recibidos', '30711111118', { contraparte: '30500000001', desde: '2026-01-01' }]]);
+  assert.deepStrictEqual(llamadas, [['lista', '30711111118', 1], ['csv', '30711111118'], ['lista', '30711111118', 2], ['recibidos', '30711111118', { contraparte: '30500000001', desde: '2026-01-01' }], ['detener', '30711111118']]);
   await conServidor(LECTURA, { mc: mcFalso(), fisherboy: fbFalso(), constatacion }, async (base) => {
     // Constatar los recibidos guarda el resultado: sigue siendo de operador.
     assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/20263630743/constatar')).status, 403);
     // Ver el progreso es solo lectura.
     assert.strictEqual((await pedir(base, 'GET', '/api/mis-comprobantes/20263630743/constatar')).status, 200);
+    // Detenerla es de operador, como arrancarla.
+    assert.strictEqual((await pedir(base, 'POST', '/api/mis-comprobantes/20263630743/constatar/detener')).status, 403);
     // Constatar una lista solo consulta: lectura puede (es lo que usa Factorum).
     assert.strictEqual((await pedir(base, 'POST', '/api/constatacion', { cuit: '20263630743', items: [{}] })).status, 200);
   });

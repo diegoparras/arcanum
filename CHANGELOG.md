@@ -3,6 +3,22 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.7] - 2026-11-26
+
+### Corregido
+- **Facturas B y C recibidas que daban "NO CONSTA" sin serlo.** Al constatar, Arcanum mandaba
+  siempre tu CUIT como receptor, pero muchos comercios hacen la factura a tu DNI o como consumidor
+  final, y WSCDC exige el mismo documento con el que se emitio. Ahora, si ARCA rechaza con el CUIT,
+  se reintenta con el DNI (solo CUIT de persona humana) y como consumidor final; si alguna da OK,
+  queda OK y se indica con cual. Los "NO CONSTA" ya guardados vuelven a quedar pendientes una sola
+  vez, para re-constatarlos con este criterio.
+
+### Agregado
+- **Detener la constatacion de recibidos** (boton **Detener** y
+  `POST /api/mis-comprobantes/:cuit/constatar/detener`). Corta entre un comprobante y el siguiente:
+  lo constatado queda guardado y **Constatar recibidos** sigue desde lo pendiente.
+- En la tabla, el motivo de ARCA se ve debajo de cada "NO CONSTA" (y al pasar el mouse).
+
 ## [2.1.6] - 2026-11-26
 
 ### Seguridad

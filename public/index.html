@@ -924,7 +924,10 @@ const NOMBRE_TIPO={1:'Factura A',2:'ND A',3:'NC A',6:'Factura B',7:'ND B',8:'NC 
 async function mcCargarTabla(){
   try{const {comprobantes:l}=await api(`/api/mis-comprobantes/${MC.cuit}?${mcFiltros()}`);
     const pesos=n=>Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const cons=c=>!c?'<span class="hint">sin constatar</span>':c.apoc&&c.apoc.esApocrifo?'<span class="tag no">APÓCRIFO</span>':c.valido?'<span class="tag ok">OK</span>':'<span class="tag no">NO CONSTA</span>';
+    const obs=c=>(c.observaciones||[]).map(o=>o.message||o.Msg||'').filter(Boolean).join(' | ');
+    const cons=c=>!c?'<span class="hint">sin constatar</span>':c.apoc&&c.apoc.esApocrifo?'<span class="tag no">APÓCRIFO</span>'
+      :c.valido?`<span class="tag ok">OK</span>${c.receptor?` <span class="hint">(a tu ${c.receptor.como==='DNI'?'DNI':'nombre como consumidor final'})</span>`:''}`
+      :`<span class="tag no" title="${esc(obs(c)||'ARCA no dio el motivo')}">NO CONSTA</span>${obs(c)?`<div class="hint" style="font-size:11.5px;max-width:260px">${esc(obs(c))}</div>`:''}`;
     const r=$('#mc_tabla_resumen');if(r)r.textContent=l.length?`${l.length} ${l.length===1?'comprobante':'comprobantes'} con los filtros del análisis${l.length>=500?' (se muestran los primeros 500; el CSV trae hasta 5000)':''}.`:'Con los filtros del análisis.';
     $('#mc_tabla').innerHTML=l.length?`<table><tr><th>Fecha</th><th>Tipo</th><th>Comprobante</th><th>Contraparte</th><th>Total</th><th>CAE</th><th>Constatación</th></tr>${l.map(f=>`<tr>
       <td class="mono">${String(f.fecha).slice(0,10)}</td><td>${f.tipo==='recibido'?'Recibido':'Emitido'} · ${esc(NOMBRE_TIPO[f.cbte_tipo]||f.cbte_tipo)}</td>
@@ -959,11 +962,18 @@ function mcConstPintar(c){
     box.innerHTML=`<div style="margin-top:10px"><div class="row" style="justify-content:space-between"><strong style="font-size:13.5px">Constatando con ARCA: ${c.hechos} de ${c.total}</strong><span class="hint">${pct}%</span></div>
       <div style="height:8px;border-radius:5px;background:var(--card);margin-top:6px;overflow:hidden" role="progressbar" aria-valuemin="0" aria-valuemax="${c.total}" aria-valuenow="${c.hechos}"><div style="height:100%;width:${pct}%;background:var(--accent);transition:width .4s"></div></div>
       <p style="margin:8px 0 0">${tags}</p>
-      ${c.actual?`<p class="hint" style="margin:6px 0 0">Ahora: ${esc(c.actual.comprobante)} de ${esc(c.actual.contraparte)}. Podés seguir usando Arcanum; esto sigue solo y guarda cada resultado apenas lo tiene.</p>`:''}</div>`;
+      ${c.deteniendo?`<p class="hint" style="margin:6px 0 0">Deteniendo: termina el comprobante en curso y para.</p>`
+        :c.actual?`<p class="hint" style="margin:6px 0 0">Ahora: ${esc(c.actual.comprobante)} de ${esc(c.actual.contraparte)}. Podés seguir usando Arcanum; esto sigue solo y guarda cada resultado apenas lo tiene.</p>`:''}
+      <p style="margin:8px 0 0"><button class="ghost" onclick="mcConstDetener()" ${c.deteniendo?'disabled':''}>Detener</button> <span class="hint">Lo constatado queda guardado; después la seguís con Constatar recibidos.</span></p></div>`;
     return;}
+  if(c.estado==='detenido'){box.innerHTML=`<p style="margin-top:10px"><strong style="font-size:13.5px">Detenida: ${c.hechos} de ${c.total} constatados.</strong> ${tags} <span class="hint">Lo que falta quedó pendiente: tocá Constatar recibidos para seguir desde ahí.</span></p>`;return;}
   if(c.estado==='error'){box.innerHTML=`<p style="margin-top:10px"><span class="tag no">SE CORTÓ</span> <span class="hint">${esc(c.error||'')}. Lo constatado hasta ahí quedó guardado: volvé a tocar el botón para seguir.</span></p>`;return;}
   if(!c.total){box.innerHTML=`<p class="hint" style="margin-top:10px">No hay recibidos sin constatar con estos filtros.${c.pendientes?` Quedan ${c.pendientes} pendientes fuera de los filtros.`:''}</p>`;return;}
   box.innerHTML=`<p style="margin-top:10px"><strong style="font-size:13.5px">Listo: ${c.total} constatados.</strong> ${tags} <span class="hint">${c.pendientes!=null?`· ${c.pendientes} pendientes en total${c.conError?' (los que dieron error se reintentan la próxima vez)':''}`:''}</span></p>`;
+}
+async function mcConstDetener(){
+  try{const {constatacion:c}=await api(`/api/mis-comprobantes/${MC.cuit}/constatar/detener`,{method:'POST',body:'{}'});mcConstPintar(c);}
+  catch(e){toast(e.message,true);}
 }
 function mcConstSeguir(){
   clearInterval(MC.constTimer);let vistos=-1;

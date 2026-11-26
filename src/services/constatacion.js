@@ -82,14 +82,32 @@ function depsPorDefecto() {
   };
 }
 
+// Variantes del receptor para reintentar un rechazo. WSCDC exige el documento del receptor tal como
+// lo informo el emisor, y en una factura B o C a una persona muchos comercios la hacen a su DNI o
+// como consumidor final, no a su CUIT. El CSV de Mis Comprobantes no dice cual uso: si ARCA rechaza
+// con el CUIT, se prueba con el DNI (solo CUIT de persona humana) y como consumidor final.
+const PREFIJOS_PERSONA = ['20', '23', '24', '27'];
+function variantesReceptor(it) {
+  const doc = String(it.docNro || '').replace(/\D/g, '');
+  if (Number(it.docTipo) !== 80 || doc.length !== 11) return [];
+  const v = [];
+  if (PREFIJOS_PERSONA.includes(doc.slice(0, 2))) v.push({ como: 'DNI', docTipo: 96, docNro: String(Number(doc.slice(2, 10))) });
+  v.push({ como: 'consumidor_final', docTipo: 99, docNro: '0' });
+  return v;
+}
+
 /** Constata una lista. Un error en un item no corta el resto: queda con valido=null y su error.
- *  `antes(i)` y `alItem(fila, i)` permiten seguir el progreso y guardar cada resultado al toque. */
-async function constatarLista(cuitConsultante, items, { pausaMs = 400, deps = depsPorDefecto(), antes, alItem } = {}) {
+ *  `antes(i)` y `alItem(fila, i)` permiten seguir el progreso y guardar cada resultado al toque.
+ *  `detener()` se consulta antes de cada comprobante: si da true, corta ahi (lo hecho queda). */
+async function constatarLista(cuitConsultante, items, { pausaMs = 400, deps = depsPorDefecto(), antes, alItem, detener } = {}) {
   if (!Array.isArray(items) || !items.length) throw err('La lista de comprobantes esta vacia', 400);
   if (items.length > MAX_ITEMS) throw err(`Hasta ${MAX_ITEMS} comprobantes por pedido`, 413);
   const apocPorEmisor = new Map();
   const resultados = [];
+  const esperar = () => (pausaMs ? new Promise((r) => setTimeout(r, pausaMs)) : null);
+  let detenida = false;
   for (const [i, it] of items.entries()) {
+    if (detener && detener()) { detenida = true; break; }
     const fila = { ...it };
     if (antes) antes(i);
     try {
@@ -97,6 +115,22 @@ async function constatarLista(cuitConsultante, items, { pausaMs = 400, deps = de
       Object.assign(fila, { valido: r.valido, resultado: r.resultado, observaciones: r.observaciones || [] });
     } catch (e) {
       Object.assign(fila, { valido: null, resultado: null, error: String(e.message || e).slice(0, 200) });
+    }
+    if (fila.valido === false) {
+      const variantes = variantesReceptor(it);
+      if (variantes.length) fila.receptorProbado = ['CUIT'];
+      for (const v of variantes) {
+        await esperar();
+        fila.receptorProbado.push(v.como);
+        try {
+          const r = await deps.constatar(cuitConsultante, { ...it, docTipo: v.docTipo, docNro: v.docNro, fecha: ymd(it.fecha) });
+          if (r.valido) {
+            Object.assign(fila, { valido: true, resultado: r.resultado, observaciones: r.observaciones || [],
+              receptor: { como: v.como, docTipo: v.docTipo, docNro: v.docNro } });
+            break;
+          }
+        } catch { /* una variante que falla no cambia el rechazo original */ }
+      }
     }
     if (!apocPorEmisor.has(it.cuitEmisor)) {
       try {
@@ -109,9 +143,10 @@ async function constatarLista(cuitConsultante, items, { pausaMs = 400, deps = de
     fila.apoc = apocPorEmisor.get(it.cuitEmisor);
     resultados.push(fila);
     if (alItem) await alItem(fila, i);
-    if (pausaMs && i < items.length - 1) await new Promise((r) => setTimeout(r, pausaMs));
+    if (i < items.length - 1) await esperar();
   }
   return {
+    detenida,
     cantidad: resultados.length,
     validos: resultados.filter((r) => r.valido === true).length,
     invalidos: resultados.filter((r) => r.valido === false).length,
@@ -143,7 +178,7 @@ function repoPorDefecto() {
       const { where, vals } = condicionesListado(cuit, { ...f, tipo: 'recibido' });
       vals.push(limite);
       const { rows } = await db.query(
-        `SELECT * FROM mc_comprobantes WHERE ${where} AND constatacion IS NULL ORDER BY fecha DESC, id DESC LIMIT $${vals.length}`, vals);
+        `SELECT * FROM mc_comprobantes WHERE ${where} AND (constatacion IS NULL OR ((constatacion->>'valido') = 'false' AND NOT (constatacion ? 'receptorProbado'))) ORDER BY fecha DESC, id DESC LIMIT $${vals.length}`, vals);
       return rows;
     },
     async guardar(id, constatacion) {
@@ -151,7 +186,7 @@ function repoPorDefecto() {
     },
     async contarPendientes(cuit) {
       const { rows } = await db.query(
-        "SELECT count(*)::int AS n FROM mc_comprobantes WHERE cuit = $1 AND tipo = 'recibido' AND constatacion IS NULL", [cuit]);
+        "SELECT count(*)::int AS n FROM mc_comprobantes WHERE cuit = $1 AND tipo = 'recibido' AND (constatacion IS NULL OR ((constatacion->>'valido') = 'false' AND NOT (constatacion ? 'receptorProbado')))", [cuit]);
       return rows[0].n;
     },
   };
@@ -160,7 +195,7 @@ function repoPorDefecto() {
 /** Lo que ve la UI: sin la promesa interna ni datos de mas. */
 function foto(t) {
   if (!t) return null;
-  const vista = Object.fromEntries(Object.entries(t).filter(([k]) => k !== 'promesa' && k !== 'apocrifos'));
+  const vista = Object.fromEntries(Object.entries(t).filter(([k]) => !['promesa', 'apocrifos', 'detener'].includes(k)));
   return { ...vista, emisoresApocrifos: t.apocrifos.size };
 }
 
@@ -178,7 +213,7 @@ async function iniciarConstatacion(cuit, { filtros = {}, limite = MAX_ITEMS, pau
   const filas = await repo.pendientes(c, filtros, Math.min(Number(limite) || MAX_ITEMS, MAX_ITEMS));
   const t = {
     estado: filas.length ? 'corriendo' : 'terminado', total: filas.length, hechos: 0,
-    validos: 0, invalidos: 0, conError: 0, apocrifos: new Set(), actual: null, error: null, pendientes: null,
+    validos: 0, invalidos: 0, conError: 0, apocrifos: new Set(), actual: null, error: null, pendientes: null, detener: false, deteniendo: false,
     usuario: usuario || null, iniciada: new Date().toISOString(), terminada: filas.length ? null : new Date().toISOString(),
   };
   trabajos.set(c, t);
@@ -189,8 +224,9 @@ async function iniciarConstatacion(cuit, { filtros = {}, limite = MAX_ITEMS, pau
   }
   t.promesa = (async () => {
     try {
-      await constatarLista(c, filas.map(itemDesdeMc), {
+      const r = await constatarLista(c, filas.map(itemDesdeMc), {
         pausaMs,
+        detener: () => t.detener,
         ...(deps ? { deps } : {}),
         antes: (i) => {
           const f = filas[i];
@@ -204,11 +240,14 @@ async function iniciarConstatacion(cuit, { filtros = {}, limite = MAX_ITEMS, pau
           if (res.apoc && res.apoc.esApocrifo) t.apocrifos.add(res.cuitEmisor);
           if (res.valido === null) return; // error transitorio: se reintenta la proxima vez
           await repo.guardar(filas[i].id, {
-            valido: res.valido, resultado: res.resultado, observaciones: res.observaciones, apoc: res.apoc, fecha: new Date().toISOString(),
+            valido: res.valido, resultado: res.resultado, observaciones: res.observaciones, apoc: res.apoc,
+            ...(res.receptorProbado ? { receptorProbado: res.receptorProbado } : {}),
+            ...(res.receptor ? { receptor: res.receptor } : {}),
+            fecha: new Date().toISOString(),
           });
         },
       });
-      t.estado = 'terminado';
+      t.estado = r.detenida ? 'detenido' : 'terminado';
     } catch (e) {
       t.estado = 'error';
       t.error = String(e.message || e).slice(0, 300);
@@ -217,6 +256,18 @@ async function iniciarConstatacion(cuit, { filtros = {}, limite = MAX_ITEMS, pau
     t.terminada = new Date().toISOString();
     t.pendientes = await repo.contarPendientes(c).catch(() => null);
   })();
+  return foto(t);
+}
+
+/**
+ * Pide cortar la constatacion que esta corriendo para ese CUIT. Corta entre un comprobante y el
+ * siguiente: lo constatado queda guardado y el resto sigue pendiente para la proxima vez.
+ */
+function detenerConstatacion(cuit) {
+  const t = trabajos.get(String(cuit || '').replace(/\D/g, ''));
+  if (!t || t.estado !== 'corriendo') throw err('No hay una constatacion corriendo para este CUIT', 409);
+  t.detener = true;
+  t.deteniendo = true;
   return foto(t);
 }
 
@@ -249,4 +300,4 @@ async function resumenGuardado(cuit) {
   return { ...rows[0], observados: obs };
 }
 
-module.exports = { constatarLista, iniciarConstatacion, estadoConstatacion, esperarConstatacion, parsearListaCsv, itemDesdeMc, resumenGuardado, MAX_ITEMS };
+module.exports = { constatarLista, iniciarConstatacion, detenerConstatacion, estadoConstatacion, esperarConstatacion, parsearListaCsv, itemDesdeMc, resumenGuardado, MAX_ITEMS };
