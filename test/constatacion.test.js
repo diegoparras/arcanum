@@ -74,3 +74,60 @@ test('fila de mc_comprobantes recibida se convierte en item', () => {
   const it = cons.itemDesdeMc({ cuit: '20263630743', cbte_tipo: 11, punto_venta: 1, numero_desde: 9, fecha: new Date('2026-11-02T00:00:00Z'), total: '50.5', cae: '7', doc_nro: '30711111118' });
   assert.deepStrictEqual(it, { cuitEmisor: '30711111118', puntoVenta: 1, tipoComprobante: 11, numero: 9, fecha: '2026-11-02', importeTotal: 50.5, cae: '7', docTipo: 80, docNro: '20263630743' });
 });
+
+// ---- Constatar los recibidos en segundo plano (con progreso y guardado de a uno) ----
+
+function fila(id, numero, emisor = '30711111118') {
+  return { id, cuit: '20263630743', tipo: 'recibido', fecha: '2026-11-02', cbte_tipo: 1, punto_venta: 3950, numero_desde: numero, doc_nro: emisor, contraparte: `EMISOR ${emisor}`, total: 100, cae: '7' };
+}
+function repoFalso(filas) {
+  const r = { guardados: [], pedidos: [] };
+  r.pendientes = async (cuit, filtros, limite) => { r.pedidos.push({ cuit, filtros, limite }); return filas; };
+  r.guardar = async (id, c) => { r.guardados.push([id, c.valido]); };
+  r.contarPendientes = async () => 7;
+  return r;
+}
+
+test('constatar en segundo plano: responde enseguida, avanza de a uno y guarda cada resultado al toque', async () => {
+  const d = deps();
+  let soltar;
+  const compuerta = new Promise((r) => { soltar = r; });
+  const constatar = d.constatar;
+  d.constatar = async (c, it) => { if (it.numero === 2) await compuerta; return constatar(c, it); };
+  const repo = repoFalso([fila(11, 1), fila(12, 2), fila(13, 3, '30999999995')]);
+  const cuit = '20263630743';
+  const inicial = await cons.iniciarConstatacion(cuit, { filtros: { contraparte: '30711111118' }, pausaMs: 0, deps: d, repo });
+  assert.strictEqual(inicial.estado, 'corriendo');
+  assert.strictEqual(inicial.total, 3);
+  assert.deepStrictEqual(repo.pedidos[0].filtros, { contraparte: '30711111118' });
+  await new Promise((r) => setTimeout(r, 10));
+  const medio = cons.estadoConstatacion(cuit);
+  assert.strictEqual(medio.hechos, 1, 'el primero ya termino mientras el segundo espera');
+  assert.deepStrictEqual(repo.guardados, [[11, true]], 'guardado antes de que termine el resto');
+  assert.ok(medio.actual && /3950-00000002/.test(medio.actual.comprobante), 'dice cual esta constatando');
+  await assert.rejects(cons.iniciarConstatacion(cuit, { pausaMs: 0, deps: d, repo }), (e) => e.httpStatus === 409);
+  soltar();
+  await cons.esperarConstatacion(cuit);
+  const fin = cons.estadoConstatacion(cuit);
+  assert.strictEqual(fin.estado, 'terminado');
+  assert.deepStrictEqual([fin.hechos, fin.validos, fin.invalidos, fin.conError, fin.emisoresApocrifos, fin.pendientes], [3, 2, 1, 0, 1, 7]);
+  assert.deepStrictEqual(repo.guardados, [[11, true], [12, false], [13, true]]);
+});
+
+test('un error de ARCA en un comprobante no se guarda (se reintenta despues) y no corta el resto', async () => {
+  const d = deps();
+  d.constatar = async (c, it) => { if (it.numero === 1) throw new Error('WSCDC no responde'); return { valido: true, resultado: 'A', observaciones: [] }; };
+  const repo = repoFalso([fila(21, 1), fila(22, 5)]);
+  await cons.iniciarConstatacion('30711111118', { pausaMs: 0, deps: d, repo });
+  await cons.esperarConstatacion('30711111118');
+  const fin = cons.estadoConstatacion('30711111118');
+  assert.deepStrictEqual([fin.estado, fin.conError, fin.validos], ['terminado', 1, 1]);
+  assert.deepStrictEqual(repo.guardados, [[22, true]]);
+});
+
+test('sin recibidos pendientes termina enseguida con total cero', async () => {
+  const repo = repoFalso([]);
+  const r = await cons.iniciarConstatacion('20111111112', { pausaMs: 0, deps: deps(), repo });
+  assert.deepStrictEqual([r.estado, r.total], ['terminado', 0]);
+  assert.strictEqual(cons.estadoConstatacion('99999999999'), null);
+});

@@ -613,7 +613,7 @@ const MC={cuit:'',corrida:null,seq:0,url:null,timer:null,frameTimer:null};
 const MC_VIVOS=['iniciando','corriendo','esperando_humano','humano','esperando_ok'];
 const MC_ESTADO={iniciando:'Iniciando',corriendo:'Operando ARCA',esperando_humano:'Necesita una persona',esperando_ok:'Pide tu OK',humano:'En tus manos',terminado:'Terminada',error:'Con error'};
 function isoHoy(d=new Date()){return d.toISOString().slice(0,10);}
-function mcPararTimers(){clearInterval(MC.timer);clearInterval(MC.frameTimer);MC.timer=MC.frameTimer=null;}
+function mcPararTimers(){clearInterval(MC.timer);clearInterval(MC.frameTimer);clearInterval(MC.constTimer);MC.timer=MC.frameTimer=MC.constTimer=null;}
 async function vMis(){
   mcPararTimers();
   const v=$('#view');let tenants=[];try{({tenants}=await api('/api/tenants'));}catch{}
@@ -654,11 +654,11 @@ async function vMis(){
      <input id="mc_fdesde" type="date" style="width:auto"><input id="mc_fhasta" type="date" style="width:auto">
      <button onclick="mcCargarTabla()">Filtrar</button>
      <span style="margin-left:auto" class="row"><button onclick="mcExportar()">Exportar CSV</button>
-     <button ${opera?'':'disabled'} onclick="mcConstatar()">Constatar recibidos</button></span></div>
+     <button id="mc_constBtn" ${opera?'':'disabled'} onclick="mcConstatar()" title="Constata con ARCA los recibidos todavía sin constatar que pasan los filtros">Constatar recibidos</button></span></div>
      <div id="mc_const"></div>
      <div id="mc_tabla" style="margin-top:10px;overflow-x:auto"><p class="hint">Cargando…</p></div></div>`;
   if(!/^\d{11}$/.test(MC.cuit)){['mc_cred','mc_mono','mc_corridas','mc_tabla'].forEach(id=>$('#'+id).innerHTML='<p class="hint">Elegí un CUIT.</p>');return;}
-  mcCredencial(admin);mcMonotributo();mcCorridas(true);mcCargarTabla();mcRango();
+  mcCredencial(admin);mcMonotributo();mcCorridas(true);mcCargarTabla();mcRango();mcConstRetomar();
   if(admin)api('/api/fisherboy/salud').then(r=>{$('#mc_fbsalud').textContent=r.fisherboy.ok?`Fisherboy ${r.fisherboy.version||''} conectado`:`Fisherboy: ${r.fisherboy.error||'no responde'}`;}).catch(()=>{});
 }
 /* ---------- ANÁLISIS de Mis Comprobantes (sección propia en la barra lateral) ---------- */
@@ -690,13 +690,13 @@ async function vAnalisis(){
    <div class="card"><div class="row">
      <span class="hint" id="mc_tabla_resumen">Con los filtros del análisis.</span>
      <span style="margin-left:auto" class="row"><button onclick="mcExportar()">Exportar CSV</button>
-     <button ${opera?'':'disabled'} onclick="mcConstatar()">Constatar recibidos</button></span></div>
+     <button id="mc_constBtn" ${opera?'':'disabled'} onclick="mcConstatar()" title="Constata con ARCA los recibidos todavía sin constatar que pasan los filtros">Constatar recibidos</button></span></div>
      <div id="mc_const"></div>
      <div id="mc_tabla" style="margin-top:10px;overflow-x:auto"><p class="hint">Cargando…</p></div></div>`;
   if(!/^\d{11}$/.test(MC.cuit)){['mc_tabla','mca_cuerpo'].forEach(id=>$('#'+id).innerHTML='<p class="hint">Elegí un CUIT.</p>');return;}
   $('#mca_seg').querySelectorAll('button').forEach(b=>{b.classList.toggle('on',b.dataset.v===MCA.f.tipo);b.onclick=()=>{MCA.f.tipo=b.dataset.v;mcAplicar();};});
   $('#mca_clase').value=MCA.f.clase;$('#mca_q').value=MCA.f.q;mcaPeriodo(MCA.per||'12m',true);
-  mcAplicar();
+  mcAplicar();mcConstRetomar();
 }
 async function mcCredencial(admin){
   try{const {credencial:c,diaria:dd}=await api(`/api/mis-comprobantes/${MC.cuit}/credencial`);
@@ -939,13 +939,54 @@ async function mcExportar(){
     a.href=URL.createObjectURL(b);a.download=`mis-comprobantes-${MC.cuit}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
   catch(e){toast(e.message,true);}
 }
+/* Constatar recibidos: corre en segundo plano en el servidor (uno por comprobante contra ARCA,
+   puede llevar minutos). Acá se muestra el progreso y se refresca el listado a medida que avanza. */
 async function mcConstatar(){
-  $('#mc_const').innerHTML='<p class="hint">Constatando con ARCA (WSCDC y apócrifos)…</p>';
-  try{const {constatacion:c}=await api(`/api/mis-comprobantes/${MC.cuit}/constatar`,{method:'POST',body:'{}'});
-    $('#mc_const').innerHTML=`<p><span class="tag ok">${c.validos} OK</span> <span class="tag no">${c.invalidos} no constan</span> <span class="tag warn">${c.conError||0} con error</span>
-      ${c.emisoresApocrifos?`<span class="tag no">${c.emisoresApocrifos} emisores apócrifos</span>`:''} <span class="hint">${c.pendientes||0} pendientes</span></p>`;
-    mcCargarTabla();}
-  catch(e){$('#mc_const').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+  const q=new URLSearchParams(mcFiltros()),filtros={};
+  for(const k of ['desde','hasta','clase','cbte','contraparte','q'])if(q.get(k))filtros[k]=q.get(k);
+  const b=$('#mc_constBtn');if(b)b.disabled=true;
+  $('#mc_const').innerHTML='<p class="hint">Buscando los recibidos sin constatar…</p>';
+  try{const {constatacion:c}=await api(`/api/mis-comprobantes/${MC.cuit}/constatar`,{method:'POST',body:JSON.stringify({filtros})});
+    mcConstPintar(c);if(c.estado==='corriendo')mcConstSeguir();else{if(b)b.disabled=false;}}
+  catch(e){if(/Ya se estan constatando/.test(e.message)){mcConstSeguir();return;}
+    if(b)b.disabled=false;$('#mc_const').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+function mcConstPintar(c){
+  const box=$('#mc_const');if(!box||!c)return;
+  const tags=`<span class="tag ok">${c.validos} OK</span> <span class="tag no">${c.invalidos} no ${c.invalidos===1?'consta':'constan'}</span> <span class="tag warn">${c.conError} con error de ARCA</span>${c.emisoresApocrifos?` <span class="tag no">${c.emisoresApocrifos} ${c.emisoresApocrifos===1?'emisor apócrifo':'emisores apócrifos'}</span>`:''}`;
+  if(c.estado==='corriendo'){
+    const pct=c.total?Math.round(c.hechos/c.total*100):0;
+    box.innerHTML=`<div style="margin-top:10px"><div class="row" style="justify-content:space-between"><strong style="font-size:13.5px">Constatando con ARCA: ${c.hechos} de ${c.total}</strong><span class="hint">${pct}%</span></div>
+      <div style="height:8px;border-radius:5px;background:var(--card);margin-top:6px;overflow:hidden" role="progressbar" aria-valuemin="0" aria-valuemax="${c.total}" aria-valuenow="${c.hechos}"><div style="height:100%;width:${pct}%;background:var(--accent);transition:width .4s"></div></div>
+      <p style="margin:8px 0 0">${tags}</p>
+      ${c.actual?`<p class="hint" style="margin:6px 0 0">Ahora: ${esc(c.actual.comprobante)} de ${esc(c.actual.contraparte)}. Podés seguir usando Arcanum; esto sigue solo y guarda cada resultado apenas lo tiene.</p>`:''}</div>`;
+    return;}
+  if(c.estado==='error'){box.innerHTML=`<p style="margin-top:10px"><span class="tag no">SE CORTÓ</span> <span class="hint">${esc(c.error||'')}. Lo constatado hasta ahí quedó guardado: volvé a tocar el botón para seguir.</span></p>`;return;}
+  if(!c.total){box.innerHTML=`<p class="hint" style="margin-top:10px">No hay recibidos sin constatar con estos filtros.${c.pendientes?` Quedan ${c.pendientes} pendientes fuera de los filtros.`:''}</p>`;return;}
+  box.innerHTML=`<p style="margin-top:10px"><strong style="font-size:13.5px">Listo: ${c.total} constatados.</strong> ${tags} <span class="hint">${c.pendientes!=null?`· ${c.pendientes} pendientes en total${c.conError?' (los que dieron error se reintentan la próxima vez)':''}`:''}</span></p>`;
+}
+function mcConstSeguir(){
+  clearInterval(MC.constTimer);let vistos=-1;
+  const b=$('#mc_constBtn');if(b)b.disabled=true;
+  const paso=async()=>{
+    if(!$('#mc_const')){clearInterval(MC.constTimer);return;}
+    try{const {constatacion:c}=await api(`/api/mis-comprobantes/${MC.cuit}/constatar`);
+      if(!c){clearInterval(MC.constTimer);if(b)b.disabled=false;return;}
+      mcConstPintar(c);
+      if(c.estado!=='corriendo'){clearInterval(MC.constTimer);MC.constTimer=null;const bb=$('#mc_constBtn');if(bb)bb.disabled=false;mcCargarTabla();return;}
+      if(vistos<0||c.hechos-vistos>=10){vistos=c.hechos;mcCargarTabla();}
+    }catch{}
+  };
+  paso();MC.constTimer=setInterval(paso,1500);
+}
+/* Al abrir la pantalla: si hay una constatación corriendo (o recién terminada), mostrarla. */
+async function mcConstRetomar(){
+  if(!/^\d{11}$/.test(MC.cuit)||!$('#mc_const'))return;
+  try{const {constatacion:c}=await api(`/api/mis-comprobantes/${MC.cuit}/constatar`);
+    if(!c)return;
+    if(c.estado==='corriendo'){mcConstSeguir();return;}
+    if(c.terminada&&Date.now()-new Date(c.terminada)<15*60000)mcConstPintar(c);
+  }catch{}
 }
 async function mcMonotributo(){
   try{const {monotributo:m}=await api(`/api/monotributo/${MC.cuit}`);

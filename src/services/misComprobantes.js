@@ -621,4 +621,4 @@ function servicio() {
   return porDefecto;
 }
 
-module.exports = { crear, servicio, tramos, cuitDe, progresoDe, iaPorEntorno, condicionesListado, ESTADOS_VIVOS, RECETA_DEFAULT };
+module.exports = { crear, servicio, tramos, cuitDe, progresoDe, iaPorEntorno, condicionesListado, filtrosExtra, ESTADOS_VIVOS, RECETA_DEFAULT };

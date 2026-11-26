@@ -3,6 +3,25 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.1.4] - 2026-11-26
+
+### Corregido
+- **"Constatar recibidos" parecía no hacer nada.** Constataba todos los recibidos pendientes
+  contra ARCA en un solo pedido, de a uno y con pausa, y guardaba recién al final. Con cientos de
+  recibidos eran minutos con la pantalla en "Constatando…", y si el proxy cortaba el pedido no se
+  veía ningún resultado. Ahora corre en segundo plano en el servidor:
+  - guarda cada resultado apenas lo tiene, así que si se corta, lo hecho queda;
+  - la pantalla muestra una barra de progreso ("Constatando con ARCA: 14 de 33"), el comprobante
+    que está consultando y los OK, los que no constan, los errores y los emisores apócrifos a
+    medida que salen, y refresca el listado mientras avanza;
+  - el botón queda trabado mientras corre y, al volver a la pantalla, retoma el progreso.
+- Constata **solo los recibidos que pasan los filtros** que estás mirando (período, proveedor,
+  tipo, búsqueda), no todos los del CUIT. Los que dan error de ARCA no se guardan y se
+  reintentan la próxima vez.
+- API: `POST /api/mis-comprobantes/:cuit/constatar` ahora devuelve 202 y arranca el trabajo
+  (`{ filtros }` opcional). `GET` en la misma ruta devuelve el progreso. Hay un solo trabajo
+  por CUIT a la vez (409 si ya hay uno corriendo).
+
 ## [2.1.3] - 2026-11-25
 
 ### Cambiado

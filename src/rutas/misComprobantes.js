@@ -17,7 +17,7 @@
 //   GET      /api/mis-comprobantes/:cuit/rango?tipo=      proxima sincronizacion (incremental)
 //   GET/PUT/DELETE /api/mis-comprobantes/:cuit/credencial   (PUT/DELETE admin+)
 //   POST     /api/mis-comprobantes/:cuit/sincronizar    admin+ u operador con ese CUIT -> 202
-//   POST     /api/mis-comprobantes/:cuit/constatar      constata los recibidos pendientes (WSCDC + APOC)
+//   POST/GET /api/mis-comprobantes/:cuit/constatar      arranca (202) / sigue la constatacion de recibidos (WSCDC + APOC)
 //   POST     /api/constatacion                          { cuit, items | csv } constatacion masiva
 //
 // Los bodies no se registran en la auditoria (logRequest guarda solo la ruta y el estado), asi
@@ -185,10 +185,19 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       }
       return false;
     }
+    // Constatar los recibidos pendientes (con los filtros del analisis) corre en segundo plano:
+    // POST lo arranca (202) y GET devuelve el progreso.
     if (req.method === 'POST' && seg[3] === 'constatar') {
       puedeOperar(principal, cuit);
       const b = await readJsonBody(req);
-      return json(res, 200, { ok: true, constatacion: await cons().constatarRecibidos(cuit, { limite: b.limite }) });
+      const pedidos = (b && typeof b.filtros === 'object' && b.filtros) || {};
+      const filtros = {};
+      for (const k of ['desde', 'hasta', 'clase', 'cbte', 'contraparte', 'q']) if (pedidos[k]) filtros[k] = String(pedidos[k]).slice(0, 80);
+      const constatacion = await cons().iniciarConstatacion(cuit, { filtros, limite: b && b.limite, usuario: principal.username });
+      return json(res, 202, { ok: true, constatacion });
+    }
+    if (req.method === 'GET' && seg[3] === 'constatar') {
+      return json(res, 200, { ok: true, constatacion: cons().estadoConstatacion(cuit) });
     }
     if (req.method === 'GET' && seg[3] === 'rango') {
       return json(res, 200, { ok: true, rango: await servicio().rangoSugerido(cuit, q.get('tipo') || 'ambos') });
