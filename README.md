@@ -17,7 +17,7 @@ Gateway REST self-hosted para los Web Services de ARCA (ex AFIP), con panel web,
 
 </div>
 
-https://github.com/user-attachments/assets/ac2dd376-f306-46a7-909a-5a58a4a4aa7d
+https://github.com/user-attachments/assets/7188d4d8-7b0b-4bc0-b6e8-178d5861e913
 
 <div align="center"><sub>Arcanum en 90 segundos, con sonido. En alta definición: <a href="docs/media/arcanum.mp4">arcanum.mp4 (1080p)</a>.</sub></div>
 

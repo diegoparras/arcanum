@@ -3,6 +3,12 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [2.1.22] - 2026-11-26
+
+### Documentación
+- El video del README muestra el logo como portada antes de reproducirse.
+- `docs/fuentes/video/web.py` arma la versión web del video (720p, menos de 10 MB).
+
 ## [2.1.21] - 2026-11-26
 
 ### Documentación

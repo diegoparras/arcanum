@@ -23,7 +23,7 @@ python -m playwright install chromium
 | 3. Portada | `python docs/fuentes/portada/portada.py` | `docs/media/portada.png` y `docs/media/social.jpg` |
 | 4. Guías | `python docs/fuentes/guias/guias.py` | `docs/guias/arcanum-guia-instalacion.pdf` y `docs/guias/arcanum-guia-uso.pdf` |
 | 5. Video | `python docs/fuentes/video/video.py` | `docs/media/arcanum.mp4` (con música) |
-| 6. Adelanto | ver abajo | `docs/media/adelanto.gif` |
+| 6. Adelanto y versión web | ver abajo | `docs/media/adelanto.gif` y el video del README |
 | 7. Apagar la demo | `bash docs/fuentes/demo/arc-demo.sh down` | |
 
 Los pasos 3 a 6 usan las capturas del paso 2; el 4 toma la versión de `package.json` (o la que se le pase como argumento).
@@ -41,7 +41,11 @@ Nunca corras `capturas.py` contra una instalación real: las capturas se publica
 - `video.py` junta las dos cosas: captura los cuadros con Chromium y los codifica con ffmpeg (H.264 + AAC).
 - Para revisar escenas sin renderizar todo: `python video.py --cuadros 5.5,17.5` guarda esos segundos como PNG.
 
-### Adelanto animado para el README
+### Video en el README
+
+GitHub solo reproduce dentro del README los videos subidos como adjunto, de hasta 10 MB. `python docs/fuentes/video/web.py` arma esa versión (720p, unos 9 MB, con el logo como portada). Se arrastra el archivo a un comentario de GitHub sin publicarlo, y el enlace `https://github.com/user-attachments/assets/...` que devuelve va solo en una línea del README.
+
+### Adelanto animado
 
 ```bash
 python docs/fuentes/video/adelanto.py
