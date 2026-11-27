@@ -10,6 +10,7 @@
 // Mejora sobre un facturador que solo trackea: la emision es real (nuestro WSFEv1)
 // y el numero de comprobante se resuelve solo (ultimo autorizado + 1).
 
+const { celdaCsv } = require('../lib/csv');
 const db = require('../db');
 const wsfev1 = require('./wsfev1');
 const mailer = require('./mailer');
@@ -59,15 +60,28 @@ function parseCsv(text) {
   });
 }
 
+// Textos que van al cuerpo de un correo: una linea, sin caracteres de control (B-12).
+const unaLinea = (v) => (v == null || v === '' ? null : String(v).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) || null);
+
+/** Una sola direccion de email valida, o null. Varias direcciones o saltos de linea: 422 (B-12). */
+function emailItem(v) {
+  if (v == null || String(v).trim() === '') return null;
+  const e = String(v).trim().toLowerCase();
+  if (e.length > 254 || !/^[^\s@<>,;:"()[\]\\]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(e)) {
+    throw Object.assign(new Error(`Email inválido: tiene que ser una sola dirección (${String(v).slice(0, 40)})`), { httpStatus: 422 });
+  }
+  return e;
+}
+
 function normItem(raw) {
   return {
-    nombre: raw.nombre || raw.razonSocial || null,
+    nombre: unaLinea(raw.nombre || raw.razonSocial),
     cuit: raw.cuit ? normalizeCuit(raw.cuit) : null,
     doc_tipo: pInt(raw.docTipo) != null ? pInt(raw.docTipo) : (raw.cuit ? 80 : 99),
     doc_nro: raw.docNro != null ? String(raw.docNro) : (raw.cuit ? normalizeCuit(raw.cuit) : '0'),
-    email: raw.email || null,
+    email: emailItem(raw.email),
     concepto: pInt(raw.concepto) != null ? pInt(raw.concepto) : 1,
-    periodo: raw.periodo || null,
+    periodo: unaLinea(raw.periodo),
     tipo_comprobante: pInt(raw.tipoComprobante),
     punto_venta: pInt(raw.puntoVenta),
     importe_neto: n(raw.importeNeto),
@@ -183,7 +197,7 @@ async function emitirItem(loteId, itemId, extra = {}) {
       receptorNombre: it.nombre,
     };
     const r = await wsfev1.authorizeInvoice(lote.cuit, inv);
-    if (!r.aprobado) throw Object.assign(new Error('ARCA rechazo la emision: ' + (r.errores?.[0]?.message || r.observaciones?.[0]?.message || 'ver detalle')), { httpStatus: 422, extra: r });
+    if (!r.aprobado) throw Object.assign(new Error('ARCA rechazó la emisión: ' + (r.errores?.[0]?.message || r.observaciones?.[0]?.message || 'ver detalle')), { httpStatus: 422, extra: r });
     await db.query(
       `UPDATE lote_items SET estado='emitido', cae=$1, numero=$2, cae_vto=to_date($3,'YYYYMMDD'), resuelto_at=now() WHERE id=$4`,
       [r.cae, r.numero, r.caeVencimiento, itemId],
@@ -212,12 +226,24 @@ async function emitirLote(loteId, extra = {}) {
   return { total: pend.length, emitidos: resultados.filter((r) => r.ok).length, resultados };
 }
 
+/** CAE y numero de un recibido: solo digitos (o vacios). Se muestran en el panel (auditoria 2026-11-26, A-04). */
+function validarRecibido(datos = {}) {
+  const limpio = (v, campo, max) => {
+    const s = v == null ? '' : String(v).trim();
+    if (!s) return null;
+    if (!/^\d+$/.test(s) || s.length > max) throw Object.assign(new Error(`El ${campo} solo puede tener dígitos`), { httpStatus: 422 });
+    return s;
+  };
+  return { cae: limpio(datos.cae, 'CAE', 14), numero: limpio(datos.numero, 'numero', 8) };
+}
+
 /** Marca un item como "recibido" (el profesional emitio y te mando su comprobante). */
 async function marcarRecibido(loteId, itemId, datos = {}) {
+  const { cae, numero } = validarRecibido(datos);
   await getItem(loteId, itemId);
   await db.query(
     'UPDATE lote_items SET estado=$1, cae=$2, numero=$3, nota=$4, resuelto_at=now() WHERE id=$5 AND lote_id=$6',
-    [datos.estado === 'rechazado' ? 'rechazado' : 'recibido', datos.cae || null, datos.numero || null, datos.nota || null, itemId, loteId],
+    [datos.estado === 'rechazado' ? 'rechazado' : 'recibido', cae, numero, datos.nota || null, itemId, loteId],
   );
   return getItem(loteId, itemId);
 }
@@ -226,30 +252,29 @@ async function marcarRecibido(loteId, itemId, datos = {}) {
 async function solicitarItem(loteId, itemId) {
   const it = await getItem(loteId, itemId);
   if (!it.email) throw Object.assign(new Error('El item no tiene email'), { httpStatus: 422 });
+  // Un recordatorio por dia por item (B-12): sin esto se podia mandar una y otra vez.
+  if (it.solicitado_at && Date.now() - new Date(it.solicitado_at).getTime() < 24 * 3600 * 1000) {
+    throw Object.assign(new Error('Ya se solicitó en las últimas 24 horas: se puede volver a pedir mañana'), { httpStatus: 429 });
+  }
   await mailer.send(
     it.email,
     `Solicitud de comprobante${it.periodo ? ' — ' + it.periodo : ''}`,
-    `Hola ${it.nombre || ''},\n\nTe solicitamos el comprobante correspondiente${it.periodo ? ' al periodo ' + it.periodo : ''}${it.importe_total ? ' por $' + Number(it.importe_total).toFixed(2) : ''}.\n\nGracias.`,
+    `Hola ${it.nombre || ''},\n\nTe solicitamos el comprobante correspondiente${it.periodo ? ' al período ' + it.periodo : ''}${it.importe_total ? ' por $' + Number(it.importe_total).toFixed(2) : ''}.\n\nGracias.`,
   );
   await db.query("UPDATE lote_items SET estado=CASE WHEN estado='pendiente' THEN 'solicitado' ELSE estado END, solicitado_at=now() WHERE id=$1", [itemId]);
   return getItem(loteId, itemId);
 }
 
-function csvEscape(v) {
-  if (v === null || v === undefined) return '';
-  const s = String(v);
-  return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}
 async function exportCsv(loteId) {
   const { items } = await detalle(loteId);
   const cols = ['id', 'nombre', 'cuit', 'estado', 'periodo', 'importe_total', 'cae', 'numero', 'diasPendiente', 'semaforo'];
   const lines = [cols.join(',')];
   for (const it of items) {
-    lines.push([it.id, it.nombre, it.cuit, it.estado, it.periodo, it.importe_total, it.cae, it.numero, it.aging.dias ?? '', it.aging.semaforo ?? ''].map(csvEscape).join(','));
+    lines.push([it.id, it.nombre, it.cuit, it.estado, it.periodo, it.importe_total, it.cae, it.numero, it.aging.dias ?? '', it.aging.semaforo ?? ''].map((v) => celdaCsv(v, ',')).join(',')); // sin formulas (B-03)
   }
   return lines.join('\n');
 }
 
-module.exports = { crear, listar, detalle, emitirItem, emitirLote, marcarRecibido, solicitarItem, exportCsv, aging, cuitDe, ESTADOS,
+module.exports = { crear, listar, detalle, emitirItem, emitirLote, marcarRecibido, validarRecibido, solicitarItem, exportCsv, aging, cuitDe, ESTADOS,
   // Expuestos para tests unitarios (funciones puras).
   _internos: { parseCsv, normItem, alicuotaId, n, pInt } };

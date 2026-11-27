@@ -3,6 +3,7 @@
 // WSFEv1 — Factura Electronica nacional (comprobantes A/B/C/M, CAE).
 // Mapea el SOAP de ARCA a funciones JS limpias. El router REST las expone.
 
+const { CONFLICTO_EMISION } = require('./sqlComprobantes');
 const db = require('../db');
 const webhooks = require('./webhooks');
 const { config } = require('../config');
@@ -24,7 +25,7 @@ function fmtDate(d) {
   if (/^\d{8}$/.test(s)) return s;
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}${m[2]}${m[3]}`;
-  throw new SoapError(`Fecha invalida: ${d} (use YYYY-MM-DD)`, 400);
+  throw new SoapError(`Fecha inválida: ${d} (use YYYY-MM-DD)`, 400);
 }
 function todayYmd() {
   const d = new Date();
@@ -159,7 +160,7 @@ function validarImportes(inv) {
   if (Array.isArray(inv.alicuotasIva) && inv.alicuotasIva.length) {
     const sumIva = +inv.alicuotasIva.reduce((a, x) => a + Number(x.importe || 0), 0).toFixed(2);
     if (Math.abs(sumIva - iva) > 0.01) {
-      throw new SoapError(`La suma de IVA por alicuota (${sumIva}) no coincide con importeIva (${iva.toFixed(2)})`, 422);
+      throw new SoapError(`La suma de IVA por alícuota (${sumIva}) no coincide con importeIva (${iva.toFixed(2)})`, 422);
     }
   }
   // Moneda extranjera: la cotizacion es obligatoria y > 0 (ARCA la valida).
@@ -193,10 +194,16 @@ function validarIdentificacionConsumidorFinal(inv, tipoCbte) {
  * y persiste el resultado en la tabla comprobantes.
  * Si no se pasa `numero`, lo calcula como ultimo autorizado + 1.
  */
-/** Comprobante ya emitido con esta clave de idempotencia, o null. */
-async function previoIdempotente(idem) {
+/**
+ * Comprobante ya emitido por ESTE CUIT, en este entorno, con esta clave de idempotencia, o null.
+ * La clave vale por (cuit, entorno): la de otro CUIT es como si no existiera (auditoria
+ * 2026-11-26, A-03: antes era global y devolvia el comprobante de otro cliente).
+ */
+async function previoIdempotente(cuit, idem) {
   if (!idem) return null;
-  const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
+  const prev = await db.query(
+    'SELECT raw FROM comprobantes WHERE cuit = $1 AND entorno = $2 AND idempotency_key = $3',
+    [normalizeCuit(cuit), config.env, idem]);
   return prev.rows.length ? { ...prev.rows[0].raw, idempotente: true } : null;
 }
 
@@ -205,7 +212,7 @@ async function authorizeInvoice(cuit, inv) {
   const idem = inv.idempotencyKey || null;
 
   // Idempotencia: si ya emitimos con esta clave, devolvemos el resultado guardado.
-  const previo = await previoIdempotente(idem);
+  const previo = await previoIdempotente(c, idem);
   if (previo) return previo;
 
   validarImportes(inv);
@@ -290,7 +297,7 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
   // Re-chequeo de idempotencia YA DENTRO del lock: si un reintento llego mientras el
   // primer pedido seguia hablando con ARCA, espero al lock y devuelvo ese comprobante
   // en vez de emitir otro con el numero siguiente.
-  const previo = await previoIdempotente(idem);
+  const previo = await previoIdempotente(cuit, idem);
   if (previo) return previo;
 
   // Intento anterior con esta clave cuya respuesta no llego (timeout, corte, reinicio): se
@@ -298,10 +305,10 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
   const vuelos = require('./vuelo');
   const vrepo = vuelos.repoSql(db);
   if (idem) {
-    const r = await vuelos.resolver(await vrepo.obtener(idem), { consultar });
+    const r = await vuelos.resolver(await vrepo.obtener(cuit, idem), { consultar });
     if (r.estado === 'adoptar') {
       const raw = await registrarAdoptado(cuit, r.consultado, inv, idem);
-      await vrepo.borrar(idem);
+      await vrepo.borrar(cuit, idem);
       webhooks.emitir('comprobante_emitido', raw).catch(() => {});
       return { ...raw, idempotente: true };
     }
@@ -336,7 +343,7 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
     throw e; // el vuelo queda anotado: el proximo intento lo resuelve
   }
   // ARCA contesto (aprobado o rechazado): ya no hay duda sobre este intento.
-  if (idem) await vrepo.borrar(idem).catch(() => {});
+  if (idem) await vrepo.borrar(cuit, idem).catch(() => {});
 
   const topErrors = collectErrors(result);
   const det = result?.FeDetResp?.FECAEDetResponse;
@@ -394,7 +401,7 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
             importe_total, doc_tipo, doc_nro, idempotency_key, raw)
          VALUES ($1,$2,$3,$4,$5,$6, to_date($7,'YYYYMMDD'),$8, to_date($9,'YYYYMMDD'),
                  $10,$11,$12,$13,$14)
-         ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
+         ${CONFLICTO_EMISION}`,
         [cuit, config.env, ptoVta, tipoCbte, numero, out.cae, out.caeVencimiento, resultado, cbteFecha,
          out.importeTotal, out.docTipo, out.docNro, idem, JSON.stringify(out)],
       );
@@ -418,7 +425,7 @@ async function registrarAdoptado(cuit, consultado, cuerpo, idem) {
     'SELECT idempotency_key FROM comprobantes WHERE cuit = $1 AND entorno = $2 AND punto_venta = $3 AND tipo_cbte = $4 AND numero = $5',
     [c, config.env, consultado.puntoVenta, consultado.tipoComprobante, consultado.numero]);
   if (ya.rows[0] && ya.rows[0].idempotency_key !== idem) {
-    throw new SoapError(`El numero ${consultado.numero} ya esta registrado en Arcanum para otra venta: revisa antes de emitir`, 409);
+    throw new SoapError(`El número ${consultado.numero} ya está registrado en Arcanum para otra venta: revisá antes de emitir`, 409);
   }
   const raw = {
     ...cuerpo,
@@ -433,7 +440,7 @@ async function registrarAdoptado(cuit, consultado, cuerpo, idem) {
        (cuit, entorno, punto_venta, tipo_cbte, numero, cae, cae_vto, resultado, fecha,
         importe_total, doc_tipo, doc_nro, idempotency_key, raw)
      VALUES ($1,$2,$3,$4,$5,$6, to_date($7,'YYYYMMDD'),'A', to_date($8,'YYYYMMDD'),$9,$10,$11,$12,$13)
-     ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
+     ${CONFLICTO_EMISION}`,
     [c, config.env, consultado.puntoVenta, consultado.tipoComprobante, consultado.numero, consultado.cae,
       consultado.caeVencimiento, consultado.fecha, raw.importeTotal, consultado.docTipo, consultado.docNro, idem, JSON.stringify(raw)]);
   return raw; // el aviso comprobante_emitido lo manda la cola (uno solo)
@@ -552,7 +559,7 @@ const PARAMS = {
 
 async function getParams(cuit, name) {
   const p = PARAMS[name];
-  if (!p) throw new SoapError(`Parametro desconocido: ${name}`, 404);
+  if (!p) throw new SoapError(`Parámetro desconocido: ${name}`, 404);
   return getParam(cuit, p.method, p.item);
 }
 
@@ -603,9 +610,9 @@ function parseLoteCsv(text) {
 }
 
 /** ¿Hay una emision en vuelo sin resolver para esta clave? (la cola no usa CAEA si la hay) */
-async function hayVuelo(idem) {
+async function hayVuelo(cuit, idem) {
   if (!idem) return false;
-  return !!(await require('./vuelo').repoSql(db).obtener(idem));
+  return !!(await require('./vuelo').repoSql(db).obtener(cuit, idem));
 }
 
 module.exports = {

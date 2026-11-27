@@ -81,7 +81,7 @@ test('anomalias: barrido de CUITs avisa una sola vez por hora', () => {
   ahora.avanzar(3_600_000);
   assert.deepStrictEqual(d.registrar({ id: 1, nombre: 'x', status: 200, cuitConsultado: '9' }), [], 'la hora nueva arranca de cero');
 });
-test('anomalias: muchos 403/429 avisan', () => {
+test('anomalias: muchos 403/429 de una clave disparan el aviso de rechazos', () => {
   const d = crearDetector({ ahora: reloj(), umbrales: { cuitsPorHora: 0, rechazosPorHora: 2 } });
   assert.deepStrictEqual(d.registrar({ id: 5, status: 403 }), []);
   assert.deepStrictEqual(d.registrar({ id: 5, status: 200 }), []);
@@ -114,7 +114,7 @@ test('vista previa: Factura A exige CUIT del receptor valido y alicuotas', () =>
   assert.match(t, /Factura A necesita/);
   assert.match(t, /alicuotasIva/);
   const r2 = revisarComprobante({ ...facturaC, tipoComprobante: 1, tipoDocReceptor: 80, nroDocReceptor: '20111111111', importeNeto: 100, importeIva: 21, importeTotal: 121, condicionIvaReceptor: 1, alicuotasIva: [{ id: 5, baseImponible: 100, importe: 21 }] }, { hoy: HOY });
-  assert.match(r2.problemas.join(' | '), /no es valido/);
+  assert.match(r2.problemas.join(' | '), /no es válido/);
 });
 test('vista previa: nota de credito sin comprobante asociado', () => {
   const r = revisarComprobante({ ...facturaC, tipoComprobante: 13 }, { hoy: HOY });
@@ -122,9 +122,9 @@ test('vista previa: nota de credito sin comprobante asociado', () => {
 });
 test('vista previa: fecha fuera de la ventana de ARCA', () => {
   const r = revisarComprobante({ ...facturaC, fecha: '2026-11-01' }, { hoy: HOY });
-  assert.match(r.problemas.join(' | '), /17 dias/);
+  assert.match(r.problemas.join(' | '), /17 días/);
   const s = revisarComprobante({ ...facturaC, concepto: 2, fecha: '2026-11-10' }, { hoy: HOY });
-  assert.ok(!s.problemas.some((p) => /dias de hoy/.test(p)), 'servicios: hasta 10 dias');
+  assert.ok(!s.problemas.some((p) => /días de hoy/.test(p)), 'servicios: hasta 10 dias');
 });
 test('vista previa: consumidor final grande sin identificar (RG 5866)', () => {
   const r = revisarComprobante({ ...facturaC, importeNeto: 12000000, importeTotal: 12000000 }, { hoy: HOY });
@@ -135,7 +135,7 @@ test('vista previa: sin clave de idempotencia es advertencia, no problema', () =
   assert.deepStrictEqual(r.problemas, []);
   assert.match(r.advertencias.join(' | '), /idempotencyKey/);
 });
-test('cuitValido: digito verificador', () => {
+test('cuitValido: controla el digito verificador y el largo', () => {
   assert.strictEqual(cuitValido('20-26363074-3'), true);
   assert.strictEqual(cuitValido('30500010912'), true);
   assert.strictEqual(cuitValido('20263630744'), false);

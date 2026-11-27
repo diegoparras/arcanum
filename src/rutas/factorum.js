@@ -40,7 +40,7 @@ function puedeOperar(principal) {
 
 function cuitDe(valor, campo) {
   const c = normalizeCuit(valor);
-  if (!/^\d{11}$/.test(c)) throw err(`"${campo}" debe ser un CUIT de 11 digitos`, 400);
+  if (!/^\d{11}$/.test(c)) throw err(`"${campo}" debe ser un CUIT de 11 dígitos`, 400);
   return c;
 }
 
@@ -57,7 +57,7 @@ function clienteDelAlcance(principal, valor, campo = 'cliente') {
   }
   if (!scopedRequiresCuit(principal)) return undefined;
   if (principal.cuitAllow.length === 1) return principal.cuitAllow[0];
-  throw err(`Indica "${campo}": tu usuario o clave esta limitado a ${principal.cuitAllow.length} CUITs (${principal.cuitAllow.join(', ')})`, 400);
+  throw err(`Indicá "${campo}": tu usuario o clave está limitado a ${principal.cuitAllow.length} CUITs (${principal.cuitAllow.join(', ')})`, 400);
 }
 
 /**
@@ -74,7 +74,7 @@ function consultanteDelAlcance(principal, valor) {
   const allow = principal.cuitAllow || [];
   if (allow.length === 1) return allow[0];
   if (scopedRequiresCuit(principal)) {
-    throw err(`Indica "cuit_consultante": tu usuario o clave esta limitado a ${allow.length} CUITs (${allow.join(', ')})`, 400);
+    throw err(`Indicá "cuit_consultante": tu usuario o clave está limitado a ${allow.length} CUITs (${allow.join(', ')})`, 400);
   }
   return undefined;
 }
@@ -121,10 +121,15 @@ function enviarBinario(res, archivo, { nombre, adjunto }) {
 
 function crearRutas({ factorum } = {}) {
   const fa = () => factorum || require('../services/factorum');
-  const limites = () => require('../services/factorum').LIMITES;
+  const limites = () => (factorum && factorum.LIMITES) || require('../services/factorum').LIMITES;
+  // Antes de leer (y decodificar) un cuerpo de hasta 80 MB, que Factorum este conectado (B-16).
+  async function exigirConfigurado() {
+    const c = await fa().config();
+    if (!c || !c.url || !c.tokenCargado) throw err('Factorum no está configurado: cargá su URL y su token en Ajustes', 503);
+  }
 
   async function comprobanteEnAlcance(principal, id) {
-    if (!/^\d+$/.test(String(id))) throw err('Comprobante invalido', 400);
+    if (!/^\d+$/.test(String(id))) throw err('Comprobante inválido', 400);
     const r = await fa().comprobante(id);
     const c = r && r.comprobante;
     if (!c) throw err('No existe ese comprobante', 404);
@@ -158,6 +163,7 @@ function crearRutas({ factorum } = {}) {
     // --- verificar una factura (no guarda nada) ---
     if (req.method === 'POST' && seg[2] === 'verificar' && !seg[3]) {
       puedeOperar(principal);
+      await exigirConfigurado();
       const b = await readJsonBody(req, { max: limites().MAX_BODY_VERIFICAR });
       const cuitConsultante = consultanteDelAlcance(principal, b.cuit_consultante);
       if (cuitConsultante) req._cuit = cuitConsultante;
@@ -180,6 +186,7 @@ function crearRutas({ factorum } = {}) {
       }
       if (req.method === 'POST') {
         puedeOperar(principal);
+        await exigirConfigurado();
         const b = await readJsonBody(req, { max: limites().MAX_BODY_LOTE });
         const clienteCuit = clienteDelAlcance(principal, b.cliente_cuit, 'cliente_cuit');
         if (clienteCuit) req._cuit = clienteCuit;
@@ -197,7 +204,7 @@ function crearRutas({ factorum } = {}) {
       return false;
     }
     if (req.method === 'GET' && seg[2] === 'lotes' && seg[3] && !seg[4]) {
-      if (!/^\d+$/.test(seg[3])) throw err('Lote invalido', 400);
+      if (!/^\d+$/.test(seg[3])) throw err('Lote inválido', 400);
       const r = await fa().lote(seg[3]);
       if (!r || !r.lote) throw err('No existe ese lote', 404);
       assertRecursoEnAlcance(principal, r.lote.cliente_cuit);
@@ -219,6 +226,14 @@ function crearRutas({ factorum } = {}) {
         if (actual.comprobante.cliente_cuit) req._cuit = actual.comprobante.cliente_cuit;
         const b = await readJsonBody(req);
         const campos = b.campos && typeof b.campos === 'object' && !Array.isArray(b.campos) ? b.campos : {};
+        // Factorum (Go) decodifica sin distinguir mayusculas: "Cliente_Cuit" moveria el comprobante
+        // sin pasar por el chequeo de alcance de abajo. Solo se acepta la forma exacta (P-04).
+        for (const k of Object.keys(campos)) {
+          if (k !== 'cliente_cuit' && k.replace(/[^a-z]/gi, '').toLowerCase() === 'clientecuit') {
+            throw err(`Campo inválido: "${k.slice(0, 40)}" (usá cliente_cuit)`, 400);
+          }
+          if (!/^[a-z0-9_]{1,40}$/.test(k)) throw err(`Campo inválido: "${k.slice(0, 40)}"`, 400);
+        }
         if (Object.prototype.hasOwnProperty.call(campos, 'cliente_cuit')) {
           // Moverlo a otro cliente tambien tiene que respetar el scope.
           assertCuitAllowed(principal, cuitDe(campos.cliente_cuit, 'cliente_cuit'));

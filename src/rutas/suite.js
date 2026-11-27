@@ -13,18 +13,25 @@
 //
 // El token del pase va en la URL de /suite/entrar, que no pasa por la auditoria de pedidos
 // (solo registra /api/...). Igual se responde con Referrer-Policy: no-referrer y sin cache.
+//
+// Seguridad de 2.1.x que el pase respeta tal cual:
+//  - La sesion que abre /suite/entrar es la misma del login (tabla `sesiones`, revocable, con su
+//    sid en la cookie), con origen "suite": en cada pedido se relee el usuario y vale lo mas
+//    restrictivo entre lo que dio el pase y lo que tiene hoy en Arcanum (ver checkAuth).
+//  - Cookie Secure con la misma regla del login (https informado por el proxy, prod o
+//    ARCANUM_COOKIE_SECURE=1).
+//  - POST /api/suite/abrir/:app pasa por el control CSRF del servidor como cualquier pedido con
+//    sesion. POST /api/suite/pase es solo con clave: no lee la cookie y no aplica CSRF.
+//  - IP del cliente: la del proxy de confianza (ipCliente), no la que dice el cliente.
 
 const { sendJson, readJsonBody } = require('../lib/http');
 const { requireRole } = require('../auth/permisos');
 const session = require('../auth/session');
+const { ipCliente } = require('../auth/limiteLogin');
 
 function json(res, status, payload) {
   sendJson(res, status, payload);
   return true;
-}
-
-function ipDe(req) {
-  return (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || (req.socket && req.socket.remoteAddress) || null;
 }
 
 /**
@@ -32,40 +39,52 @@ function ipDe(req) {
  *  - suite: crearSuite(...) (src/services/suite.js)
  *  - principalDeClave(req): principal de la clave presentada, null sin clave, tira 401 si es invalida
  *  - aplicarLimite(req, res, principal): limite por minuto de la clave (opcional)
+ *  - sesiones: servicio de src/auth/sesiones.js (en tests, uno en memoria)
  */
-function crearRutas({ suite, principalDeClave, aplicarLimite } = {}) {
+function crearRutas({ suite, principalDeClave, aplicarLimite, sesiones } = {}) {
   const st = () => suite || require('../services/suite').servicio();
+  const ses = () => sesiones || require('../auth/sesiones').servicio();
 
   async function publicas(req, res, url) {
     if (url.pathname === '/api/suite/pase') {
       if (req.method !== 'POST') return false;
       req._op = 'suite.pase';
-      req._ip = ipDe(req);
+      req._ip = ipCliente(req);
+      // Solo la clave: una cookie de sesion no se mira (ni siquiera si viene).
       const clave = await principalDeClave(req);
       if (!clave) {
         throw Object.assign(new Error('Falta la clave: enviá X-API-Key o Authorization: Bearer <clave> (una clave de Arcanum habilitada para la suite).'), { httpStatus: 401 });
       }
       req._user = clave.username;
       if (aplicarLimite) aplicarLimite(req, res, clave);
-      const cuerpo = await readJsonBody(req);
-      return json(res, 200, await st().emitirPase(clave, cuerpo && typeof cuerpo === 'object' ? cuerpo : {}, { ip: req._ip }));
+      const cuerpo = await readJsonBody(req, { max: 8 * 1024 }); // un pedido de pase no pesa mas
+      return json(res, 200, await st().emitirPase(clave, cuerpo && typeof cuerpo === 'object' && !Array.isArray(cuerpo) ? cuerpo : {}, { ip: req._ip }));
     }
 
     if (req.method === 'GET' && url.pathname === '/suite/entrar') {
-      const cfg = await st().config().catch(() => ({ urlPublica: '' }));
-      const https = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' || /^https:/i.test(cfg.urlPublica || '');
-      const principal = await st().canjearPase(url.searchParams.get('pase'), { ip: ipDe(req) }).catch((e) => {
+      const ip = ipCliente(req);
+      const principal = await st().canjearPase(url.searchParams.get('pase'), { ip }).catch((e) => {
         console.error('[arcanum] suite: no se pudo canjear un pase:', e.message);
         return null;
       });
       const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
-      if (!principal) {
+      let cookie = null;
+      if (principal) {
+        // La misma sesion que abre el login (M-06): registrada, revocable y con su sid en la cookie.
+        try {
+          const sid = await ses().crear(principal, 'suite');
+          cookie = session.cookieHeader(session.sign({ ...principal, sid, origen: 'suite' }), req);
+        } catch (e) {
+          console.error('[arcanum] suite: no se pudo abrir la sesion del pase:', e.message);
+        }
+      }
+      if (!cookie) {
         // Al login (la UI muestra el mensaje del contrato). Nunca a una URL de vuelta ajena.
         res.writeHead(302, { ...headers, Location: '/?suite=pase-vencido' });
         res.end();
         return true;
       }
-      res.writeHead(302, { ...headers, 'Set-Cookie': session.cookieHeader(session.sign(principal), { https }), Location: '/' });
+      res.writeHead(302, { ...headers, 'Set-Cookie': cookie, Location: '/' });
       res.end();
       return true;
     }
@@ -81,12 +100,12 @@ function crearRutas({ suite, principalDeClave, aplicarLimite } = {}) {
       return json(res, 200, { ok: true, apps: await st().apps() });
     }
     if (req.method === 'POST' && seg[2] === 'abrir' && seg[3] && !seg[4]) {
-      return json(res, 200, await st().abrir(seg[3], principal, { ip: ipDe(req) }));
+      return json(res, 200, await st().abrir(seg[3], principal, { ip: ipCliente(req) }));
     }
     if (seg[2] === 'config' && !seg[3]) {
       requireRole(principal, 'superadmin');
       if (req.method === 'GET') return json(res, 200, { ok: true, suite: await st().config() });
-      if (req.method === 'PUT') return json(res, 200, { ok: true, suite: await st().guardarConfig(await readJsonBody(req), principal.username) });
+      if (req.method === 'PUT') return json(res, 200, { ok: true, suite: await st().guardarConfig(await readJsonBody(req, { max: 8 * 1024 }), principal.username) });
       return false;
     }
     if (req.method === 'GET' && seg[2] === 'auditoria' && !seg[3]) {

@@ -76,9 +76,9 @@ function cartelArranque(version, versiones, ancho = 80) {
   const raya = '='.repeat(Math.min(ancho, 60));
   const lineas = [raya, `ARCANUM v${version}${v && v.fecha ? `  (${v.fecha})` : ''}`];
   if (!v || !v.secciones.length) {
-    lineas.push('Sin notas para esta version en el CHANGELOG.');
+    lineas.push('Sin notas para esta versión en el CHANGELOG.');
   } else {
-    lineas.push('Que cambia en esta version:');
+    lineas.push('Qué cambia en esta versión:');
     for (const l of lineasLog(v)) lineas.push(...cortar(l, ancho, '- ', '    '));
   }
   lineas.push(raya);

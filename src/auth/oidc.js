@@ -37,7 +37,7 @@ async function discover() {
   if (discoveryCache) return discoveryCache;
   const url = CFG.issuer.replace(/\/$/, '') + '/.well-known/openid-configuration';
   const res = await fetchTimeout(url);
-  if (!res.ok) throw new Error('No se pudo leer la configuracion OIDC del issuer');
+  if (!res.ok) throw new Error('No se pudo leer la configuración OIDC del issuer');
   discoveryCache = await res.json();
   return discoveryCache;
 }
@@ -80,7 +80,7 @@ async function exchangeCode(code, verifier, redirectUri) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   });
-  if (!res.ok) throw new Error('OIDC: fallo el intercambio de codigo');
+  if (!res.ok) throw new Error('OIDC: falló el intercambio de código');
   const tok = await res.json();
   const claims = await verifyIdToken(tok.id_token);
   const role = mapRole(claims[CFG.roleClaim]);
@@ -129,16 +129,16 @@ async function verifyIdToken(idToken) {
   if (header.alg !== 'RS256') throw new Error('OIDC: alg no soportado (' + header.alg + ')');
   const keys = await jwks();
   const jwk = keys.find((k) => k.kid === header.kid) || keys.find((k) => k.kty === 'RSA');
-  if (!jwk) throw new Error('OIDC: no se encontro la clave en el JWKS');
+  if (!jwk) throw new Error('OIDC: no se encontró la clave en el JWKS');
   const pub = crypto.createPublicKey({ key: jwk, format: 'jwk' });
   const ok = crypto.verify('sha256', Buffer.from(h + '.' + p), pub, b64url(sig));
-  if (!ok) throw new Error('OIDC: firma del id_token invalida');
+  if (!ok) throw new Error('OIDC: firma del id_token inválida');
   const claims = JSON.parse(b64url(p).toString('utf8'));
   const d = await discover();
   const iss = CFG.issuer.replace(/\/$/, '');
-  if (claims.iss !== d.issuer && claims.iss !== iss) throw new Error('OIDC: iss invalido');
+  if (claims.iss !== d.issuer && claims.iss !== iss) throw new Error('OIDC: iss inválido');
   const aud = claims.aud;
-  if (aud !== CFG.clientId && !(Array.isArray(aud) && aud.includes(CFG.clientId))) throw new Error('OIDC: aud invalido');
+  if (aud !== CFG.clientId && !(Array.isArray(aud) && aud.includes(CFG.clientId))) throw new Error('OIDC: aud inválido');
   if (claims.exp && Date.now() / 1000 > claims.exp) throw new Error('OIDC: id_token expirado');
   return claims;
 }

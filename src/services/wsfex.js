@@ -4,6 +4,7 @@
 // Moneda extranjera, sin IVA, con pais destino / cliente del exterior / incoterms.
 // Mapea el SOAP de ARCA a funciones JS limpias. authStyle body-auth (<Auth>).
 
+const { CONFLICTO_EMISION } = require('./sqlComprobantes');
 const db = require('../db');
 const webhooks = require('./webhooks');
 const { config } = require('../config');
@@ -23,7 +24,7 @@ function ymd(d) {
   if (/^\d{8}$/.test(s)) return s;
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}${m[2]}${m[3]}`;
-  throw new SoapError(`Fecha invalida: ${d} (use YYYY-MM-DD)`, 400);
+  throw new SoapError(`Fecha inválida: ${d} (use YYYY-MM-DD)`, 400);
 }
 function todayYmd() {
   const d = new Date();
@@ -48,7 +49,7 @@ async function authEl(cuit, extra = '') {
 async function post_(method, inner) {
   const body = await post(config.endpoints.wsfex, `${NS}${method}`, envelope(`<ar:${method}>${inner}</ar:${method}>`));
   const r = body?.[`${method}Response`]?.[`${method}Result`];
-  if (r === undefined) throw new SoapError(`WSFEX no devolvio ${method}Result`, 502, { body });
+  if (r === undefined) throw new SoapError(`WSFEX no devolvió ${method}Result`, 502, { body });
   // FEXErr con codigo != 0 => error de negocio.
   const err = r.FEXErr;
   if (err && String(err.ErrCode) !== '0' && err.ErrCode !== undefined) {
@@ -174,12 +175,12 @@ async function authorize(cuit, inv) {
   const c = normalizeCuit(cuit);
   const idem = inv.idempotencyKey || null;
   if (idem) {
-    const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
-    if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
+    const prev = await require('./wsfev1').previoIdempotente(c, idem);
+    if (prev) return prev;
   }
   if (inv.pdf) require('./pdf').preferencias(inv.pdf); // validar ANTES de pedir el CAE
-  if (!inv.cliente) throw new SoapError('Falta `cliente` (razon social del cliente del exterior)', 422);
-  if (!inv.paisDestino) throw new SoapError('Falta `paisDestino` (codigo de pais destino, ver FEXGetPARAM_DST_pais)', 422);
+  if (!inv.cliente) throw new SoapError('Falta `cliente` (razón social del cliente del exterior)', 422);
+  if (!inv.paisDestino) throw new SoapError('Falta `paisDestino` (código de país destino, ver FEXGetPARAM_DST_pais)', 422);
   const ptoVta = parseInt(inv.puntoVenta, 10);
   if (!ptoVta) throw new SoapError('Falta `puntoVenta`', 422);
 
@@ -187,8 +188,8 @@ async function authorize(cuit, inv) {
   return withTokenRetry(c, SERVICE, config.env, () => db.withLock(`emit:wsfex:${c}:${config.env}:${ptoVta}`, async () => {
     // Re-chequeo de idempotencia dentro del lock (reintento concurrente -> mismo comprobante).
     if (idem) {
-      const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
-      if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
+      const prev = await require('./wsfev1').previoIdempotente(c, idem);
+      if (prev) return prev;
     }
     const numero = inv.numero ? parseInt(inv.numero, 10) : (await lastAuthorized(c, ptoVta)).ultimoNumero + 1;
     const id = inv.id ? parseInt(inv.id, 10) : (await lastId(c)) + 1;
@@ -230,7 +231,7 @@ async function authorize(cuit, inv) {
           `INSERT INTO comprobantes (cuit, entorno, punto_venta, tipo_cbte, numero, cae, cae_vto, resultado, fecha,
              importe_total, doc_tipo, doc_nro, idempotency_key, raw)
            VALUES ($1,$2,$3,$4,$5,$6, to_date($7,'YYYYMMDD'),$8, to_date($9,'YYYYMMDD'),$10,$11,$12,$13,$14)
-           ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
+           ${CONFLICTO_EMISION}`,
           [c, config.env, ptoVta, CBTE_TIPO, numero, out.cae, out.caeVencimiento, out.resultado, out.fecha,
             out.importeTotal, out.docTipo, out.docNro, idem, JSON.stringify(out)],
         );

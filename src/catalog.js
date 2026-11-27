@@ -1,9 +1,9 @@
 'use strict';
 
-// Catalogo de servicios de ARCA respaldado por Postgres y editable EN VIVO.
+// Catálogo de servicios de ARCA respaldado por Postgres y editable EN VIVO.
 //
-// Por que en DB: ARCA cambia endpoints, namespaces y saca servicios nuevos
-// seguido. El superadmin edita el catalogo desde la UI sin tocar codigo ni
+// Por qué en DB: ARCA cambia endpoints, namespaces y saca servicios nuevos
+// seguido. El superadmin edita el catálogo desde la UI sin tocar codigo ni
 // redeployar. Los DEFAULTS del codigo (catalog.defaults.js) son solo la semilla
 // inicial y el "restaurar al default".
 //
@@ -17,7 +17,7 @@ let loaded = false;
 
 async function seed() {
   // Inserta los defaults que falten y ACTUALIZA los builtins que el usuario no
-  // edito (updated_by = 'seed'), para que las correcciones de endpoints/namespace
+  // editó (updated_by = 'seed'), para que las correcciones de endpoints/namespace
   // se propaguen en cada deploy sin pisar ediciones manuales del superadmin.
   for (const def of DEFAULTS) {
     await db.query(
@@ -28,8 +28,8 @@ async function seed() {
       [def.id, JSON.stringify(def)],
     );
   }
-  // Poda: borra builtins que ya no estan en los defaults y que el usuario no
-  // edito (ej. padron A4/A10, retirados por endpoint no verificado).
+  // Poda: borra builtins que ya no están en los defaults y que el usuario no
+  // editó (ej. padrón A4/A10, retirados por endpoint no verificado).
   const ids = DEFAULTS.map((d) => d.id);
   await db.query(
     "DELETE FROM services WHERE origin = 'builtin' AND updated_by = 'seed' AND NOT (id = ANY($1))",
@@ -45,6 +45,14 @@ async function reload() {
   }
   cache = next;
   loaded = true;
+  // Endpoints fuera de ARCA guardados de antes (2.1.13 en adelante no se aceptan ni se usan).
+  for (const svc of next.values()) {
+    for (const [ent, u] of Object.entries(svc.endpoints || {})) {
+      try { validarEndpoint(u); } catch {
+        console.warn(`[arcanum] catálogo: el servicio ${svc.id} (${ent}) tiene un endpoint que no es de ARCA y no se va a usar. Corregilo o restauralo en Servicios.`);
+      }
+    }
+  }
 }
 
 async function init() {
@@ -53,10 +61,10 @@ async function init() {
 }
 
 function ensureLoaded() {
-  if (!loaded) throw new Error('Catalogo no inicializado: llamar a catalog.init() al arrancar');
+  if (!loaded) throw new Error('Catálogo no inicializado: llamar a catalog.init() al arrancar');
 }
 
-// --- API de lectura (misma firma que antes; ahora dinamica) ---
+// --- API de lectura (misma firma que antes; ahora dinámica) ---
 function get(id) {
   ensureLoaded();
   return cache.get(id) || null;
@@ -77,12 +85,40 @@ function categorias() {
   return c;
 }
 
-// --- API de escritura (solo superadmin; el router valida el rol) ---
+/**
+ * Endpoint de un servicio: el motor le manda el sobre SOAP con el Ticket de Acceso de WSAA del
+ * CUIT (Token y Sign), así que solo puede ser https de un dominio de ARCA (auditoría 2026-11-26,
+ * A-08). ARCANUM_CATALOGO_ENDPOINTS_LIBRES=1 lo abre a cualquier http(s): SOLO para pruebas con
+ * stubs locales, nunca en un despliegue real.
+ */
+function validarEndpoint(raw) {
+  let u;
+  try { u = new URL(String(raw)); } catch { throw err('Endpoint inválido: tiene que ser una URL https de ARCA', 400); }
+  if (process.env.ARCANUM_CATALOGO_ENDPOINTS_LIBRES === '1') {
+    if (!['http:', 'https:'].includes(u.protocol)) throw err('Endpoint inválido: http(s)', 400);
+    return raw;
+  }
+  const { esHostArca } = require('./soap/tlsArca');
+  if (u.protocol !== 'https:' || u.username || u.password || !esHostArca(u.hostname)) {
+    throw err(`Endpoint no permitido: ${u.protocol === 'https:' ? '' : 'tiene que ser https y '}solo se aceptan dominios de ARCA (afip.gov.ar, afip.gob.ar, arca.gob.ar)`, 400);
+  }
+  return raw;
+}
+
+// --- API de escritura (solo superadmin por sesión; el router valida el rol) ---
 function validateDef(def) {
-  if (!def || typeof def !== 'object') throw err('Definicion invalida', 400);
-  if (!def.id || !/^[a-z0-9_]+$/.test(def.id)) throw err('id invalido (use minusculas, numeros y guion bajo)', 400);
+  if (!def || typeof def !== 'object') throw err('Definición inválida', 400);
+  if (!def.id || !/^[a-z0-9_]+$/.test(def.id)) throw err('id inválido (use minúsculas, números y guion bajo)', 400);
   if (!def.wsaaService) throw err('Falta wsaaService (nombre del servicio para WSAA)', 400);
   if (!def.endpoints || !def.endpoints.homo || !def.endpoints.prod) throw err('Faltan endpoints homo y prod', 400);
+  if (typeof def.endpoints !== 'object') throw err('endpoints inválido', 400);
+  for (const u of Object.values(def.endpoints)) validarEndpoint(u);
+  // El enlace de documentación se pinta como href en el panel: solo https (M-11).
+  const docs = def.activacion && def.activacion.docs;
+  if (docs != null && docs !== '') {
+    let u; try { u = new URL(String(docs)); } catch { u = null; }
+    if (!u || u.protocol !== 'https:') throw err('activacion.docs tiene que ser un enlace https', 400);
+  }
   if (!def.soapNamespace) throw err('Falta soapNamespace', 400);
   return def;
 }
@@ -92,7 +128,7 @@ async function upsert(def, user) {
   const enabled = def.enabled !== false;
   const exists = cache.get(def.id);
   const origin = exists ? exists.origin : 'custom';
-  // Guardamos la definicion sin los campos de control (enabled/origin van en columnas).
+  // Guardamos la definición sin los campos de control (enabled/origin van en columnas).
   const clean = { ...def };
   delete clean.enabled;
   delete clean.origin;
@@ -148,6 +184,8 @@ module.exports = {
   get,
   list,
   endpoint,
+  validarEndpoint,
+  validateDef,
   categorias,
   upsert,
   setEnabled,

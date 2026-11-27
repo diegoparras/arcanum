@@ -46,7 +46,7 @@ function crearRutas({ mono } = {}) {
     req._cuit = cuit;
     assertCuitAllowed(principal, cuit);
     const cat = url.searchParams.get('categoria');
-    if (cat && !/^[A-Ka-k]$/.test(cat)) throw Object.assign(new Error('categoria: una letra de la A a la K'), { httpStatus: 400 });
+    if (cat && !/^[A-Ka-k]$/.test(cat)) throw Object.assign(new Error('categoría: una letra de la A a la K'), { httpStatus: 400 });
     const opts = cat ? { categoria: cat.toUpperCase() } : {};
     return json(res, 200, { ok: true, monotributo: await servicio().topes(cuit, opts) });
   };

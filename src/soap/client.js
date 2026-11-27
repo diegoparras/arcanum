@@ -76,11 +76,11 @@ async function post(url, soapAction, envelope, opts = {}) {
   if (body && body.Fault) {
     const f = body.Fault;
     const msg = f.faultstring || f.Reason?.Text || 'SOAP Fault';
-    throw new SoapError(`ARCA rechazo la solicitud: ${msg}`, 502, { tipo: 'fault', fault: f, raw: text });
+    throw new SoapError(`ARCA rechazó la solicitud: ${msg}`, 502, { tipo: 'fault', fault: f, raw: text });
   }
 
   if (!res.ok) {
-    throw new SoapError(`ARCA respondio HTTP ${res.status}`, 502, { tipo: 'http', status: res.status, raw: text });
+    throw new SoapError(`ARCA respondió HTTP ${res.status}`, 502, { tipo: 'http', status: res.status, raw: text });
   }
 
   return body || {};

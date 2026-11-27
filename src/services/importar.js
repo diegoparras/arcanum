@@ -28,12 +28,12 @@ function parseQr(qr) {
   try {
     json = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
   } catch {
-    throw new SoapError('El QR no es un QR de ARCA valido (no se pudo decodificar)', 422);
+    throw new SoapError('El QR no es un QR de ARCA válido (no se pudo decodificar)', 422);
   }
   if (!json || !json.cuit || !json.codAut) {
     throw new SoapError('El QR no tiene los campos esperados (cuit / codAut)', 422);
   }
-  return {
+  return validarComprobante({
     cuitEmisor: String(json.cuit),
     puntoVenta: Number(json.ptoVta),
     tipoComprobante: Number(json.tipoCmp),
@@ -46,7 +46,27 @@ function parseQr(qr) {
     docNro: String(json.nroDocRec || 0),
     cae: String(json.codAut),
     tipoCodAut: json.tipoCodAut || 'E',
-  };
+  });
+}
+
+/**
+ * Formato estricto de un comprobante a importar (venga del QR o cargado a mano). Lo que no tiene
+ * forma de dato de ARCA se rechaza con 422 y sin repetir el valor recibido en el mensaje: el CAE y
+ * el CUIT se guardan y se muestran en el panel (auditoria 2026-11-26, A-06).
+ */
+function validarComprobante(d) {
+  const mal = (campo) => { throw new SoapError(`El comprobante tiene ${campo} con formato inválido`, 422); };
+  if (!/^\d{11}$/.test(String(d.cuitEmisor))) mal('un CUIT emisor (deben ser 11 dígitos)');
+  if (!/^\d{14}$/.test(String(d.cae))) mal('un CAE/CAEA (deben ser 14 dígitos)');
+  if (!/^\d{8}$/.test(String(d.fecha))) mal('una fecha (AAAA-MM-DD)');
+  if (!/^\d{1,20}$/.test(String(d.docNro))) mal('un documento del receptor');
+  for (const [k, campo] of [['puntoVenta', 'un punto de venta'], ['tipoComprobante', 'un tipo'], ['numero', 'un número']]) {
+    if (!Number.isInteger(d[k]) || d[k] <= 0) mal(campo);
+  }
+  if (!Number.isFinite(d.importeTotal)) mal('un importe');
+  if (!['E', 'A'].includes(d.tipoCodAut || 'E')) mal('un tipo de autorización (E o A)');
+  if (!/^[A-Z0-9$]{1,4}$/.test(String(d.moneda || 'PES'))) mal('una moneda');
+  return d;
 }
 
 /** Constata el comprobante contra ARCA (WSCDC). Devuelve { valido, resultado, observaciones }. */
@@ -92,7 +112,7 @@ async function importar(cuitConsultante, input = {}) {
   const consultante = normalizeCuit(cuitConsultante);
   if (!consultante) throw new SoapError('Falta el CUIT consultante (con certificado)', 400);
 
-  const d = input.qr ? parseQr(input.qr) : {
+  const d = input.qr ? parseQr(input.qr) : validarComprobante({
     cuitEmisor: normalizeCuit(input.cuitEmisor),
     puntoVenta: Number(input.puntoVenta),
     tipoComprobante: Number(input.tipoComprobante),
@@ -105,15 +125,15 @@ async function importar(cuitConsultante, input = {}) {
     docNro: String(input.docNro || 0),
     cae: String(input.cae || ''),
     tipoCodAut: input.tipoCodAut || 'E',
-  };
+  });
   if (!d.cuitEmisor || !d.cae || !d.numero) {
-    throw new SoapError('Faltan datos del comprobante (cuitEmisor, cae, numero). Pasa `qr` o los campos.', 422);
+    throw new SoapError('Faltan datos del comprobante (cuitEmisor, cae, número). Pasá `qr` o los campos.', 422);
   }
 
   // 1) Whitelist de emisores (opcional): bloquea comprobantes de emisores no habilitados.
   const permitidos = emisoresPermitidos();
   if (permitidos.length && !permitidos.includes(d.cuitEmisor)) {
-    throw new SoapError(`El emisor ${d.cuitEmisor} no esta en la lista de emisores habilitados`, 403);
+    throw new SoapError(`El emisor ${d.cuitEmisor} no está en la lista de emisores habilitados`, 403);
   }
 
   // 2) Dedup por CAE (no re-ingresar el mismo comprobante).
@@ -131,12 +151,16 @@ async function importar(cuitConsultante, input = {}) {
     const c = await constatar(consultante, d);
     constatacion = { ...c, consultado: true, motivo: null };
   } catch (e) {
-    // Best-effort: si el cert no esta asociado a WSCDC, se importa igual pero avisando.
-    constatacion.motivo = e.message;
+    // Falla cerrado (auditoria 2026-11-26, M-09): si ARCA no pudo constatarlo, no se guarda. Antes se
+    // importaba igual y quedaba como "Autorizado" sin que nadie lo hubiera validado.
+    throw new SoapError(
+      `No se pudo constatar el comprobante con ARCA, así que no se importó: ${e.message}. Probá de nuevo cuando ARCA responda, o revisá que el certificado tenga asociado WSCDC.`,
+      503,
+    );
   }
   if (constatacion.consultado && !constatacion.valido) {
     throw new SoapError(
-      `ARCA NO valida este comprobante (resultado ${constatacion.resultado || 'R'}). Podria ser apocrifo o tener datos mal cargados.`,
+      `ARCA NO valida este comprobante (resultado ${constatacion.resultado || 'R'}). Podría ser apócrifo o tener datos mal cargados.`,
       422,
       { constatacion },
     );
@@ -167,4 +191,4 @@ async function importar(cuitConsultante, input = {}) {
   return { ...d, cuitConsultante: consultante, origen: 'importado', constatacion };
 }
 
-module.exports = { importar, parseQr, constatar };
+module.exports = { importar, parseQr, constatar, validarComprobante };

@@ -13,9 +13,15 @@
 //   POST /api/suite/abrir/:app pide el pase a Factorum con FACTORUM_TOKEN y devuelve la URL.
 //
 // El token del pase nunca se guarda (solo su SHA-256) ni va a un log ni a la auditoria.
+//
+// Con las reglas de cuentas de 2.1.16/2.1.17: el email, el usuario y los CUITs que llegan de la
+// otra app se validan igual que en el alta de usuarios (un CUIT mal formado es un 400, nunca se
+// descarta en silencio), admin y superadmin no quedan con una lista de CUITs, el usuario creado
+// por un pase no tiene contrasena (no entra por el login normal ni se le puede poner una que no
+// cumpla la politica) y quien tiene pendiente cambiar la contrasena inicial no entra con un pase.
+// Los pedidos anonimos rechazados en /suite/entrar no dejan fila (M-12).
 
 const crypto = require('crypto');
-const { normalizeCuit } = require('../auth/tenants');
 
 const ORDEN_ROLES = ['lectura', 'operador', 'admin', 'superadmin'];
 // Rol de Factorum -> rol de Arcanum.
@@ -24,7 +30,8 @@ const APPS = { factorum: { app: 'factorum', nombre: 'Factorum' } };
 const TTL_PASE_MS = 60 * 1000;
 const TTL_SALUD_MS = 60 * 1000;
 const TIMEOUT_SALUD_MS = 3000;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Rechazos de /suite/entrar que se anotan por minuto (un pase reusado en un loop no llena la tabla).
+const MAX_RECHAZOS_POR_MIN = 30;
 
 const MSG = {
   sinFlag: 'Esta clave no está habilitada para abrir sesiones de la suite',
@@ -33,6 +40,8 @@ const MSG = {
   sinAlta: 'Arcanum no da de alta usuarios que llegan de otra app: pedile a un superadmin de Arcanum que te cree el usuario',
   sinRol: 'No queda ningún rol válido para esa persona en Arcanum',
   sinCuits: 'Esa persona no tiene CUITs en común con los de esta clave',
+  debeCambiar: 'Esa persona tiene que entrar a Arcanum con su contraseña y cambiar la inicial antes de usar el pase',
+  emailLargo: 'Ese email es demasiado largo para usarlo de usuario en Arcanum: pedile a un superadmin que te cree el usuario',
   paseVencido: 'El pase para entrar venció o ya se usó. Volvé a tocar el botón en la otra app.',
 };
 
@@ -50,11 +59,12 @@ function topear(rol, tope) {
   return ORDEN_ROLES[Math.min(a, b)];
 }
 
-/** CUITs validos sin repetir; null = todos (null, ausente o lista vacia). */
+/**
+ * CUITs que manda la otra app: null o ausente = todos; una lista con algo que no es un CUIT, 400
+ * (la misma regla que el alta de claves y usuarios, M-10). Lista vacia = todos, como alli.
+ */
 function normCuits(lista) {
-  if (!Array.isArray(lista)) return null;
-  const out = lista.map((c) => normalizeCuit(c)).filter((c) => /^\d{11}$/.test(c));
-  return out.length ? [...new Set(out)] : null;
+  return require('../auth/permisos').listaCuits(lista, 'cuits');
 }
 
 /** Interseccion de dos listas de CUITs donde null = todos. [] = ninguno en comun. */
@@ -65,15 +75,19 @@ function intersecar(persona, clave) {
 }
 
 function urlLimpia(v) {
+  if (v !== undefined && v !== null && typeof v !== 'string') throw err('La URL pública tiene que ser texto', 400);
   const u = String(v || '').trim().replace(/\/+$/, '');
   if (!u) return '';
   if (!/^https?:\/\/[^\s/?#]+[^\s?#]*$/i.test(u)) throw err('La URL pública tiene que empezar con http:// o https:// (sin ? ni #)', 400);
+  let p;
+  try { p = new URL(u); } catch { throw err('La URL pública no es válida', 400); }
+  if (p.username || p.password) throw err('La URL pública no puede llevar usuario ni clave', 400);
   return u;
 }
 
 /** Repositorio en Postgres. `db` es src/db.js (query + tx). */
 function repoSql(db) {
-  const COLS_U = 'id, username, email, nombre, role, cuit_allow, activo, origen';
+  const COLS_U = 'id, username, email, nombre, role, cuit_allow, activo, origen, debe_cambiar';
   return {
     async leerAjustes() {
       try {
@@ -128,10 +142,16 @@ function repoSql(db) {
         );
         if (!rows.length) return null;
         const p = rows[0];
-        const { rows: u } = await c.query('SELECT activo FROM usuarios WHERE username = $1', [p.username]);
+        const { rows: u } = await c.query('SELECT activo, debe_cambiar FROM usuarios WHERE username = $1', [p.username]);
         if (u.length) await c.query('UPDATE usuarios SET last_login = now() WHERE username = $1', [p.username]);
-        return { ...p, activo: u.length ? u[0].activo !== false : true };
+        // Si lo borraron despues de emitir el pase, no entra.
+        return { ...p, existe: u.length > 0, activo: u.length ? u[0].activo !== false : false, debe_cambiar: u.length ? !!u[0].debe_cambiar : false };
       });
+    },
+    /** Un pase que existe pero ya no sirve (usado o vencido): de quien era, para la auditoria. */
+    async buscarPase(tokenHash) {
+      const { rows } = await db.query('SELECT app, email, username, clave_id, usado_at FROM suite_pases WHERE token_hash = $1', [tokenHash]);
+      return rows[0] || null;
     },
     async auditar(e) {
       await db.query(
@@ -165,6 +185,7 @@ function crearSuite({ repo, factorum, env = process.env, ahora = () => Date.now(
   const fa = () => factorum || require('./factorum');
   const rp = () => repo || repoSql(require('../db'));
   let salud = { ts: 0, ok: false, promesa: null };
+  let rechazos = { desde: 0, n: 0 };
 
   async function auditar(e) {
     try { await rp().auditar(e); } catch (x) { console.error('[arcanum] auditoria de la suite:', x.message); }
@@ -203,15 +224,18 @@ function crearSuite({ repo, factorum, env = process.env, ahora = () => Date.now(
    */
   async function emitirPase(clave, cuerpo = {}, { ip } = {}) {
     const base = { app: typeof cuerpo.app === 'string' ? cuerpo.app.slice(0, 20) : null, claveId: clave.claveId || null, clavePrefijo: clave.prefijo || null, ip };
-    const email = typeof cuerpo.email === 'string' ? cuerpo.email.trim().toLowerCase() : '';
+    const users = require('../auth/users');
+    let email = '';
+    try { email = typeof cuerpo.email === 'string' ? users.normEmail(cuerpo.email) || '' : ''; } catch { email = ''; }
     const rechazar = async (e, detalle) => {
       await auditar({ ...base, evento: 'pase_rechazado', email: email || null, detalle: detalle || e.message });
       throw e;
     };
     if (clave.via !== 'clave' || !clave.suite) return rechazar(err(MSG.sinFlag, 403));
     if (cuerpo.app !== 'factorum') return rechazar(err('"app" tiene que ser "factorum"', 400));
-    if (!email || email.length > 254 || !EMAIL_RE.test(email)) return rechazar(err('Falta "email" o no es un email', 400));
-    const nombre = typeof cuerpo.nombre === 'string' && cuerpo.nombre.trim() ? cuerpo.nombre.trim().slice(0, 120) : null;
+    if (!email) return rechazar(err('Falta "email" o no es un email', 400));
+    if (cuerpo.nombre !== undefined && cuerpo.nombre !== null && typeof cuerpo.nombre !== 'string') return rechazar(err('"nombre" tiene que ser texto', 400));
+    const nombre = users.normNombre(cuerpo.nombre);
     const cfg = await config();
     if (!cfg.urlPublica) return rechazar(err(MSG.sinUrl, 409));
 
@@ -222,6 +246,7 @@ function crearSuite({ repo, factorum, env = process.env, ahora = () => Date.now(
 
     let u = await rp().usuarioPorEmail(email);
     if (u && u.activo === false) return rechazar(err(MSG.desactivado, 403));
+    if (u && u.debe_cambiar) return rechazar(err(MSG.debeCambiar, 403));
     let rolBase;
     let cuitsBase;
     let creado = false;
@@ -231,14 +256,20 @@ function crearSuite({ repo, factorum, env = process.env, ahora = () => Date.now(
       cuitsBase = u.cuit_allow && u.cuit_allow.length ? u.cuit_allow : null;
     } else {
       if (!cfg.crearUsuarios) return rechazar(err(MSG.sinAlta, 403));
-      rolBase = ROL_DESDE_FACTORUM[String(cuerpo.rol || '').toLowerCase()];
+      // El usuario de Arcanum es el email: con las mismas reglas que un alta a mano.
+      if (!users.usuarioValido(email)) return rechazar(err(MSG.emailLargo, 403));
+      rolBase = typeof cuerpo.rol === 'string' && Object.prototype.hasOwnProperty.call(ROL_DESDE_FACTORUM, cuerpo.rol.toLowerCase())
+        ? ROL_DESDE_FACTORUM[cuerpo.rol.toLowerCase()] : undefined;
       if (!rolBase) return rechazar(err(MSG.sinRol, 403), `rol de Factorum desconocido: ${String(cuerpo.rol || '').slice(0, 20)}`);
-      cuitsBase = normCuits(cuerpo.cuits);
+      try { cuitsBase = normCuits(cuerpo.cuits); } catch (e) { return rechazar(e); }
     }
-    const rol = topear(rolBase, topeEfectivo);
+    let rol = topear(rolBase, topeEfectivo);
     if (!rol) return rechazar(err(MSG.sinRol, 403));
     const cuits = intersecar(cuitsBase, cuitsClave);
     if (cuits && !cuits.length) return rechazar(err(MSG.sinCuits, 403));
+    // admin y superadmin ven todos los CUITs: con una lista, la persona entra como operador (la
+    // lista se cumple). Es la misma regla que el alta de usuarios y claves (M-10).
+    if (cuits && ['admin', 'superadmin'].includes(rol)) rol = 'operador';
 
     if (!u) {
       // Se crea ya topeado: el rol que pidio la otra app nunca queda guardado por encima del tope.
@@ -262,20 +293,34 @@ function crearSuite({ repo, factorum, env = process.env, ahora = () => Date.now(
     return { ok: true, url: `${cfg.urlPublica}/suite/entrar?pase=${token}`, vence: vence.toISOString() };
   }
 
+  /** Tope de filas de rechazos por minuto (lo demas solo cuenta como un 302 al login). */
+  function anotarRechazo() {
+    const t = ahora();
+    if (t - rechazos.desde > 60_000) rechazos = { desde: t, n: 0 };
+    rechazos.n += 1;
+    return rechazos.n <= MAX_RECHAZOS_POR_MIN;
+  }
+
   /** GET /suite/entrar: el principal de la sesion, o null si el pase no sirve. */
   async function canjearPase(token, { ip } = {}) {
     const t = String(token || '');
-    if (!/^[A-Za-z0-9_-]{43}$/.test(t)) {
-      await auditar({ evento: 'pase_rechazado', ip, detalle: 'pase con formato invalido' });
-      return null;
-    }
-    const p = await rp().canjearPase(hashPase(t), new Date(ahora()));
+    // Un pase con otra forma, o que nunca existio, es un pedido anonimo: no deja fila (M-12).
+    if (!/^[A-Za-z0-9_-]{43}$/.test(t)) return null;
+    const h = hashPase(t);
+    const p = await rp().canjearPase(h, new Date(ahora()));
     if (!p) {
-      await auditar({ evento: 'pase_rechazado', ip, detalle: 'pase vencido, usado o inexistente' });
+      const viejo = rp().buscarPase ? await rp().buscarPase(h).catch(() => null) : null;
+      if (viejo && anotarRechazo()) {
+        await auditar({
+          evento: 'pase_rechazado', app: viejo.app, email: viejo.email, usuario: viejo.username, claveId: viejo.clave_id, ip,
+          detalle: viejo.usado_at ? 'pase ya usado' : 'pase vencido',
+        });
+      }
       return null;
     }
-    if (!p.activo) {
-      await auditar({ evento: 'pase_rechazado', app: p.app, email: p.email, usuario: p.username, claveId: p.clave_id, ip, detalle: 'usuario desactivado' });
+    if (!p.activo || p.existe === false || p.debe_cambiar) {
+      const detalle = p.existe === false ? 'el usuario ya no existe' : !p.activo ? 'usuario desactivado' : 'tiene que cambiar la contraseña inicial';
+      await auditar({ evento: 'pase_rechazado', app: p.app, email: p.email, usuario: p.username, claveId: p.clave_id, ip, detalle });
       return null;
     }
     await auditar({ evento: 'pase_usado', app: p.app, email: p.email, usuario: p.username, rol: p.role, claveId: p.clave_id, ip });
@@ -319,7 +364,8 @@ function crearSuite({ repo, factorum, env = process.env, ahora = () => Date.now(
     };
     if (u && u.activo === false) return fallar(err('Tu usuario está desactivado', 403));
     if (!(await factorumConectado())) return fallar(err('Factorum no está conectado a Arcanum', 409));
-    const email = (u && u.email) || (EMAIL_RE.test(String(principal.username || '')) ? String(principal.username).toLowerCase() : null);
+    let email = u && u.email ? u.email : null;
+    if (!email) { try { email = require('../auth/users').normEmail(String(principal.username || '')); } catch { email = null; } }
     if (!email) return fallar(err('Tu usuario de Arcanum no tiene email: un superadmin lo puede cargar en Usuarios', 409));
     const nombre = (u && u.nombre) || principal.username;
     let r;

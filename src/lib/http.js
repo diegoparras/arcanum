@@ -15,14 +15,25 @@ function sendJson(res, status, payload) {
 
 function sendError(res, err) {
   const status = err.httpStatus || 500;
+  // Si ya se mandaron las cabeceras no hay forma de responder un error: se corta la conexion.
+  // Intentar escribir de nuevo tira ERR_HTTP_HEADERS_SENT y, sin manejador, cae el proceso (M-02).
+  if (res.headersSent) {
+    console.error('[arcanum] error con la respuesta ya empezada:', err.message);
+    if (typeof res.destroy === 'function') res.destroy();
+    return;
+  }
+  // Un 500 sin httpStatus es un error no previsto: el detalle va al log con un id y el cliente
+  // recibe un mensaje generico (B-04). Los errores con httpStatus (incluidos 502/503 de ARCA) son
+  // mensajes pensados para el usuario y se devuelven tal cual.
+  const interno = !err.httpStatus;
+  const id = interno ? require('crypto').randomBytes(4).toString('hex') : null;
   const payload = {
     ok: false,
-    error: err.message || 'Error interno',
+    error: interno ? `Error interno (ref. ${id}).` : (err.message || 'Error interno'),
   };
-  if (err.extra && err.extra.errors) payload.detalles = err.extra.errors;
+  if (!interno && err.extra && err.extra.errors) payload.detalles = err.extra.errors;
   if (status >= 500) {
-    // Log del stack solo para errores internos (no exponemos al cliente).
-    console.error('[arcanum]', err.stack || err.message);
+    console.error('[arcanum]' + (id ? ` [ref. ${id}]` : ''), err.stack || err.message);
   }
   sendJson(res, status, payload);
 }
@@ -47,7 +58,7 @@ function readJsonBody(req, { max = MAX_BODY } = {}) {
       try {
         resolve(JSON.parse(raw));
       } catch {
-        reject(Object.assign(new Error('JSON invalido en el body'), { httpStatus: 400 }));
+        reject(Object.assign(new Error('JSON inválido en el body'), { httpStatus: 400 }));
       }
     });
     req.on('error', reject);

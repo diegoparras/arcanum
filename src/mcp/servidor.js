@@ -38,7 +38,7 @@ function conTimeout(promesa, ms) {
   let timer;
   const corte = new Promise((_, reject) => {
     timer = setTimeout(() => {
-      reject(new Error(`ARCA no respondio a tiempo (mas de ${Math.round(ms / 1000)} s). Proba de nuevo en unos minutos.`));
+      reject(new Error(`ARCA no respondió a tiempo (más de ${Math.round(ms / 1000)} s). Probá de nuevo en unos minutos.`));
     }, ms);
   });
   return Promise.race([promesa, corte]).finally(() => clearTimeout(timer));
@@ -52,6 +52,9 @@ function conTimeout(promesa, ms) {
  * @param {number} [o.timeoutMs]   corte por llamada (el cliente corta a los 90 s)
  * @param {string} [o.instrucciones]
  */
+// Tope de mensajes en un lote JSON-RPC (auditoria 2026-11-26, M-01).
+const MAX_LOTE = 10;
+
 function crearServidor({ nombre, titulo, version, herramientas, timeoutMs = 80000, instrucciones }) {
   const porNombre = new Map(herramientas.map((h) => [h.nombre, h]));
 
@@ -65,15 +68,32 @@ function crearServidor({ nombre, titulo, version, herramientas, timeoutMs = 8000
       annotations: { title: h.titulo, readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     }));
 
-  async function llamar(id, params, ctx) {
+  async function llamar(id, params, ctxPedido) {
     const h = porNombre.get(params && params.name);
     if (!h) return rpcError(id, -32602, `Herramienta desconocida: ${params && params.name}`);
     const args = params.arguments && typeof params.arguments === 'object' ? params.arguments : {};
-    if (ctx && typeof ctx.alLlamar === 'function') ctx.alLlamar(h.nombre, args);
+    // Contexto propio de esta llamada (hereda principal y ganchos del pedido): el CUIT que marca una
+    // herramienta no se pisa con el de otra del mismo lote.
+    const ctx = Object.create(ctxPedido || {});
+    // Cada herramienta pasa por el limite de la clave, no solo el pedido HTTP (auditoria 2026-11-26, M-01).
+    if (typeof ctx.antesDeHerramienta === 'function') {
+      try { ctx.antesDeHerramienta(h.nombre, args); } catch (e) { return rpcError(id, -32000, mensajeDeError(e)); }
+    }
+    if (typeof ctx.alLlamar === 'function') ctx.alLlamar(h.nombre, args);
+    const fin = (ok) => {
+      // El pedido conserva el ultimo CUIT marcado (la fila HTTP de la auditoria lo usa).
+      if (ctxPedido && Object.prototype.hasOwnProperty.call(ctx, 'cuit')) ctxPedido.cuit = ctx.cuit;
+      if (ctxPedido && Object.prototype.hasOwnProperty.call(ctx, 'cuitConsultado')) ctxPedido.cuitConsultado = ctx.cuitConsultado;
+      if (typeof ctx.despuesDeHerramienta === 'function') {
+        try { ctx.despuesDeHerramienta({ herramienta: h.nombre, ok, cuit: ctx.cuit || null, cuitConsultado: ctx.cuitConsultado || null }); } catch { /* auditoria best-effort */ }
+      }
+    };
     try {
       const datos = await conTimeout(Promise.resolve().then(() => h.ejecutar(args, ctx)), timeoutMs);
+      fin(true);
       return rpcResultado(id, { content: [{ type: 'text', text: aTexto(datos) }] });
     } catch (e) {
+      fin(false);
       // Error de la herramienta: va como resultado con isError (no como error JSON-RPC),
       // asi el modelo lee el motivo y puede explicarlo o reintentar.
       return rpcResultado(id, { content: [{ type: 'text', text: aTexto({ error: mensajeDeError(e) }) }], isError: true });
@@ -82,7 +102,7 @@ function crearServidor({ nombre, titulo, version, herramientas, timeoutMs = 8000
 
   async function atenderUno(msg, ctx) {
     if (!msg || typeof msg !== 'object' || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
-      return rpcError(msg && msg.id, -32600, 'Pedido JSON-RPC invalido');
+      return rpcError(msg && msg.id, -32600, 'Pedido JSON-RPC inválido');
     }
     // Notificaciones (sin id): no llevan respuesta (ej. notifications/initialized).
     if (msg.id === undefined || msg.id === null) return null;
@@ -102,7 +122,7 @@ function crearServidor({ nombre, titulo, version, herramientas, timeoutMs = 8000
       case 'tools/call':
         return llamar(msg.id, msg.params || {}, ctx);
       default:
-        return rpcError(msg.id, -32601, `Metodo no soportado: ${msg.method}`);
+        return rpcError(msg.id, -32601, `Método no soportado: ${msg.method}`);
     }
   }
 
@@ -115,11 +135,17 @@ function crearServidor({ nombre, titulo, version, herramientas, timeoutMs = 8000
     try {
       msg = JSON.parse(raw);
     } catch {
-      return rpcError(null, -32700, 'JSON invalido');
+      return rpcError(null, -32700, 'JSON inválido');
     }
     if (Array.isArray(msg)) {
-      if (!msg.length) return rpcError(null, -32600, 'Lote vacio');
-      const salidas = (await Promise.all(msg.map((m) => atenderUno(m, ctx)))).filter(Boolean);
+      if (!msg.length) return rpcError(null, -32600, 'Lote vacío');
+      if (msg.length > MAX_LOTE) return rpcError(null, -32600, `Lote demasiado grande: máximo ${MAX_LOTE} mensajes por pedido`);
+      // En orden, de a uno: un lote no multiplica la concurrencia contra ARCA.
+      const salidas = [];
+      for (const m of msg) {
+        const r = await atenderUno(m, ctx);
+        if (r) salidas.push(r);
+      }
       return salidas.length ? salidas : null;
     }
     return atenderUno(msg, ctx);
@@ -128,4 +154,4 @@ function crearServidor({ nombre, titulo, version, herramientas, timeoutMs = 8000
   return { atender, definiciones };
 }
 
-module.exports = { crearServidor, negociarVersion, aTexto, VERSIONES, MAX_TEXTO };
+module.exports = { MAX_LOTE, crearServidor, negociarVersion, aTexto, VERSIONES, MAX_TEXTO };

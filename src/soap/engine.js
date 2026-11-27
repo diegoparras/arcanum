@@ -24,7 +24,7 @@ function toXml(obj) {
     if (v === undefined) continue;
     // Las CLAVES se interpolan como nombres de elemento: validarlas evita inyeccion XML
     // por parte del cliente (ej. params en el passthrough generico /api/ws).
-    if (!KEY_RE.test(k)) throw Object.assign(new Error(`Clave invalida en params: "${k}" (use letras, numeros, _ . -)`), { httpStatus: 400 });
+    if (!KEY_RE.test(k)) throw Object.assign(new Error(`Clave inválida en params: "${k}" (use letras, números, _ . -)`), { httpStatus: 400 });
     if (Array.isArray(v)) {
       for (const item of v) out += `<${k}>${toXml(item)}</${k}>`;
     } else if (v !== null && typeof v === 'object') {
@@ -53,14 +53,19 @@ const NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/; // nombres SOAP validos (NCName simpl
 
 async function call(serviceId, operation, params = {}, opts = {}) {
   // Validacion estricta: evita inyeccion XML por el nombre de operacion/servicio.
-  if (!NAME_RE.test(String(serviceId))) throw new SoapError('serviceId invalido', 400);
-  if (!NAME_RE.test(String(operation))) throw new SoapError('Operacion invalida (use letras, numeros y guion bajo)', 400);
+  if (!NAME_RE.test(String(serviceId))) throw new SoapError('serviceId inválido', 400);
+  if (!NAME_RE.test(String(operation))) throw new SoapError('Operación inválida (use letras, números y guion bajo)', 400);
   const svc = catalog.get(serviceId);
   if (!svc) throw new SoapError(`Servicio desconocido: ${serviceId}`, 404);
   if (svc.enabled === false) throw new SoapError(`Servicio ${serviceId} deshabilitado`, 409);
 
   const entorno = opts.entorno || config.env;
   const url = catalog.endpoint(svc, entorno);
+  // Antes de armar el sobre (lleva Token y Sign): un endpoint fuera de ARCA guardado en la base
+  // (de antes de la validacion, o cargado a mano) no se usa. Auditoria 2026-11-26, A-08.
+  try { catalog.validarEndpoint(url); } catch (e) {
+    throw new SoapError(`El servicio ${serviceId} tiene un endpoint que no es de ARCA: no se usa. ${e.message}`, 400);
+  }
   const ns = svc.soapNamespace;
   const isDummy = svc.dummyOp && operation === svc.dummyOp;
   const cuit = normalizeCuit(opts.cuit || '');

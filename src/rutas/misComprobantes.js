@@ -9,7 +9,7 @@
 //   GET      /api/mis-comprobantes/corridas/:id         quien pueda operar ese CUIT
 //   GET      /api/mis-comprobantes/corridas/:id/frame   vista en vivo (JPEG, 204 si no cambio)
 //   GET      /api/mis-comprobantes/corridas/:id/captura pantalla del robot al fallar (JPEG, 404 si no hay)
-//   POST     /api/mis-comprobantes/corridas/:id/{evento,tomar-control,devolver}
+//   POST     /api/mis-comprobantes/corridas/:id/{evento,tomar-control,devolver,cancelar}
 //   GET      /api/mis-comprobantes/:cuit                comprobantes bajados (cualquier rol, con scope)
 //   GET      /api/mis-comprobantes/:cuit/analisis       totales, graficos y subtotales (mismos filtros)
 //   GET      /api/mis-comprobantes/:cuit/export.csv
@@ -29,6 +29,24 @@ const { requireRole, assertCuitAllowed } = require('../auth/permisos');
 
 const EVENTOS_HUMANOS = new Set(['click', 'doble', 'texto', 'tecla', 'scroll', 'atras', 'recargar']);
 
+// Vista en vivo (auditoria 2026-11-26, A-02). El navegador de Fisherboy ya entro a ARCA con la
+// clave fiscal, que solo carga un admin. Admin y superadmin lo manejan siempre. Un operador:
+//  - toma el control solo cuando la corrida pidio una persona (esperando_humano);
+//  - manda eventos mientras ARCA pide una persona o despues de tomar el control el mismo (nunca
+//    con el control en manos de otro);
+//  - y solo con el navegador en el login de ARCA o en Mis Comprobantes (no en el portal, desde
+//    donde se llega a cualquier servicio del contribuyente). La URL es la ultima que informo
+//    Fisherboy en la vista en vivo; sin URL conocida, no.
+const esAdmin = (p) => p && (p.role === 'admin' || p.role === 'superadmin');
+function paginaPermitida(u) {
+  let x;
+  try { x = new URL(String(u)); } catch { return false; }
+  if (x.protocol !== 'https:') return false;
+  if (/^auth\.(afip|arca)\.gob\.ar$/.test(x.hostname)) return true;
+  return /^fes\.(afip|arca)\.gob\.ar$/.test(x.hostname) && x.pathname.startsWith('/mcmp/');
+}
+const lugar = (u) => { try { const x = new URL(String(u)); return (x.hostname + x.pathname).slice(0, 160); } catch { return '?'; } };
+
 function err(message, httpStatus) {
   return Object.assign(new Error(message), { httpStatus });
 }
@@ -47,9 +65,13 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
   const servicio = () => mc || require('../services/misComprobantes').servicio();
   const fb = () => fisherboy || require('../services/fisherboy');
   const cons = () => constatacion || require('../services/constatacion');
+  // Por corrida: ultima URL que mostro el navegador y quien tomo el control (en memoria: una
+  // instancia; tras un reinicio el operador vuelve a tomarlo).
+  const vivo = new Map();
+  const estadoVivo = (id) => { if (!vivo.has(id)) vivo.set(id, { url: null, control: null }); return vivo.get(id); };
 
   async function corridaOperable(principal, id) {
-    if (!/^\d+$/.test(String(id))) throw err('Corrida invalida', 400);
+    if (!/^\d+$/.test(String(id))) throw err('Corrida inválida', 400);
     const c = await servicio().corrida(Number(id));
     if (!c) throw err('No existe esa corrida', 404);
     puedeOperar(principal, c.cuit);
@@ -82,7 +104,7 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
     if (req.method === 'POST' && seg[1] === 'constatacion' && !seg[2]) {
       const b = await readJsonBody(req);
       const cuit = String(b.cuit || '').replace(/\D/g, '');
-      if (cuit.length !== 11) throw err('Falta "cuit": quien recibio los comprobantes (con certificado y WSCDC)', 400);
+      if (cuit.length !== 11) throw err('Falta "cuit": quien recibió los comprobantes (con certificado y WSCDC)', 400);
       // Solo consulta y no guarda nada: alcanza con cualquier rol, siempre dentro de sus CUITs.
       assertCuitAllowed(principal, cuit);
       req._cuit = cuit;
@@ -112,7 +134,12 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
     // --- una corrida y su vista en vivo ---
     if (seg[2] === 'corridas' && seg[3]) {
       const c = await corridaOperable(principal, seg[3]);
-      if (req.method === 'GET' && !seg[4]) return json(res, 200, { ok: true, corrida: c });
+      req._cuit = c.cuit;
+      if (req.method === 'GET' && !seg[4]) {
+        // Sin el token de la sesion de Fisherboy ni el log crudo del robot (B-02).
+        const { token_fb: _t, log: _l, ...publica } = c; // eslint-disable-line no-unused-vars
+        return json(res, 200, { ok: true, corrida: publica });
+      }
       if (req.method === 'GET' && seg[4] === 'captura' && !seg[5]) {
         const img = await servicio().captura(c.id);
         if (!img) throw err('Esta corrida no tiene pantalla guardada', 404);
@@ -120,13 +147,14 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
         res.end(img);
         return true;
       }
-      if (!c.token_fb) throw err('La corrida todavia no tiene navegador', 409);
+      if (!c.token_fb) throw err('La corrida todavía no tiene navegador', 409);
       if (req.method === 'GET' && seg[4] === 'frame') {
         const fr = await fb().frame(c.token_fb, url.searchParams.get('desde') || 0);
         const cab = { 'Cache-Control': 'no-store' };
         for (const h of ['x-agent-estado', 'x-agent-seq', 'x-agent-url']) {
           if (fr.headers && fr.headers[h]) cab[h] = String(fr.headers[h]);
         }
+        if (cab['x-agent-url']) estadoVivo(c.id).url = cab['x-agent-url'];
         if (fr.status === 200) cab['Content-Type'] = 'image/jpeg';
         res.writeHead(fr.status === 200 || fr.status === 204 || fr.status === 202 ? fr.status : 502, cab);
         res.end(fr.status === 200 ? fr.body : undefined);
@@ -135,10 +163,41 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       if (req.method === 'POST' && seg[4] === 'evento') {
         const cmd = await readJsonBody(req);
         if (!cmd || !EVENTOS_HUMANOS.has(cmd.tipo)) throw err('Evento no permitido', 400);
+        const v = estadoVivo(c.id);
+        req._op = `evento:${cmd.tipo} @ ${v.url ? lugar(v.url) : '?'}`; // nunca lo tipeado
+        if (!esAdmin(principal)) {
+          // En esperando_humano Fisherboy ya espera a una persona (no hace falta tomar el control);
+          // en humano, solo quien lo tomo. Si lo tomo otro, tampoco.
+          const suyo = c.estado === 'esperando_humano' ? (!v.control || v.control === principal.username)
+            : c.estado === 'humano' && v.control === principal.username;
+          if (!suyo) {
+            throw err('Para manejar el navegador primero tomá el control, cuando ARCA pida una persona', 403);
+          }
+          if (!paginaPermitida(v.url)) {
+            throw err('Un operador solo puede manejar el login de ARCA y Mis Comprobantes. Para el resto, pedíselo a un admin.', 403);
+          }
+        }
         return json(res, 200, { ok: true, ...(await fb().evento(c.token_fb, cmd)) });
       }
-      if (req.method === 'POST' && seg[4] === 'tomar-control') return json(res, 200, { ok: true, ...(await fb().tomarControl(c.token_fb)) });
-      if (req.method === 'POST' && seg[4] === 'devolver') return json(res, 200, { ok: true, ...(await fb().devolver(c.token_fb)) });
+      if (req.method === 'POST' && seg[4] === 'tomar-control') {
+        req._op = 'tomar-control';
+        if (!esAdmin(principal) && c.estado !== 'esperando_humano') {
+          throw err('Un operador puede tomar el control solo cuando ARCA pide una persona (captcha o segundo factor)', 403);
+        }
+        const r = await fb().tomarControl(c.token_fb);
+        estadoVivo(c.id).control = principal.username;
+        return json(res, 200, { ok: true, ...r });
+      }
+      if (req.method === 'POST' && seg[4] === 'devolver') {
+        req._op = 'devolver';
+        const r = await fb().devolver(c.token_fb);
+        estadoVivo(c.id).control = null;
+        return json(res, 200, { ok: true, ...r });
+      }
+      if (req.method === 'POST' && seg[4] === 'cancelar') {
+        req._op = 'cancelar';
+        return json(res, 200, await servicio().cancelar(c.id, principal.username));
+      }
       if (req.method === 'POST' && (seg[4] === 'ok' || seg[4] === 'no')) {
         await servicio().responderOk(c.id, seg[4] === 'ok');
         return json(res, 200, { ok: true });

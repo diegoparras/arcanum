@@ -4,6 +4,7 @@
 // linea, cada uno con su alicuota de IVA). SOAP JAX-WS: authRequest como primer
 // elemento, parametros sin prefijo. Mapea a funciones JS limpias.
 
+const { CONFLICTO_EMISION } = require('./sqlComprobantes');
 const db = require('../db');
 const webhooks = require('./webhooks');
 const { config } = require('../config');
@@ -21,7 +22,7 @@ function isoDate(d) {
   const s = String(d);
   const m = s.match(/^(\d{4})-?(\d{2})-?(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  throw new SoapError(`Fecha invalida: ${d} (use YYYY-MM-DD)`, 400);
+  throw new SoapError(`Fecha inválida: ${d} (use YYYY-MM-DD)`, 400);
 }
 function todayIso() {
   const d = new Date();
@@ -56,7 +57,7 @@ async function callAuth(cuit, method, params = '') {
   const resp = body?.[`${method}Response`] ?? body;
   const errs = asArray(deepFind(resp, 'codigoDescripcion') || deepFind(resp, 'arrayErrores'));
   const errMsg = errs.map((e) => (e && (e.descripcion || e.Msg)) || '').filter(Boolean).join(' | ');
-  if (errMsg) throw new SoapError(`WSMTXCA rechazo: ${errMsg}`, 422, { resp });
+  if (errMsg) throw new SoapError(`WSMTXCA rechazó: ${errMsg}`, 422, { resp });
   return resp;
 }
 
@@ -197,8 +198,8 @@ async function authorize(cuit, inv) {
   const c = normalizeCuit(cuit);
   const idem = inv.idempotencyKey || null;
   if (idem) {
-    const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
-    if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
+    const prev = await require('./wsfev1').previoIdempotente(c, idem);
+    if (prev) return prev;
   }
   // Nombre y domicilio del receptor con CUIT para el PDF, del padron si no vinieron (best-effort).
   inv = { ...inv, ...(await require('./datosImpresion').completarReceptor(c, inv)) };
@@ -212,8 +213,8 @@ async function authorize(cuit, inv) {
   return withTokenRetry(c, SERVICE, config.env, () => db.withLock(`emit:wsmtxca:${c}:${config.env}:${ptoVta}:${tipoCbte}`, async () => {
     // Re-chequeo de idempotencia dentro del lock (reintento concurrente -> mismo comprobante).
     if (idem) {
-      const prev = await db.query('SELECT raw FROM comprobantes WHERE idempotency_key = $1', [idem]);
-      if (prev.rows.length) return { ...prev.rows[0].raw, idempotente: true };
+      const prev = await require('./wsfev1').previoIdempotente(c, idem);
+      if (prev) return prev;
     }
     const numero = inv.numero ? parseInt(inv.numero, 10) : (await lastAuthorized(c, ptoVta, tipoCbte)).ultimoNumero + 1;
     const fechaEmision = inv.fecha ? isoDate(inv.fecha) : todayIso();
@@ -272,7 +273,7 @@ async function authorize(cuit, inv) {
           `INSERT INTO comprobantes (cuit, entorno, punto_venta, tipo_cbte, numero, cae, cae_vto, resultado, fecha,
              importe_total, doc_tipo, doc_nro, idempotency_key, raw)
            VALUES ($1,$2,$3,$4,$5,$6, to_date($7,'YYYYMMDD'),$8, to_date($9,'YYYYMMDD'),$10,$11,$12,$13,$14)
-           ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
+           ${CONFLICTO_EMISION}`,
           [c, config.env, ptoVta, tipoCbte, numero, out.cae, out.caeVencimiento, out.resultado, out.fecha,
             out.importeTotal, out.docTipo, out.docNro, idem, JSON.stringify(out)],
         );

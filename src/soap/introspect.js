@@ -18,6 +18,7 @@ const AUTH_FIELDS = /^(auth|authrequest|token|sign|cuit|cuitrepresentada)$/i;
 
 async function fetchWsdl(url) {
   if (cache.has(url)) return cache.get(url);
+  catalog.validarEndpoint(url); // solo ARCA: este GET lo puede disparar el rol lectura (A-08)
   const wsdlUrl = url.includes('?') ? url : url.toLowerCase().includes('.asmx') ? url + '?WSDL' : url + '?wsdl';
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 20000);

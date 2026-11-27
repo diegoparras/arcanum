@@ -13,7 +13,7 @@ if (process.argv.includes('--version')) {
 } else {
   const v = nov.todas().find((x) => x.version === version);
   if (!v || !v.secciones.length) {
-    console.error(`CHANGELOG.md no tiene la seccion "## [${version}]" (o esta vacia): agregala antes de publicar.`);
+    console.error(`CHANGELOG.md no tiene la sección "## [${version}]" (o está vacía): agregala antes de publicar.`);
     process.exit(1);
   }
   process.stdout.write(nov.notasMarkdown(v));

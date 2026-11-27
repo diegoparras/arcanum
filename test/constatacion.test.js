@@ -47,7 +47,7 @@ test('un error de ARCA en un item no corta la lista', async () => {
   assert.strictEqual(r.resultados[1].valido, true);
 });
 
-test('tope de 500', async () => {
+test('una lista de mas de 500 comprobantes da 413', async () => {
   await assert.rejects(cons.constatarLista('20263630743', Array.from({ length: 501 }, (_, i) => item(i + 1)), { pausaMs: 0, deps: deps() }),
     (e) => e.httpStatus === 413);
 });

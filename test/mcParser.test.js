@@ -85,7 +85,7 @@ test('filas que no se entienden dan 422, no cero comprobantes', () => {
 
 test('una pagina HTML en vez del CSV da 422', () => {
   assert.throws(() => mc.desdeArchivo(Buffer.from('<!doctype html><html><body>Sesion vencida</body></html>'), 'c.csv', 'emitido'),
-    (e) => e.httpStatus === 422 && /pagina/.test(e.message));
+    (e) => e.httpStatus === 422 && /página/.test(e.message));
 });
 
 // JSON de ajax.do?f=listaResultados (lo que pide la receta directo). Filas posicionales: las

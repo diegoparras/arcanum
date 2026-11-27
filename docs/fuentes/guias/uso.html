@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Arcanum, guía de uso</title>
+<link rel="stylesheet" href="guia.css">
+</head>
+<body>
+
+<section class="tapa">
+  <div class="grilla"></div>
+  <div class="contenido">
+    <svg class="marca" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#27408b"/><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg>
+    <div class="producto">Arcanum</div>
+    <h1>Guía de uso</h1>
+    <div class="bajada">Cada pantalla, cada función y cada integración: emitir, consultar, sincronizar Mis Comprobantes, analizar, constatar y conectar tus sistemas.</div>
+    <div class="version">versión {{VERSION}}</div>
+  </div>
+  <div class="pie"><span>Diego Parras · Ecosistema Escriba</span><span>github.com/diegoparras/arcanum</span></div>
+</section>
+
+<main class="cuerpo">
+
+<h1 class="capitulo" style="break-before:auto"><span class="num">Contenido</span>En esta guía</h1>
+<ol class="indice">
+  <li><span class="n">01</span>Recorrido general<span class="d">roles, navegación y menú</span></li>
+  <li><span class="n">02</span>Panel<span class="d">el estado de todo, de un vistazo</span></li>
+  <li><span class="n">03</span>Clientes y servicios<span class="d">CUITs, certificados y servicios de ARCA</span></li>
+  <li><span class="n">04</span>Emitir y comprobantes<span class="d">facturar, el PDF con QR y el historial</span></li>
+  <li><span class="n">05</span>Facturador masivo<span class="d">lotes de comprobantes</span></li>
+  <li><span class="n">06</span>Contingencia<span class="d">cuando ARCA no responde</span></li>
+  <li><span class="n">07</span>Mis Comprobantes<span class="d">emitidos y recibidos desde el portal</span></li>
+  <li><span class="n">08</span>Análisis<span class="d">facturación, compras e IVA</span></li>
+  <li><span class="n">09</span>Facturas recibidas<span class="d">lectura y control con Factorum</span></li>
+  <li><span class="n">10</span>Integraciones<span class="d">API REST, n8n, webhooks y MCP</span></li>
+  <li><span class="n">11</span>Usuarios y claves de API<span class="d">acceso y permisos</span></li>
+  <li><span class="n">12</span>Glosario<span class="d">los términos de ARCA, en limpio</span></li>
+</ol>
+
+<!-- 01 -->
+<h1 class="capitulo"><span class="num">01</span>Recorrido general</h1>
+<p class="bajada">Arcanum se usa desde el navegador. A la izquierda, las secciones; arriba a la derecha, el menú de tres puntos con todo lo demás.</p>
+
+<h2>Roles</h2>
+<p>Lo que ve y puede hacer cada persona depende de su rol. Además, un usuario o una clave de API puede quedar limitado a algunos CUITs.</p>
+<table>
+  <thead><tr><th style="width:18%">Rol</th><th>Puede</th></tr></thead>
+  <tbody>
+    <tr><td><span class="etiqueta">superadmin</span></td><td>Todo: usuarios, catálogo de servicios, conexiones con Fisherboy y Factorum, backups.</td></tr>
+    <tr><td><span class="etiqueta">admin</span></td><td>Operar todos los CUITs, claves de API, webhooks, clave fiscal de Mis Comprobantes, entorno de ARCA.</td></tr>
+    <tr><td><span class="etiqueta">operador</span></td><td>Emitir, cargar clientes y certificados, sincronizar y constatar en sus CUITs.</td></tr>
+    <tr><td><span class="etiqueta">lectura</span></td><td>Consultar. No emite ni modifica nada.</td></tr>
+  </tbody>
+</table>
+
+<h2>El menú</h2>
+<p>En el menú de tres puntos están el usuario y su rol, el tema claro u oscuro, el entorno de ARCA (admin), los ajustes de superadmin, <strong>Cambiar contraseña</strong>, <strong>Novedades</strong> con lo que trajo cada versión, <strong>Acerca de Arcanum</strong> con la versión instalada y <strong>Cerrar sesión</strong>. Cerrar sesión invalida la sesión en el servidor.</p>
+<figure><img src="../../media/capturas/panel-oscuro.png" alt=""><figcaption>El panel en tema oscuro. El tema se recuerda por navegador.</figcaption></figure>
+
+<!-- 02 -->
+<h1 class="capitulo"><span class="num">02</span>Panel</h1>
+<p class="bajada">La primera pantalla resume el estado de la instalación.</p>
+<figure><img src="../../media/capturas/panel.png" alt=""><figcaption>Emisiones del día y de las últimas dos semanas, certificados por vencer y el estado de cada servicio de ARCA.</figcaption></figure>
+<ul>
+  <li><strong>Emisiones de hoy y monto:</strong> lo emitido por Arcanum en el entorno actual.</li>
+  <li><strong>Tickets vigentes y certificados por vencer:</strong> los certificados vencen; Arcanum avisa 30 días antes.</li>
+  <li><strong>Peticiones de las últimas 24 horas:</strong> volumen, errores y latencia.</li>
+  <li><strong>Estado de ARCA:</strong> cada servicio se controla cada 5 minutos, con su disponibilidad de las últimas 24 horas.</li>
+</ul>
+<div class="nota"><b>Alcance por CUIT</b>Un usuario limitado a algunos CUITs ve en el panel solo los números de esos CUITs.</div>
+
+<!-- 03 -->
+<h1 class="capitulo"><span class="num">03</span>Clientes y servicios</h1>
+<p class="bajada">Cada contribuyente que opera con Arcanum es un cliente, con su certificado digital. Cada servicio de ARCA se habilita aparte.</p>
+
+<h2>Clientes</h2>
+<figure><img src="../../media/capturas/clientes.png" alt=""><figcaption>Clientes con su certificado. Los que están por vencer se marcan.</figcaption></figure>
+<ul>
+  <li><strong>Nuevo cliente:</strong> genera la clave privada (cifrada, nunca sale) y el pedido de certificado (CSR).</li>
+  <li><strong>Pegar .crt:</strong> carga el certificado que devolvió ARCA; Arcanum verifica que corresponda a la clave.</li>
+  <li><strong>Importar certificado:</strong> trae un par de clave y certificado que ya tengas.</li>
+  <li><strong>Datos fiscales:</strong> razón social, domicilio, condición frente al IVA e ingresos brutos para el PDF. Se pueden traer del padrón de ARCA.</li>
+</ul>
+
+<h2>Servicios</h2>
+<figure><img src="../../media/capturas/servicios.png" alt=""><figcaption>El catálogo de servicios de ARCA, con la guía de activación de cada uno.</figcaption></figure>
+<p>Cada servicio muestra qué hace, cómo activarlo en el Administrador de Relaciones y un botón <strong>Verificar</strong> que confirma si tu certificado ya lo tiene asociado. El catálogo lo edita solo un superadmin, y sus direcciones solo pueden ser de ARCA.</p>
+
+<!-- 04 -->
+<h1 class="capitulo"><span class="num">04</span>Emitir y comprobantes</h1>
+<p class="bajada">Facturar desde el panel o desde la API, con vista previa, sin duplicados y con el PDF listo.</p>
+
+<h2>Emitir</h2>
+<figure><img src="../../media/capturas/emitir.png" alt=""><figcaption>El formulario de emisión.</figcaption></figure>
+<ol class="pasos">
+  <li>Elegí el CUIT emisor, el punto de venta y el tipo de comprobante.</li>
+  <li>Cargá el receptor (con el CUIT, Arcanum completa los datos del padrón) y los importes.</li>
+  <li>Usá <strong>Vista previa</strong>: ARCA valida el comprobante sin emitirlo y Arcanum avisa los problemas antes de pedir el CAE.</li>
+  <li><strong>Emitir.</strong> Si ARCA no responde y tildaste <strong>contingencia</strong>, el comprobante queda en cola y sale solo cuando vuelve.</li>
+</ol>
+<div class="tip"><b>Sin duplicados</b>Cada emisión lleva una clave de idempotencia. Si un pedido se corta y se reintenta, Arcanum devuelve el comprobante ya emitido en lugar de pedir otro CAE.</div>
+
+<h2>Comprobantes</h2>
+<figure><img src="../../media/capturas/comprobantes.png" alt=""><figcaption>El historial con su CAE y el PDF de cada comprobante.</figcaption></figure>
+<ul>
+  <li><strong>PDF con QR de ARCA</strong>, en el modelo oficial o el de la empresa.</li>
+  <li><strong>CSV</strong> para el libro de IVA.</li>
+  <li><strong>Traer lo emitido por fuera:</strong> suma lo facturado desde la web de ARCA u otro sistema y avisa si algo no coincide.</li>
+  <li><strong>Importar por QR:</strong> registra un comprobante de un tercero solo si ARCA lo constata.</li>
+</ul>
+
+<!-- 05 -->
+<h1 class="capitulo"><span class="num">05</span>Facturador masivo</h1>
+<p class="bajada">Para emitir o pedir muchos comprobantes juntos: honorarios del mes, cuotas, alquileres.</p>
+<figure><img src="../../media/capturas/facturador.png" alt=""><figcaption>Un lote con el estado de cada ítem.</figcaption></figure>
+<ol class="pasos">
+  <li><strong>Nuevo lote:</strong> elegí el CUIT y el perfil, y cargá los ítems a mano o con un CSV.</li>
+  <li><strong>Emitir pendientes</strong> pide el CAE de todos los ítems que falten, de a uno y sin duplicar.</li>
+  <li>Si el comprobante lo emite otro (un profesional que te factura), <strong>Solicitar</strong> le manda un correo (una vez por día) y <strong>Recibido</strong> registra su CAE.</li>
+  <li>El semáforo marca los ítems que llevan demasiados días pendientes. El lote se exporta a CSV.</li>
+</ol>
+
+<!-- 06 -->
+<h1 class="capitulo"><span class="num">06</span>Contingencia</h1>
+<p class="bajada">ARCA a veces no responde. Arcanum hace que la facturación no se corte y que nada salga dos veces.</p>
+<figure><img src="../../media/capturas/contingencia.png" alt=""><figcaption>La cola de contingencia con los reintentos programados.</figcaption></figure>
+<ul>
+  <li><strong>Cola:</strong> un comprobante emitido con contingencia que no pudo salir queda en espera y se reintenta solo, con espera creciente, y en el acto cuando ARCA vuelve.</li>
+  <li><strong>Adopción del CAE:</strong> si el pedido llegó a ARCA pero la respuesta se perdió, antes de reintentar Arcanum consulta ese número y, si ARCA lo había autorizado, adopta ese CAE.</li>
+  <li><strong>Fecha:</strong> nunca cambia sola. Si ARCA ya no acepta la fecha original, el comprobante espera tu decisión: emitir con la fecha de hoy o cancelar.</li>
+  <li><strong>CAEA (opcional por CUIT):</strong> con un punto de venta de tipo CAEA, si ARCA sigue caído pasado el tiempo que elijas, emite con CAEA e informa todo cuando vuelve.</li>
+</ul>
+
+<!-- 07 -->
+<h1 class="capitulo"><span class="num">07</span>Mis Comprobantes</h1>
+<p class="bajada">Los emitidos y recibidos que ARCA registra a tu nombre, bajados del portal todos los días. Requiere Fisherboy.</p>
+<figure><img src="../../media/capturas/mis-comprobantes.png" alt=""><figcaption>Mis Comprobantes: credencial, sincronización y listado con filtros.</figcaption></figure>
+
+<h2>Configurar</h2>
+<ol class="pasos">
+  <li>Un admin carga la <strong>clave fiscal</strong> del CUIT. Se guarda cifrada, no vuelve por la API ni queda en registros.</li>
+  <li>Con <strong>Sincronizar ahora</strong> se bajan emitidos, recibidos o ambos (hasta 3 años por vez). Con la sincronización diaria tildada, se actualiza sola.</li>
+  <li>Si ARCA pide un captcha o un segundo factor, la vista en vivo muestra el navegador y una persona lo resuelve. Una sincronización en curso se puede <strong>Cancelar</strong>.</li>
+</ol>
+<div class="aviso"><b>Si ARCA rechaza la clave</b>Arcanum bloquea esa credencial y no reintenta, para no bloquear la cuenta. Revisala y volvé a cargarla.</div>
+
+<h2>Constatar lo que te facturan</h2>
+<figure><img src="../../media/capturas/constatacion.png" alt=""><figcaption>Recibidos con el resultado de la constatación.</figcaption></figure>
+<p><strong>Constatar recibidos</strong> controla cada comprobante recibido contra ARCA y su emisor contra la base de apócrifos, en segundo plano. Se puede detener: lo constatado queda y la próxima vez sigue desde lo pendiente.</p>
+
+<h2>Monotributo</h2>
+<p>Para monotributistas, Arcanum suma los últimos 12 meses de emitidos (con las notas de crédito restando) contra el tope de la categoría, con semáforo al 80% y al 100%, la categoría sugerida y el recordatorio de recategorización en enero y julio. Los topes se cargan con su vigencia, también con una plantilla CSV.</p>
+
+<!-- 08 -->
+<h1 class="capitulo"><span class="num">08</span>Análisis</h1>
+<p class="bajada">Los datos de Mis Comprobantes, convertidos en números que se entienden.</p>
+<figure><img src="../../media/capturas/analisis.png" alt=""><figcaption>Indicadores, evolución mensual, principales clientes y proveedores.</figcaption></figure>
+<ul>
+  <li><strong>Indicadores del período:</strong> facturado (con las notas de crédito restadas) y su variación contra el período anterior, compras, IVA débito y crédito, y el resultado.</li>
+  <li><strong>Por mes:</strong> emitidos y recibidos lado a lado.</li>
+  <li><strong>Principales clientes y proveedores,</strong> con la concentración de cada uno.</li>
+  <li><strong>Un clic filtra todo:</strong> un mes, un cliente o un tipo de comprobante filtra el resto de la pantalla y el listado.</li>
+  <li>Cada bloque se pliega, y Arcanum recuerda cuáles dejaste plegados.</li>
+</ul>
+
+<!-- 09 -->
+<h1 class="capitulo"><span class="num">09</span>Facturas recibidas</h1>
+<p class="bajada">Con Factorum conectado, Arcanum lee y controla las facturas que recibís en PDF o imagen.</p>
+<ul>
+  <li><strong>Verificar una factura:</strong> subís el archivo y en segundos sabés si es válida, con los controles y la constatación con ARCA.</li>
+  <li><strong>Lotes:</strong> subís muchas a la vez; Factorum las lee (QR, texto, OCR e IA opcional) y quedan para revisar.</li>
+  <li><strong>Revisar y aprobar</strong> lo leído, corregir un campo y bajar el Excel o el CSV.</li>
+</ul>
+
+<!-- 10 -->
+<h1 class="capitulo"><span class="num">10</span>Integraciones</h1>
+<p class="bajada">Todo lo que hace el panel también se hace por API. Así Arcanum se conecta con n8n, un ERP o un asistente de IA.</p>
+
+<h2>API REST</h2>
+<p>Cada pedido lleva una clave de API en <code>X-API-Key</code> o en <code>Authorization: Bearer</code>. Ejemplo, emitir una factura C:</p>
+<pre><span class="k">curl</span> -X POST https://arcanum.tuempresa.com/api/wsfev1/comprobantes \
+  -H <span class="s">"X-API-Key: TU_CLAVE"</span> -H <span class="s">"Content-Type: application/json"</span> \
+  -d <span class="s">'{ "cuit": "30777777773", "puntoVenta": 4, "tipoComprobante": 11,
+        "importeTotal": 254100, "idempotencyKey": "venta-0042" }'</span></pre>
+<p>Y cualquier operación de cualquier servicio del catálogo, con el motor genérico:</p>
+<pre><span class="k">curl</span> -X POST https://arcanum.tuempresa.com/api/ws/padron_a5/getPersona_v2 \
+  -H <span class="s">"X-API-Key: TU_CLAVE"</span> -H <span class="s">"Content-Type: application/json"</span> \
+  -d <span class="s">'{ "cuit": "30777777773", "params": { "idPersona": "20111111112" } }'</span></pre>
+<p>La documentación interactiva de la API está en <code>/docs</code>.</p>
+
+<h2>Generador y n8n</h2>
+<figure><img src="../../media/capturas/generador.png" alt=""><figcaption>El generador arma el pedido, el nodo de n8n y los ejemplos de código.</figcaption></figure>
+<p>Elegís el servicio y la operación (Arcanum lee el WSDL de ARCA en vivo y lista los campos) y el generador entrega el nodo HTTP de n8n listo para pegar, más los ejemplos en cURL, JavaScript y Python.</p>
+
+<h2>Webhooks</h2>
+<p>Arcanum avisa por HTTP (firmado con HMAC en <code>X-Arcanum-Signature</code>) y, si configurás SMTP, por correo:</p>
+<table>
+  <thead><tr><th style="width:40%">Evento</th><th>Cuándo</th></tr></thead>
+  <tbody>
+    <tr><td><code>comprobante_emitido</code> / <code>_rechazado</code></td><td>Cada emisión.</td></tr>
+    <tr><td><code>arca_caido</code> / <code>arca_restablecido</code></td><td>Un servicio de ARCA deja de responder o vuelve.</td></tr>
+    <tr><td><code>cert_por_vencer</code>, <code>clave_por_vencer</code></td><td>Un certificado o una clave de API vence pronto.</td></tr>
+    <tr><td><code>clave_anomala</code></td><td>Una clave consulta muchos CUITs o acumula rechazos.</td></tr>
+    <tr><td><code>tope_monotributo</code></td><td>Un monotributista pasa el 80% o el 100% de su categoría.</td></tr>
+    <tr><td><code>comprobante_encolado</code>, <code>cola_requiere_humano</code></td><td>Contingencia.</td></tr>
+    <tr><td><code>mis_comprobantes_sincronizado</code> / <code>_fallo</code></td><td>Sincronizaciones de Mis Comprobantes.</td></tr>
+    <tr><td><code>backup_creado</code> / <code>backup_fallo</code></td><td>Backup diario.</td></tr>
+    <tr><td><code>conexion_cambiada</code>, <code>catalogo_cambiado</code></td><td>Cambios de configuración sensibles.</td></tr>
+  </tbody>
+</table>
+
+<h2>Asistentes de IA (MCP)</h2>
+<p>En <code>POST /mcp</code>, un asistente compatible con MCP consulta padrón y riesgo fiscal, comprobantes, numeración, puntos de venta, e-Ventanilla, certificados, el estado de ARCA y Mis Comprobantes, y prepara una vista previa. Todas las herramientas son de solo consulta: para facturar, el asistente propone y una persona aprueba.</p>
+
+<!-- 11 -->
+<h1 class="capitulo"><span class="num">11</span>Usuarios y claves de API</h1>
+<p class="bajada">Quién entra al panel y qué sistemas usan la API, cada uno con lo mínimo que necesita.</p>
+<figure><img src="../../media/capturas/usuarios.png" alt=""><figcaption>Usuarios con su rol y claves de API con su alcance y uso.</figcaption></figure>
+<h2>Usuarios</h2>
+<ul>
+  <li>Contraseñas de 12 caracteres o más. Cada persona la cambia desde el menú; al hacerlo se cierran sus otras sesiones.</li>
+  <li>Un superadmin crea y borra usuarios; las sesiones del usuario borrado se cortan al instante.</li>
+  <li>Con Lockatus, el ingreso es único y el rol viene de Lockatus.</li>
+</ul>
+<h2>Claves de API</h2>
+<ul>
+  <li><strong>Rol</strong> (<code>lectura</code>, <code>operador</code> o <code>admin</code>) y <strong>CUITs permitidos</strong>: una integración ve solo lo suyo.</li>
+  <li><strong>Vencimiento</strong> y <strong>rotación</strong> con días de gracia, para cambiar la clave sin cortar el servicio.</li>
+  <li><strong>Límite por minuto</strong> y <strong>Uso</strong>: pedidos, errores, CUITs consultados y últimos pedidos.</li>
+  <li><strong>Dar de baja</strong> corta la clave al instante, sin tocar las demás.</li>
+</ul>
+<div class="tip"><b>Una clave por integración</b>Así cada llamada queda registrada a nombre de quién la hizo, y si una se filtra la revocás sin afectar al resto.</div>
+
+<!-- 12 -->
+<h1 class="capitulo"><span class="num">12</span>Glosario</h1>
+<table>
+  <thead><tr><th style="width:26%">Término</th><th>Qué es</th></tr></thead>
+  <tbody>
+    <tr><td><strong>ARCA</strong></td><td>Agencia de Recaudación y Control Aduanero, ex AFIP.</td></tr>
+    <tr><td><strong>CAE</strong></td><td>Código de Autorización Electrónico: el número que ARCA asigna a cada comprobante autorizado.</td></tr>
+    <tr><td><strong>CAEA</strong></td><td>CAE anticipado: un código por quincena para emitir cuando ARCA no responde, con obligación de informar después.</td></tr>
+    <tr><td><strong>CUIT</strong></td><td>Clave Única de Identificación Tributaria del contribuyente.</td></tr>
+    <tr><td><strong>Certificado digital</strong></td><td>Identifica al sistema ante ARCA. Se genera con un CSR y se asocia a cada servicio.</td></tr>
+    <tr><td><strong>WSAA</strong></td><td>El servicio de autenticación de ARCA: entrega un ticket de acceso (token y firma) válido por 12 horas.</td></tr>
+    <tr><td><strong>Homologación</strong></td><td>El entorno de pruebas de ARCA. Los comprobantes no tienen validez fiscal.</td></tr>
+    <tr><td><strong>Punto de venta</strong></td><td>La numeración de comprobantes; cada tipo de emisión (CAE, CAEA) tiene los suyos.</td></tr>
+    <tr><td><strong>Constatación</strong></td><td>Verificar ante ARCA que un comprobante existe y sus datos coinciden.</td></tr>
+    <tr><td><strong>Idempotencia</strong></td><td>Que repetir un pedido no cambie el resultado: un reintento no emite dos veces.</td></tr>
+    <tr><td><strong>Mis Comprobantes</strong></td><td>El servicio del portal de ARCA con todos los comprobantes emitidos y recibidos por un CUIT.</td></tr>
+  </tbody>
+</table>
+
+<div class="contratapa">
+  <svg class="marca" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#27408b"/><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg>
+  <h2>Arcanum</h2>
+  <p>Gateway REST self-hosted para los Web Services de ARCA.<br>Open source, licencia MIT. Parte del Ecosistema Escriba.</p>
+  <p style="margin-top:6mm"><code>github.com/diegoparras/arcanum</code></p>
+  <p style="margin-top:10mm;font-size:8.5pt">Arcanum es un proyecto independiente, sin relación con ARCA. Los datos de las capturas son ficticios.</p>
+</div>
+</main>
+</body>
+</html>

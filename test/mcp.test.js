@@ -43,7 +43,7 @@ test('mcp: ping, metodo desconocido, JSON invalido y pedido invalido', async () 
   assert.strictEqual((await s.atender('{no es json', ctx)).error.code, -32700);
   assert.strictEqual((await s.atender(JSON.stringify({ foo: 1 }), ctx)).error.code, -32600);
 });
-test('mcp: lotes de mensajes', async () => {
+test('mcp: un lote responde cada pedido y no las notificaciones', async () => {
   const s = servidorCon([eco]);
   const r = await s.atender(JSON.stringify([
     { jsonrpc: '2.0', id: 1, method: 'ping' },
@@ -62,10 +62,10 @@ test('mcp: herramienta desconocida -> error -32602', async () => {
   assert.strictEqual(r.error.code, -32602);
 });
 test('mcp: si la herramienta falla, isError con el motivo', async () => {
-  const falla = { ...eco, nombre: 'falla', ejecutar: () => { throw new Error('ARCA rechazo la solicitud'); } };
+  const falla = { ...eco, nombre: 'falla', ejecutar: () => { throw new Error('ARCA rechazó la solicitud'); } };
   const r = await servidorCon([falla]).atender(rpc('tools/call', { name: 'falla' }), ctx);
   assert.strictEqual(r.result.isError, true);
-  assert.match(JSON.parse(r.result.content[0].text).error, /ARCA rechazo/);
+  assert.match(JSON.parse(r.result.content[0].text).error, /ARCA rechazó/);
 });
 test('mcp: corte de tiempo -> error claro, no se cuelga', async () => {
   const lenta = { ...eco, nombre: 'lenta', ejecutar: () => new Promise((ok) => setTimeout(() => ok({}), 2000)) };
@@ -73,7 +73,7 @@ test('mcp: corte de tiempo -> error claro, no se cuelga', async () => {
   const r = await servidorCon([lenta], { timeoutMs: 60 }).atender(rpc('tools/call', { name: 'lenta' }), ctx);
   assert.ok(Date.now() - t0 < 1500);
   assert.strictEqual(r.result.isError, true);
-  assert.match(r.result.content[0].text, /no respondio a tiempo/);
+  assert.match(r.result.content[0].text, /no respondió a tiempo/);
 });
 test('mcp: respuestas largas se recortan bajo 20.000 caracteres', async () => {
   const grande = { ...eco, nombre: 'grande', ejecutar: () => ({ x: 'a'.repeat(50000) }) };
@@ -138,7 +138,7 @@ test('herramientas: formatos de numero y fecha', () => {
   assert.strictEqual(h.formatearNumero(3, 124), '0003-00000124');
   assert.strictEqual(h.fechaIso('20261110'), '2026-11-10');
   assert.strictEqual(h.fechaIso('2026-11-10T00:00:00Z'), '2026-11-10');
-  assert.throws(() => h.cuit11('123'), /11 digitos/);
+  assert.throws(() => h.cuit11('123'), /11 dígitos/);
   assert.strictEqual(h.cuit11('20-26363074-3'), '20263630743');
 });
 test('herramientas: resumen del padron A5 (monotributista)', () => {

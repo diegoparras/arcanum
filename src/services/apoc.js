@@ -67,7 +67,7 @@ function xmlPreview(xml) {
 async function consultar(cuitRepresentada, cuitConsulta, entorno) {
   const repre = normalizeCuit(cuitRepresentada);
   const target = normalizeCuit(cuitConsulta);
-  if (!target) throw new SoapError('CUIT a consultar invalido', 400);
+  if (!target) throw new SoapError('CUIT a consultar inválido', 400);
 
   const ta = await getAccessTicket(repre, SERVICE, entorno);
 
@@ -115,7 +115,7 @@ async function consultar(cuitRepresentada, cuitConsulta, entorno) {
   const xml = await res.text();
 
   const fault = xml.match(/<(?:[\w.-]+:)?Fault[^>]*>[\s\S]*?<(?:faultstring|(?:[\w.-]+:)?Text)[^>]*>([^<]+)/i);
-  if (fault) throw new SoapError(`WSAPOC rechazo la solicitud: ${fault[1]}`, 502, { raw: xmlPreview(xml) });
+  if (fault) throw new SoapError(`WSAPOC rechazó la solicitud: ${fault[1]}`, 502, { raw: xmlPreview(xml) });
 
   const codigo = get(xml, 'Codigo') || get(xml, 'codigo');
   const descripcion = get(xml, 'Descripcion') || get(xml, 'descripcion');
@@ -157,7 +157,7 @@ async function consultar(cuitRepresentada, cuitConsulta, entorno) {
       cuit: target,
       esApocrifo: false,
       codigo,
-      descripcion: descripcion || 'Error al validar credenciales de autenticacion WSAPOC.',
+      descripcion: descripcion || 'Error al validar credenciales de autenticación WSAPOC.',
       fechaCondicion,
       fechaPublicacion,
       detalle,

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arcanum — Gateway REST para ARCA (ex-AFIP)
-  version: 0.10.6
+  version: 2.2.0
   description: >
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
@@ -43,7 +43,7 @@ components:
       in: header
       required: false
       schema: { type: string }
-      description: Un reintento con la misma clave devuelve el comprobante ya emitido (no pide otro CAE). Equivale a idempotencyKey en el cuerpo.
+      description: Un reintento con la misma clave devuelve el comprobante ya emitido (no pide otro CAE). Equivale a idempotencyKey en el cuerpo. La clave vale por CUIT y entorno - la misma clave en otro CUIT es otra emisión.
   schemas:
     AlicuotaIva:
       type: object
@@ -69,7 +69,7 @@ components:
         concepto: { type: integer, example: 1, description: "1=Productos,2=Servicios,3=Ambos" }
         tipoDocReceptor: { type: integer, example: 99 }
         nroDocReceptor: { type: string, example: "0" }
-        numero: { type: integer, nullable: true, description: "Si se omite, ultimo autorizado + 1" }
+        numero: { type: integer, nullable: true, description: "Si se omite, último autorizado + 1" }
         fecha: { type: string, example: "2026-06-24" }
         importeNeto: { type: number }
         importeIva: { type: number }
@@ -86,8 +86,8 @@ components:
         fechaServicioHasta: { type: string, nullable: true }
         fechaVtoPago: { type: string, nullable: true }
         condicionIvaReceptor: { type: integer, description: "RG 5616: 1 Responsable Inscripto, 4 Exento, 5 Consumidor Final, 6 Monotributo" }
-        receptorNombre: { type: string, description: "Para el PDF. Con CUIT (tipoDocReceptor 80), si falta se toma del padron de ARCA" }
-        receptorDomicilio: { type: string, description: "Para el PDF. Con CUIT, si falta se toma del padron de ARCA" }
+        receptorNombre: { type: string, description: "Para el PDF. Con CUIT (tipoDocReceptor 80), si falta se toma del padrón de ARCA" }
+        receptorDomicilio: { type: string, description: "Para el PDF. Con CUIT, si falta se toma del padrón de ARCA" }
         condicionVenta: { type: string, example: "Contado", description: "Para el PDF" }
         items:
           type: array
@@ -99,23 +99,23 @@ paths:
   /api/health:
     get: { tags: [Metricas], summary: Estado del servicio (sin auth), security: [], responses: { '200': { description: OK } } }
   /metrics:
-    get: { tags: [Metricas], summary: Metricas en formato Prometheus (sin auth), security: [], responses: { '200': { description: texto Prometheus } } }
+    get: { tags: [Metricas], summary: Métricas en formato Prometheus (sin auth), security: [], responses: { '200': { description: texto Prometheus } } }
   /api/metrics:
-    get: { tags: [Metricas], summary: Metricas (JSON), responses: { '200': { description: resumen } } }
+    get: { tags: [Metricas], summary: Métricas (JSON), responses: { '200': { description: resumen } } }
 
   /api/auth/login:
     post:
       tags: [Auth]
-      summary: Login de la UI (devuelve cookie de sesion)
+      summary: Login de la UI (devuelve cookie de sesión)
       security: []
       requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { username: { type: string }, password: { type: string } } } } } }
-      responses: { '200': { description: ok }, '401': { description: credenciales invalidas }, '429': { description: demasiados intentos } }
+      responses: { '200': { description: ok }, '401': { description: credenciales inválidas }, '429': { description: demasiados intentos } }
   /api/auth/logout:
-    post: { tags: [Auth], summary: Cierra la sesion, security: [], responses: { '200': { description: ok } } }
+    post: { tags: [Auth], summary: Cierra la sesión, security: [], responses: { '200': { description: ok } } }
   /api/auth/me:
     get: { tags: [Auth], summary: Usuario autenticado, responses: { '200': { description: ok } } }
   /api/auth/config:
-    get: { tags: [Auth], summary: Indica si OIDC esta habilitado, security: [], responses: { '200': { description: ok } } }
+    get: { tags: [Auth], summary: Indica si OIDC está habilitado, security: [], responses: { '200': { description: ok } } }
   /api/auth/oidc/login:
     get: { tags: [Auth], summary: Inicia el login OIDC (redirect), security: [], responses: { '302': { description: redirect al issuer } } }
   /api/auth/oidc/callback:
@@ -130,15 +130,15 @@ paths:
         Ninguna emite ni modifica nada. Exige clave (Bearer o X-API-Key); no acepta la cookie del panel.
       security: [ { BearerAuth: [] }, { ApiKeyAuth: [] } ]
       requestBody: { required: true, content: { application/json: { schema: { type: object, example: { jsonrpc: "2.0", id: 1, method: tools/list } } } } }
-      responses: { '200': { description: respuesta JSON-RPC }, '202': { description: notificacion aceptada (sin cuerpo) }, '401': { description: falta la clave o es invalida }, '405': { description: solo POST } }
+      responses: { '200': { description: respuesta JSON-RPC }, '202': { description: notificación aceptada (sin cuerpo) }, '401': { description: falta la clave o es inválida }, '405': { description: solo POST } }
 
   /api/claves:
     get: { tags: [Claves], summary: Lista las claves de API (rol admin+), responses: { '200': { description: ok } } }
     post:
       tags: [Claves]
       summary: Crea una clave de API. La clave en claro se devuelve una sola vez.
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [nombre, rol], properties: { nombre: { type: string, example: SecretarIA }, rol: { type: string, enum: [lectura, operador, admin] }, cuits: { type: array, items: { type: string } }, venceDias: { type: integer, minimum: 1, maximum: 3650 }, limitePorMinuto: { type: integer, minimum: 1 }, suite: { type: boolean, description: "Puede abrir sesiones de la suite (POST /api/suite/pase)" }, suiteRolTope: { type: string, enum: [lectura, operador, admin, superadmin], default: operador, description: "admin y superadmin solo los pone un superadmin; con cuits, hasta operador" } } } } } }
-      responses: { '200': { description: clave creada }, '400': { description: datos invalidos }, '403': { description: rol insuficiente } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [nombre, rol], properties: { nombre: { type: string, example: SecretarIA }, rol: { type: string, enum: [lectura, operador, admin] }, cuits: { type: array, items: { type: string } }, venceDias: { type: integer, minimum: 1, maximum: 3650 }, limitePorMinuto: { type: integer, minimum: 1 }, suite: { type: boolean, description: "Puede abrir sesiones de la suite (POST /api/suite/pase)" }, suiteRolTope: { type: string, enum: [lectura, operador, admin, superadmin], default: operador, description: "admin y superadmin solo los pone un superadmin; con cuits, hasta operador. Un valor que no se entiende es un 400" } } } } } }
+      responses: { '200': { description: clave creada }, '400': { description: datos inválidos }, '403': { description: rol insuficiente } }
   /api/claves/{id}/rotar:
     post:
       tags: [Claves]
@@ -149,7 +149,7 @@ paths:
   /api/claves/{id}/uso:
     get:
       tags: [Claves]
-      summary: Uso de una clave (totales, por operacion, por dia y ultimos pedidos)
+      summary: Uso de una clave (totales, por operación, por día y últimos pedidos)
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
         - { name: dias, in: query, required: false, schema: { type: integer, default: 30, maximum: 365 } }
@@ -171,9 +171,9 @@ paths:
   /api/suite/pase:
     post:
       tags: [Suite]
-      summary: Pase para entrar a Arcanum desde otra app de la suite (Factorum). Solo con una clave habilitada para la suite.
+      summary: Pase para entrar a Arcanum desde otra app de la suite (Factorum). Solo con una clave habilitada para la suite (nunca con la cookie de sesión).
       description: >
-        Contrato en docs/suite-pase.md. Si la persona ya existe en Arcanum (por email, sin distinguir mayusculas)
+        Contrato en docs/suite-pase.md. Si la persona ya existe en Arcanum (por email, sin distinguir mayúsculas)
         manda su rol y sus CUITs de Arcanum; si no, se crea (origen factorum) con el rol traducido
         (superadmin, admin, usuario -> operador, lectura). En los dos casos el rol queda topeado por la clave y
         los CUITs se intersecan con los de la clave. El pase sirve una vez y vence a los 60 s.
@@ -181,32 +181,32 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [app, email, rol], properties: { app: { type: string, enum: [factorum] }, email: { type: string }, nombre: { type: string }, rol: { type: string, enum: [superadmin, admin, usuario, lectura] }, cuits: { type: array, nullable: true, items: { type: string } } } } } } }
       responses:
         '200': { description: '{ ok, url: "https://<publica>/suite/entrar?pase=<token>", vence }' }
-        '401': { description: sin clave o clave invalida }
-        '403': { description: 'clave sin el flag ("Esta clave no está habilitada para abrir sesiones de la suite"), persona desactivada, alta automatica apagada, sin rol valido o sin CUITs en comun' }
+        '401': { description: sin clave o clave inválida }
+        '403': { description: 'clave sin el flag ("Esta clave no está habilitada para abrir sesiones de la suite"), persona desactivada, alta automática apagada, sin rol válido o sin CUITs en común' }
         '409': { description: '"Falta la URL pública de Arcanum"' }
   /suite/entrar:
     get:
       tags: [Suite]
-      summary: Canjea un pase y abre la sesion (302 a /). Invalido o vencido, 302 a /?suite=pase-vencido.
+      summary: Canjea un pase y abre la misma sesión revocable que el login (302 a /). Inválido o vencido, 302 a /?suite=pase-vencido.
       security: []
       parameters: [ { name: pase, in: query, required: true, schema: { type: string } } ]
-      responses: { '302': { description: redirige a / (con la cookie de sesion) o al login } }
+      responses: { '302': { description: redirige a / (con la cookie de sesión) o al login } }
   /api/suite/apps:
     get:
       tags: [Suite]
-      summary: Apps de la suite conectadas (Factorum) y si respondieron a su healthz en los ultimos 60 s. Sesion, cualquier rol.
+      summary: Apps de la suite conectadas (Factorum) y si respondieron a su healthz en los últimos 60 s. Sesión, cualquier rol.
       responses: { '200': { description: '{ ok, apps: [ { app, nombre, disponible } ] }' } }
   /api/suite/abrir/{app}:
     post:
       tags: [Suite]
-      summary: Pide a la otra app un pase para la persona de la sesion y devuelve la URL para entrar. Sesion, cualquier rol (tambien lectura).
+      summary: Pide a la otra app un pase para la persona de la sesión y devuelve la URL para entrar. Sesión del panel, cualquier rol (también lectura); pasa por el control CSRF como el resto del panel.
       parameters: [ { name: app, in: path, required: true, schema: { type: string, enum: [factorum] } } ]
-      responses: { '200': { description: '{ ok, url }' }, '403': { description: con clave de API, usuario desactivado o la otra app lo rechazo }, '409': { description: Factorum sin conectar o el usuario no tiene email }, '502': { description: Factorum no responde o rechazo el token de Arcanum } }
+      responses: { '200': { description: '{ ok, url }' }, '403': { description: con clave de API, usuario desactivado o la otra app lo rechazó }, '409': { description: Factorum sin conectar o el usuario no tiene email }, '502': { description: Factorum no responde o rechazó el token de Arcanum } }
   /api/suite/config:
-    get: { tags: [Suite], summary: URL publica de Arcanum y alta automatica (superadmin), responses: { '200': { description: ok } } }
+    get: { tags: [Suite], summary: URL pública de Arcanum y alta automática (superadmin), responses: { '200': { description: ok } } }
     put:
       tags: [Suite]
-      summary: Cambia la URL publica de Arcanum y el alta automatica (superadmin). Pisa a ARCANUM_PUBLIC_URL.
+      summary: Cambia la URL pública de Arcanum y el alta automática (superadmin). Pisa a ARCANUM_PUBLIC_URL.
       requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { urlPublica: { type: string }, crearUsuarios: { type: boolean } } } } } }
       responses: { '200': { description: ok } }
   /api/suite/auditoria:
@@ -217,12 +217,12 @@ paths:
       responses: { '200': { description: ok } }
 
   /api/config:
-    get: { tags: [Config], summary: Entorno activo y version, responses: { '200': { description: ok } } }
+    get: { tags: [Config], summary: Entorno activo y versión, responses: { '200': { description: ok } } }
   /api/novedades:
     get:
       tags: [Config]
-      summary: Que cambio en cada version (del CHANGELOG)
-      description: Sin parametros, las notas de la version que corre. Con `desde`, las de las versiones posteriores a esa y hasta la actual (la UI lo usa para avisar despues de un deploy). Con `todas=1`, el historial.
+      summary: Qué cambió en cada versión (del CHANGELOG)
+      description: Sin parámetros, las notas de la versión que corre. Con `desde`, las de las versiones posteriores a esa y hasta la actual (la UI lo usa para avisar después de un deploy). Con `todas=1`, el historial.
       parameters:
         - { name: desde, in: query, required: false, schema: { type: string, example: 0.10.2 } }
         - { name: todas, in: query, required: false, schema: { type: string, enum: ['1'] } }
@@ -252,7 +252,7 @@ paths:
   /api/tenants/{cuit}/certificate:
     post:
       tags: [Clientes]
-      summary: Carga el .crt que devolvio ARCA (valida que case con la clave)
+      summary: Carga el .crt que devolvió ARCA (valida que case con la clave)
       parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
       requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { certPem: { type: string } } } } } }
       responses: { '200': { description: ok }, '422': { description: el cert no corresponde a la clave } }
@@ -266,7 +266,7 @@ paths:
   /api/tenants/{cuit}/emisor:
     get:
       tags: [Clientes]
-      summary: Datos fiscales del emisor para el PDF y cuales faltan
+      summary: Datos fiscales del emisor para el PDF y cuáles faltan
       parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: "emisor { razonSocial, nombreFantasia, domicilio, condicionIva (RI|MONOTRIBUTO|EXENTO), iibb, inicioActividades, mipyme }, faltan [{ campo, etiqueta, desdeArca }]" } }
     put:
@@ -278,9 +278,9 @@ paths:
   /api/tenants/{cuit}/emisor/completar:
     post:
       tags: [Clientes]
-      summary: Completa desde el padron de ARCA razon social, domicilio y condicion frente al IVA que esten vacios (no pisa lo cargado). Ingresos Brutos e inicio de actividades no los da ARCA.
+      summary: Completa desde el padrón de ARCA razón social, domicilio y condición frente al IVA que estén vacíos (no pisa lo cargado). Ingresos Brutos e inicio de actividades no los da ARCA.
       parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
-      responses: { '200': { description: "emisor, completados [campo], faltan [...], error (si el padron no respondio)" } }
+      responses: { '200': { description: "emisor, completados [campo], faltan [...], error (si el padrón no respondió)" } }
   /api/tenants/{cuit}:
     delete:
       tags: [Clientes]
@@ -289,8 +289,8 @@ paths:
       responses: { '200': { description: ok } }
 
   /api/services:
-    get: { tags: [Servicios], summary: Catalogo de servicios de ARCA, responses: { '200': { description: ok } } }
-    post: { tags: [Servicios], summary: Agrega un servicio al catalogo (rol admin+), responses: { '200': { description: ok } } }
+    get: { tags: [Servicios], summary: Catálogo de servicios de ARCA, responses: { '200': { description: ok } } }
+    post: { tags: [Servicios], summary: Agrega un servicio al catálogo (rol admin+), responses: { '200': { description: ok } } }
   /api/services/{id}:
     get:
       tags: [Servicios]
@@ -310,13 +310,13 @@ paths:
   /api/services/{id}/operaciones:
     get:
       tags: [Servicios]
-      summary: Introspeccion del WSDL — lista operaciones y campos
+      summary: Introspección del WSDL — lista operaciones y campos
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: ok } }
   /api/services/{id}/verificar:
     get:
       tags: [Servicios]
-      summary: Verifica si el certificado del CUIT esta asociado a este servicio
+      summary: Verifica si el certificado del CUIT está asociado a este servicio
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
         - { name: cuit, in: query, required: true, schema: { type: string } }
@@ -329,7 +329,7 @@ paths:
   /api/ws/{servicio}/{operacion}:
     post:
       tags: [Servicios]
-      summary: Passthrough generico — invoca cualquier operacion de cualquier servicio
+      summary: Passthrough genérico — invoca cualquier operación de cualquier servicio
       parameters:
         - { name: servicio, in: path, required: true, schema: { type: string } }
         - { name: operacion, in: path, required: true, schema: { type: string } }
@@ -341,7 +341,7 @@ paths:
   /api/wsfev1/parametros/{nombre}:
     get:
       tags: [WSFEv1]
-      summary: Tablas de parametros (catalogos)
+      summary: Tablas de parámetros (catálogos)
       parameters:
         - { name: nombre, in: path, required: true, schema: { type: string, enum: [tiposComprobante, tiposDocumento, tiposConcepto, alicuotasIva, monedas, tiposTributo, puntosVenta] } }
         - { name: cuit, in: query, required: true, schema: { type: string } }
@@ -349,7 +349,7 @@ paths:
   /api/wsfev1/ultimo-autorizado:
     get:
       tags: [WSFEv1]
-      summary: Ultimo numero autorizado
+      summary: Último número autorizado
       parameters:
         - { name: cuit, in: query, required: true, schema: { type: string } }
         - { name: puntoVenta, in: query, required: true, schema: { type: integer } }
@@ -368,11 +368,11 @@ paths:
   /api/wsfev1/comprobantes/vista-previa:
     post:
       tags: [WSFEv1]
-      summary: Vista previa de un comprobante (NO emite ni reserva numero)
+      summary: Vista previa de un comprobante (NO emite ni reserva número)
       description: >
-        Mismo cuerpo que la emision. Valida importes, IVA, tipo, receptor (con su padron si es CUIT), condicion de IVA,
-        fecha y RG 5866, sugiere la letra y devuelve el numero que le tocaria y el cuerpo listo para emitir.
-        Permitido tambien a las claves de rol lectura.
+        Mismo cuerpo que la emisión. Valida importes, IVA, tipo, receptor (con su padrón si es CUIT), condición de IVA,
+        fecha y RG 5866, sugiere la letra y devuelve el número que le tocaría y el cuerpo listo para emitir.
+        Permitido también a las claves de rol lectura.
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Comprobante' } } } }
       responses: { '200': { description: "vistaPrevia: { valido, problemas, advertencias, numeroPropuesto, cuerpoParaEmitir, ... }" } }
   /api/wsfev1/comprobantes:
@@ -388,7 +388,7 @@ paths:
   /api/wsfev1/lote:
     post:
       tags: [WSFEv1]
-      summary: Emision por lote (JSON {comprobantes:[...]} o CSV)
+      summary: Emisión por lote (JSON {comprobantes:[...]} o CSV)
       requestBody:
         required: true
         content:
@@ -401,7 +401,7 @@ paths:
   /api/wsfex/ultimo-autorizado:
     get:
       tags: [WSFEXv1]
-      summary: Ultimo Nro de Factura E autorizado
+      summary: Último Nro de Factura E autorizado
       parameters:
         - { name: cuit, in: query, required: true, schema: { type: string } }
         - { name: puntoVenta, in: query, required: true, schema: { type: integer } }
@@ -409,7 +409,7 @@ paths:
   /api/wsfex/comprobantes:
     post:
       tags: [WSFEXv1]
-      summary: Emitir Factura E de exportacion (cod. 19) y obtener CAE
+      summary: Emitir Factura E de exportación (cód. 19) y obtener CAE
       description: "Requiere: puntoVenta, cliente, paisDestino, moneda, cotizacion, importeTotal, items[]. Opcional: incoterms, tipoExportacion, permisoExistente, permisos[]."
       requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
       responses: { '200': { description: aprobado }, '422': { description: rechazado } }
@@ -419,7 +419,7 @@ paths:
   /api/wsmtxca/ultimo-autorizado:
     get:
       tags: [WSMTXCA]
-      summary: Ultimo Nro autorizado (por pto de venta y tipo)
+      summary: Último Nro autorizado (por pto de venta y tipo)
       parameters:
         - { name: cuit, in: query, required: true, schema: { type: string } }
         - { name: puntoVenta, in: query, required: true, schema: { type: integer } }
@@ -428,15 +428,15 @@ paths:
   /api/wsmtxca/comprobantes:
     post:
       tags: [WSMTXCA]
-      summary: Emitir comprobante con detalle (IVA por item) y obtener CAE
-      description: "items[] con codigoCondicionIVA e importeIVA por linea; subtotalesIVA[] por alicuota."
+      summary: Emitir comprobante con detalle (IVA por ítem) y obtener CAE
+      description: "items[] con codigoCondicionIVA e importeIVA por línea; subtotalesIVA[] por alícuota."
       requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
       responses: { '200': { description: aprobado }, '422': { description: rechazado } }
 
   /api/padron/{alcance}/{cuit}:
     get:
       tags: [Padron]
-      summary: Consulta de padron (a13=Mi Categoria, a5=Constancia)
+      summary: Consulta de padrón (a13=Mi Categoría, a5=Constancia)
       parameters:
         - { name: alcance, in: path, required: true, schema: { type: string, enum: [a13, a5] } }
         - { name: cuit, in: path, required: true, schema: { type: string, description: CUIT a consultar } }
@@ -447,7 +447,7 @@ paths:
   /api/apoc/{cuit}:
     get:
       tags: [Padron]
-      summary: Consulta base de apocrifos (WSAPOC) — ¿el CUIT figura como apocrifo?
+      summary: Consulta base de apócrifos (WSAPOC) — ¿el CUIT figura como apócrifo?
       parameters:
         - { name: cuit, in: path, required: true, schema: { type: string, description: CUIT a consultar } }
         - { name: cuit, in: query, required: true, schema: { type: string, description: CUIT representante (cert cargado) } }
@@ -456,7 +456,7 @@ paths:
   /api/contribuyente/{cuit}:
     get:
       tags: [Padron]
-      summary: Vista consolidada (padron A5 + apocrifos) con semaforo de riesgo fiscal
+      summary: Vista consolidada (padrón A5 + apócrifos) con semáforo de riesgo fiscal
       parameters:
         - { name: cuit, in: path, required: true, schema: { type: string, description: CUIT a consultar } }
         - { name: cuit, in: query, required: true, schema: { type: string, description: CUIT representante (cert cargado) } }
@@ -467,7 +467,7 @@ paths:
   /api/eventanilla/comunicaciones:
     get:
       tags: [e-Ventanilla]
-      summary: Lista comunicaciones (ventana max 31 dias)
+      summary: Lista comunicaciones (ventana máx. 31 días)
       parameters:
         - { name: cuit, in: query, required: true, schema: { type: string } }
         - { name: desde, in: query, schema: { type: string, example: "2026-05-25" } }
@@ -478,7 +478,7 @@ paths:
   /api/eventanilla/comunicacion/{id}:
     get:
       tags: [e-Ventanilla]
-      summary: Cuerpo del mensaje de una comunicacion
+      summary: Cuerpo del mensaje de una comunicación
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
         - { name: cuit, in: query, required: true, schema: { type: string } }
@@ -509,8 +509,8 @@ paths:
       responses: { '200': { description: ok } }
     post:
       tags: [Facturador]
-      summary: Crear lote de facturacion (JSON items[] o csv)
-      description: "Body: { cuit, nombre, perfil (pyme|asociacion), items[]|csv }. Cada item: nombre, cuit, email, tipoComprobante, puntoVenta, importeTotal (o neto/iva), periodo."
+      summary: Crear lote de facturación (JSON items[] o csv)
+      description: "Body: { cuit, nombre, perfil (pyme|asociacion), items[]|csv }. Cada ítem: nombre, cuit, email, tipoComprobante, puntoVenta, importeTotal (o neto/iva), periodo."
       requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
       responses: { '200': { description: creado } }
   /api/lotes/{id}:
@@ -522,7 +522,7 @@ paths:
   /api/lotes/{id}/items/{itemId}/{accion}:
     post:
       tags: [Facturador]
-      summary: "Accion sobre un item: emitir | recibido | solicitar"
+      summary: "Acción sobre un ítem: emitir | recibido | solicitar"
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
         - { name: itemId, in: path, required: true, schema: { type: integer } }
@@ -561,7 +561,7 @@ paths:
   /api/usuarios/{username}:
     patch:
       tags: [Usuarios]
-      summary: Cambia email, nombre, rol o si esta activo (superadmin). Desactivado no entra ni con contrasena ni con un pase de la suite.
+      summary: Cambia email, nombre, rol o si está activo (superadmin). Desactivado no entra ni con contraseña ni con un pase de la suite, y sus sesiones abiertas se cierran.
       parameters: [ { name: username, in: path, required: true, schema: { type: string } } ]
       requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { email: { type: string }, nombre: { type: string }, role: { type: string, enum: [superadmin, admin, operador, lectura] }, activo: { type: boolean } } } } } }
       responses: { '200': { description: ok }, '404': { description: no existe }, '409': { description: email repetido } }
@@ -576,7 +576,7 @@ paths:
   /api/webhooks/{id}:
     delete: { tags: [Webhooks], summary: Borra un webhook (admin+), parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
   /api/webhooks/{id}/probar:
-    post: { tags: [Webhooks], summary: Manda un evento "prueba" y devuelve lo que contesto el destino (admin+), parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: "prueba: { entregado, status, ms }" }, '404': { description: no existe } } }
+    post: { tags: [Webhooks], summary: Manda un evento "prueba" y devuelve lo que contestó el destino (admin+), parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: "prueba: { entregado, status, ms }" }, '404': { description: no existe } } }
 
   /api/fisherboy/config:
     get: { tags: [Mis Comprobantes], summary: URL de Fisherboy y si hay token cargado (superadmin; el token nunca vuelve), responses: { '200': { description: "fisherboy: { url, tokenCargado }" } } }
@@ -585,7 +585,7 @@ paths:
     get: { tags: [Mis Comprobantes], summary: Si Fisherboy responde (admin+), responses: { '200': { description: "fisherboy: { ok, version }" } } }
   /api/mis-comprobantes/receta:
     get: { tags: [Mis Comprobantes], summary: Receta que corre Fisherboy para bajar Mis Comprobantes (admin+), responses: { '200': { description: "receta: { url, pasos }" } } }
-    put: { tags: [Mis Comprobantes], summary: Reemplaza la receta (superadmin), requestBody: { content: { application/json: { schema: { type: object, required: [url, pasos], properties: { url: { type: string }, pasos: { type: array, items: { type: object } } } } } } }, responses: { '200': { description: ok }, '400': { description: receta invalida } } }
+    put: { tags: [Mis Comprobantes], summary: Reemplaza la receta (superadmin), requestBody: { content: { application/json: { schema: { type: object, required: [url, pasos], properties: { url: { type: string }, pasos: { type: array, items: { type: object } } } } } } }, responses: { '200': { description: ok }, '400': { description: receta inválida } } }
     delete: { tags: [Mis Comprobantes], summary: Vuelve a la receta por defecto (superadmin), responses: { '200': { description: ok } } }
   /api/mis-comprobantes/{cuit}:
     get:
@@ -600,13 +600,13 @@ paths:
         - { name: clase, in: query, schema: { type: string, enum: [facturas, nc, nd] } }
         - { name: cbte, in: query, description: Tipo de comprobante de ARCA, schema: { type: integer } }
         - { name: contraparte, in: query, description: CUIT o documento de la contraparte, schema: { type: string } }
-        - { name: q, in: query, description: Texto en el nombre o digitos del CUIT de la contraparte, schema: { type: string, maxLength: 80 } }
+        - { name: q, in: query, description: Texto en el nombre o dígitos del CUIT de la contraparte, schema: { type: string, maxLength: 80 } }
       responses: { '200': { description: comprobantes } }
   /api/mis-comprobantes/{cuit}/analisis:
     get:
       tags: [Mis Comprobantes]
-      summary: Totales, comparacion con el periodo anterior, evolucion por mes, principales clientes y proveedores, tipos y subtotales
-      description: Acepta los mismos filtros que el listado. Sin desde/hasta, los ultimos 12 meses. Importes en pesos con signo (las notas de credito restan); el periodo no puede pasar de 5 años.
+      summary: Totales, comparación con el periodo anterior, evolución por mes, principales clientes y proveedores, tipos y subtotales
+      description: Acepta los mismos filtros que el listado. Sin desde/hasta, los últimos 12 meses. Importes en pesos con signo (las notas de crédito restan); el periodo no puede pasar de 5 años.
       parameters:
         - { name: cuit, in: path, required: true, schema: { type: string } }
         - { name: tipo, in: query, schema: { type: string, enum: [emitido, recibido] } }
@@ -616,28 +616,28 @@ paths:
         - { name: cbte, in: query, schema: { type: integer } }
         - { name: contraparte, in: query, schema: { type: string } }
         - { name: q, in: query, schema: { type: string, maxLength: 80 } }
-      responses: { '200': { description: analisis }, '400': { description: filtro o periodo invalido }, '403': { description: CUIT fuera del alcance } }
+      responses: { '200': { description: analisis }, '400': { description: filtro o periodo inválido }, '403': { description: CUIT fuera del alcance } }
   /api/mis-comprobantes/{cuit}/export.csv:
     get: { tags: [Mis Comprobantes], summary: Lo mismo en CSV (separador punto y coma), con los mismos filtros, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: CSV } } }
   /api/mis-comprobantes/{cuit}/corridas:
     get: { tags: [Mis Comprobantes], summary: Historial de sincronizaciones, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: corridas } } }
   /api/mis-comprobantes/{cuit}/credencial:
     get: { tags: [Mis Comprobantes], summary: Si hay clave fiscal cargada (nunca la devuelve), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "credencial: { cargada, cuitLogin, sincronizar, actualizada }" } } }
-    put: { tags: [Mis Comprobantes], summary: Carga o cambia la clave fiscal (cifrada) y la sincronizacion diaria (admin+), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], requestBody: { content: { application/json: { schema: { type: object, properties: { cuitLogin: { type: string }, clave: { type: string, format: password }, sincronizar: { type: boolean } } } } } }, responses: { '200': { description: ok } } }
+    put: { tags: [Mis Comprobantes], summary: Carga o cambia la clave fiscal (cifrada) y la sincronización diaria (admin+), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], requestBody: { content: { application/json: { schema: { type: object, properties: { cuitLogin: { type: string }, clave: { type: string, format: password }, sincronizar: { type: boolean } } } } } }, responses: { '200': { description: ok } } }
     delete: { tags: [Mis Comprobantes], summary: Borra la clave fiscal (admin+), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: ok } } }
   /api/mis-comprobantes/{cuit}/sincronizar:
     post:
       tags: [Mis Comprobantes]
-      summary: Baja Mis Comprobantes con la sesion de agente de Fisherboy (admin+, u operador con ese CUIT)
+      summary: Baja Mis Comprobantes con la sesión de agente de Fisherboy (admin+, u operador con ese CUIT)
       parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
       requestBody: { content: { application/json: { schema: { type: object, required: [desde, hasta], properties: { tipo: { type: string, enum: [emitidos, recibidos, ambos] }, desde: { type: string, format: date }, hasta: { type: string, format: date } } } } } }
-      responses: { '202': { description: "corrida creada; seguila con /corridas/{id}" }, '400': { description: sin clave fiscal o fechas invalidas }, '409': { description: ya hay una corrida en curso para ese CUIT }, '503': { description: Fisherboy no configurado o caido } }
+      responses: { '202': { description: "corrida creada; seguila con /corridas/{id}" }, '400': { description: sin clave fiscal o fechas inválidas }, '409': { description: ya hay una corrida en curso para ese CUIT }, '503': { description: Fisherboy no configurado o caído } }
   /api/mis-comprobantes/corridas/{id}:
     get: { tags: [Mis Comprobantes], summary: Estado de una corrida, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: corrida } } }
   /api/mis-comprobantes/corridas/{id}/frame:
-    get: { tags: [Mis Comprobantes], summary: Vista en vivo del navegador (JPEG 1280x800; 204 si no cambio desde `desde`), parameters: [ { name: id, in: path, required: true, schema: { type: integer } }, { name: desde, in: query, schema: { type: integer } } ], responses: { '200': { description: imagen }, '204': { description: sin cambios } } }
+    get: { tags: [Mis Comprobantes], summary: Vista en vivo del navegador (JPEG 1280x800; 204 si no cambió desde `desde`), parameters: [ { name: id, in: path, required: true, schema: { type: integer } }, { name: desde, in: query, schema: { type: integer } } ], responses: { '200': { description: imagen }, '204': { description: sin cambios } } }
   /api/mis-comprobantes/corridas/{id}/evento:
-    post: { tags: [Mis Comprobantes], summary: "Evento humano en el navegador: click, doble, texto, tecla, scroll, atras, recargar (solo en modo humano)", parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok }, '409': { description: la sesion no esta en modo humano } } }
+    post: { tags: [Mis Comprobantes], summary: "Evento humano en el navegador: click, doble, texto, tecla, scroll, atras, recargar (solo en modo humano)", parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok }, '409': { description: la sesión no está en modo humano } } }
   /api/mis-comprobantes/corridas/{id}/tomar-control:
     post: { tags: [Mis Comprobantes], summary: Pausa la receta o la IA y pasa el navegador a una persona, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
   /api/mis-comprobantes/corridas/{id}/devolver:
@@ -647,26 +647,26 @@ paths:
     get: { tags: [Facturas recibidas], summary: URL de Factorum y si hay token cargado (superadmin; el token nunca vuelve), responses: { '200': { description: "factorum: { url, tokenCargado }" } } }
     put: { tags: [Facturas recibidas], summary: Guarda URL y token de Factorum (token cifrado; superadmin), requestBody: { content: { application/json: { schema: { type: object, properties: { url: { type: string }, token: { type: string } } } } } }, responses: { '200': { description: ok } } }
   /api/factorum/salud:
-    get: { tags: [Facturas recibidas], summary: Si Factorum responde (version, OCR, IA, si constata con Arcanum), responses: { '200': { description: "factorum: { ok, version, ocr, ia, arcanum }" } } }
+    get: { tags: [Facturas recibidas], summary: Si Factorum responde (versión, OCR, IA, si constata con Arcanum), responses: { '200': { description: "factorum: { ok, version, ocr, ia, arcanum }" } } }
   /api/factorum/verificar:
     post:
       tags: [Facturas recibidas]
       summary: Veredicto de una factura (valida, invalida, apocrifa, con_errores, no_verificable) sin guardarla (operador+)
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [nombre, contenido_base64], properties: { nombre: { type: string }, contenido_base64: { type: string, description: "hasta 20 MB" }, cuit_consultante: { type: string, description: "si falta y el usuario tiene un unico CUIT permitido, se usa ese" }, ia: { type: boolean } } } } } }
-      responses: { '200': { description: "{ veredicto, mensaje, resultado, constatacion }" }, '403': { description: rol o CUIT no permitido }, '503': { description: Factorum no configurado o caido } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [nombre, contenido_base64], properties: { nombre: { type: string }, contenido_base64: { type: string, description: "hasta 20 MB" }, cuit_consultante: { type: string, description: "si falta y el usuario tiene un único CUIT permitido, se usa ese" }, ia: { type: boolean } } } } } }
+      responses: { '200': { description: "{ veredicto, mensaje, resultado, constatacion }" }, '403': { description: rol o CUIT no permitido }, '503': { description: Factorum no configurado o caído } }
   /api/factorum/lotes:
     get: { tags: [Facturas recibidas], summary: Lotes subidos (con scope por CUIT, solo los de sus clientes), responses: { '200': { description: "{ lotes, total }" } } }
     post:
       tags: [Facturas recibidas]
       summary: Sube un lote de facturas o un ZIP; se procesa en segundo plano (operador+)
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [archivos], properties: { archivos: { type: array, items: { type: object, properties: { nombre: { type: string }, contenido_base64: { type: string } } } }, cliente_cuit: { type: string }, nombre: { type: string }, ia: { type: boolean }, constatar: { type: boolean } } } } } }
-      responses: { '202': { description: "lote creado" }, '413': { description: "mas de 20 MB por archivo o 60 MB por lote" } }
+      responses: { '202': { description: "lote creado" }, '413': { description: "más de 20 MB por archivo o 60 MB por lote" } }
   /api/factorum/lotes/{id}:
     get: { tags: [Facturas recibidas], summary: Un lote y su avance, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: lote } } }
   /api/factorum/comprobantes:
     get:
       tags: [Facturas recibidas]
-      summary: Comprobantes leidos por Factorum
+      summary: Comprobantes leídos por Factorum
       parameters:
         - { name: estado, in: query, schema: { type: string, enum: [ok, revisar, error, aprobado] } }
         - { name: cliente, in: query, description: "CUIT del cliente; con scope por CUIT, obligatorio si hay varios permitidos", schema: { type: string } }
@@ -674,7 +674,7 @@ paths:
         - { name: lote, in: query, schema: { type: integer } }
         - { name: desde, in: query, schema: { type: string, format: date } }
         - { name: hasta, in: query, schema: { type: string, format: date } }
-        - { name: q, in: query, description: razon social, CUIT o numero, schema: { type: string } }
+        - { name: q, in: query, description: "razón social, CUIT o número", schema: { type: string } }
         - { name: limite, in: query, schema: { type: integer, maximum: 500 } }
         - { name: offset, in: query, schema: { type: integer } }
       responses: { '200': { description: "{ comprobantes, total }" } }
@@ -686,7 +686,7 @@ paths:
   /api/factorum/resumen:
     get:
       tags: [Facturas recibidas]
-      summary: Totales por alicuota, tipo y estado (las notas de credito restan)
+      summary: Totales por alícuota, tipo y estado (las notas de crédito restan)
       parameters:
         - { name: estado, in: query, schema: { type: string, enum: [ok, revisar, error, aprobado] } }
         - { name: cliente, in: query, description: "CUIT del cliente; con scope por CUIT, obligatorio si hay varios permitidos", schema: { type: string } }
@@ -694,7 +694,7 @@ paths:
         - { name: lote, in: query, schema: { type: integer } }
         - { name: desde, in: query, schema: { type: string, format: date } }
         - { name: hasta, in: query, schema: { type: string, format: date } }
-        - { name: q, in: query, description: razon social, CUIT o numero, schema: { type: string } }
+        - { name: q, in: query, description: "razón social, CUIT o número", schema: { type: string } }
       responses: { '200': { description: "resumen: { cantidad, neto_gravado, iva_21, iva_10_5, otros_tributos, total, por_estado, por_tipo }" } }
   /api/factorum/export.xlsx:
     get:
@@ -707,7 +707,7 @@ paths:
         - { name: lote, in: query, schema: { type: integer } }
         - { name: desde, in: query, schema: { type: string, format: date } }
         - { name: hasta, in: query, schema: { type: string, format: date } }
-        - { name: q, in: query, description: razon social, CUIT o numero, schema: { type: string } }
+        - { name: q, in: query, description: "razón social, CUIT o número", schema: { type: string } }
       responses: { '200': { description: xlsx } }
   /api/factorum/export.csv:
     get:
@@ -720,49 +720,49 @@ paths:
         - { name: lote, in: query, schema: { type: integer } }
         - { name: desde, in: query, schema: { type: string, format: date } }
         - { name: hasta, in: query, schema: { type: string, format: date } }
-        - { name: q, in: query, description: razon social, CUIT o numero, schema: { type: string } }
+        - { name: q, in: query, description: "razón social, CUIT o número", schema: { type: string } }
       responses: { '200': { description: CSV } }
 
   /api/monotributo/categorias:
-    get: { tags: [Monotributo], summary: Topes por categoria cargados en Arcanum (con su vigencia), responses: { '200': { description: "categorias: { vigencia, fuente, topes }" } } }
+    get: { tags: [Monotributo], summary: Topes por categoría cargados en Arcanum (con su vigencia), responses: { '200': { description: "categorias: { vigencia, fuente, topes }" } } }
     put: { tags: [Monotributo], summary: Reemplaza los topes (superadmin), requestBody: { content: { application/json: { schema: { type: object, required: [topes], properties: { vigencia: { type: string }, fuente: { type: string }, topes: { type: object, additionalProperties: { type: number } } } } } } }, responses: { '200': { description: ok } } }
   /api/monotributo/{cuit}:
     get:
       tags: [Monotributo]
-      summary: Facturado en los ultimos 12 meses contra el tope de la categoria (Mis Comprobantes + lo emitido por Arcanum)
+      summary: Facturado en los últimos 12 meses contra el tope de la categoría (Mis Comprobantes + lo emitido por Arcanum)
       parameters:
         - { name: cuit, in: path, required: true, schema: { type: string } }
-        - { name: categoria, in: query, description: "A a K; si falta, se toma del padron", schema: { type: string } }
+        - { name: categoria, in: query, description: "A a K; si falta, se toma del padrón", schema: { type: string } }
       responses: { '200': { description: "monotributo: { ingresos, categoria, tope, usado, alerta, margen, categoriaSugerida, vigenciaTopes }" } }
 
   /api/constatacion:
     post:
       tags: [Mis Comprobantes]
-      summary: Constatacion masiva de comprobantes recibidos (WSCDC + APOC del emisor), hasta 500. Solo consulta, no guarda; la permite el rol lectura (dentro de sus CUITs)
-      requestBody: { content: { application/json: { schema: { type: object, required: [cuit], properties: { cuit: { type: string, description: quien los recibio (con certificado y WSCDC) }, items: { type: array, items: { type: object } }, csv: { type: string, description: "formato propio (cuitEmisor;puntoVenta;tipo;numero;fecha;importe;cae) o el CSV de Mis Comprobantes recibidos" } } } } } }
-      responses: { '200': { description: "constatacion: { cantidad, validos, invalidos, conError, emisoresApocrifos, resultados }" }, '413': { description: mas de 500 } }
+      summary: Constatación masiva de comprobantes recibidos (WSCDC + APOC del emisor), hasta 500. Solo consulta, no guarda; la permite el rol lectura (dentro de sus CUITs)
+      requestBody: { content: { application/json: { schema: { type: object, required: [cuit], properties: { cuit: { type: string, description: quien los recibió (con certificado y WSCDC) }, items: { type: array, items: { type: object } }, csv: { type: string, description: "formato propio (cuitEmisor;puntoVenta;tipo;numero;fecha;importe;cae) o el CSV de Mis Comprobantes recibidos" } } } } } }
+      responses: { '200': { description: "constatacion: { cantidad, validos, invalidos, conError, emisoresApocrifos, resultados }" }, '413': { description: más de 500 } }
   /api/mis-comprobantes/{cuit}/constatar:
     post: { tags: [Mis Comprobantes], summary: Constata los recibidos de Mis Comprobantes que no se constataron y guarda el resultado, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "constatacion: { cantidad, validos, invalidos, pendientes, observados }" } } }
   /api/mis-comprobantes/{cuit}/constatar/detener:
-    post: { tags: [Mis Comprobantes], summary: Detiene la constatacion de recibidos en curso (lo constatado queda; el resto sigue pendiente), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "constatacion: { estado, deteniendo, hechos, total }" }, '409': { description: no hay una constatacion corriendo } } }
+    post: { tags: [Mis Comprobantes], summary: Detiene la constatación de recibidos en curso (lo constatado queda; el resto sigue pendiente), parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "constatacion: { estado, deteniendo, hechos, total }" }, '409': { description: no hay una constatación corriendo } } }
 
   /api/cola:
     get:
       tags: [Contingencia]
-      summary: Comprobantes en la cola de contingencia (los que se pidieron con ARCA caido)
+      summary: Comprobantes en la cola de contingencia (los que se pidieron con ARCA caído)
       parameters:
         - { name: cuit, in: query, schema: { type: string } }
         - { name: estado, in: query, schema: { type: string, enum: [pendiente, procesando, emitido, rechazado, requiere_humano, cancelado] } }
       responses: { '200': { description: cola } }
   /api/cola/{id}:
-    get: { tags: [Contingencia], summary: Un item de la cola, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: item } } }
+    get: { tags: [Contingencia], summary: Un ítem de la cola, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: item } } }
   /api/cola/{id}/reintentar:
     post: { tags: [Contingencia], summary: "Reintenta ya. Con fechaHoy=true lo emite con la fecha de hoy (solo si una persona lo decide)", parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], requestBody: { content: { application/json: { schema: { type: object, properties: { fechaHoy: { type: boolean } } } } } }, responses: { '200': { description: item }, '409': { description: ya emitido o cancelado } } }
   /api/cola/{id}/cancelar:
-    post: { tags: [Contingencia], summary: Cancela un item que todavia no salio, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: item }, '409': { description: ya emitido } } }
+    post: { tags: [Contingencia], summary: Cancela un ítem que todavía no salió, parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: item }, '409': { description: ya emitido } } }
 
   /api/caea/{cuit}:
-    get: { tags: [Contingencia], summary: "CAEA del CUIT: config, codigos por quincena y comprobantes CAEA sin informar", parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "caea: { config, caeas, pendientes }" } } }
+    get: { tags: [Contingencia], summary: "CAEA del CUIT: config, códigos por quincena y comprobantes CAEA sin informar", parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "caea: { config, caeas, pendientes }" } } }
   /api/caea/{cuit}/config:
     put:
       tags: [Contingencia]
@@ -771,7 +771,7 @@ paths:
       requestBody: { content: { application/json: { schema: { type: object, properties: { activo: { type: boolean }, puntoVenta: { type: integer }, minutosEspera: { type: integer, minimum: 5 } } } } } }
       responses: { '200': { description: config }, '400': { description: punto de venta inexistente, bloqueado o no CAEA }, '503': { description: no se pudo validar con ARCA } }
   /api/caea/{cuit}/solicitar:
-    post: { tags: [Contingencia], summary: Pide o recupera el CAEA de la quincena en curso y la proxima, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "quincenas: [{ periodo, orden, estado: obtenido|ya_estaba|todavia_no }]" } } }
+    post: { tags: [Contingencia], summary: Pide o recupera el CAEA de la quincena en curso y la próxima, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "quincenas: [{ periodo, orden, estado: obtenido|ya_estaba|todavia_no }]" } } }
   /api/caea/{cuit}/informar:
     post: { tags: [Contingencia], summary: "Informa a ARCA lo emitido con CAEA y los CAEA vencidos sin movimiento", parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: "informe: { informados, errores }, sinMovimiento" } } }
 
@@ -785,7 +785,7 @@ paths:
   /api/wsaa/{cuit}/{service}:
     get:
       tags: [Servicios]
-      summary: Inspecciona el Ticket de Acceso (diagnostico)
+      summary: Inspecciona el Ticket de Acceso (diagnóstico)
       parameters:
         - { name: cuit, in: path, required: true, schema: { type: string } }
         - { name: service, in: path, required: true, schema: { type: string, example: wsfe } }

@@ -35,7 +35,20 @@ const pdf = require('./services/pdf');
 const emisores = require('./services/emisores');
 const importar = require('./services/importar');
 const metrics = require('./services/metrics');
+// /metrics cacheado 5 s: un scrape frecuente (o malicioso) no pega 7 consultas cada vez.
+let cacheMetricas = { hasta: 0, texto: null };
+async function metricasCacheadas() {
+  if (cacheMetricas.texto && Date.now() < cacheMetricas.hasta) return cacheMetricas.texto;
+  const texto = await metrics.prometheus();
+  cacheMetricas = { hasta: Date.now() + 5000, texto };
+  return texto;
+}
 const webhooks = require('./services/webhooks');
+const sesiones = require('./auth/sesiones');
+const { chequearCsrf } = require('./lib/csrf');
+const { cabecerasComunes, CSP_PANEL, CSP_DOCS } = require('./lib/cabeceras');
+const { crearLimiteLogin, ipCliente, validarUsuario } = require('./auth/limiteLogin');
+const { filaAuditoria, guardarFila, esCuit } = require('./lib/auditoria');
 const lotes = require('./services/lotes');
 const apikeys = require('./auth/apikeys');
 const vistaPrevia = require('./services/vistaPrevia');
@@ -72,7 +85,7 @@ function esClaveMaestra(clave) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-const MSG_SIN_CLAVE = 'No autenticado: enviá la clave en X-API-Key o en Authorization: Bearer <clave>, o iniciá sesion.';
+const MSG_SIN_CLAVE = 'No autenticado: enviá la clave en X-API-Key o en Authorization: Bearer <clave>, o iniciá sesión.';
 
 /**
  * Principal de una clave (maestra o de la tabla api_keys), o null si no hay clave.
@@ -84,7 +97,7 @@ async function principalDeClave(req) {
   if (esClaveMaestra(clave)) return { username: 'apikey', role: 'admin', via: 'maestra' };
   const p = await apikeys.verificar(clave);
   if (p) return p;
-  throw Object.assign(new Error('Clave invalida o dada de baja.'), { httpStatus: 401 });
+  throw Object.assign(new Error('Clave inválida o dada de baja.'), { httpStatus: 401 });
 }
 
 // Limite de pedidos por clave de API (por minuto) y deteccion de uso anomalo.
@@ -101,7 +114,7 @@ function aplicarLimiteDeClave(req, res, principal) {
   if (r.restantes !== null) res.setHeader('X-RateLimit-Remaining', String(r.restantes));
   if (!r.ok) {
     res.setHeader('Retry-After', String(r.reintentarEnS));
-    throw Object.assign(new Error(`Limite de pedidos de esta clave alcanzado. Proba de nuevo en ${r.reintentarEnS} s.`), { httpStatus: 429 });
+    throw Object.assign(new Error(`Límite de pedidos de esta clave alcanzado. Probá de nuevo en ${r.reintentarEnS} s.`), { httpStatus: 429 });
   }
 }
 
@@ -117,7 +130,28 @@ async function checkAuth(req, res) {
     return p;
   }
   const sess = session.fromRequest(req);
-  if (sess) return sess;
+  if (sess) {
+    // Sesion registrada y no revocada (M-06). Usuario local: rol y CUITs actuales de la base.
+    const ses = sesiones.servicio();
+    if (!(await ses.vigente(sess.sid))) throw Object.assign(new Error('La sesión se cerró o venció: volvé a iniciar sesión.'), { httpStatus: 401 });
+    if (sess.origen === 'local' || sess.origen === 'suite') {
+      const u = await ses.usuarioLocal(sess.username);
+      if (!u) throw Object.assign(new Error('El usuario ya no existe.'), { httpStatus: 401 });
+      if (u.activo === false) throw Object.assign(new Error('Tu usuario está desactivado.'), { httpStatus: 401 });
+      if (sess.origen === 'suite') {
+        // Entro con un pase de la suite (2.2.0): el rol quedo topeado por la clave y los CUITs
+        // intersecados al emitirlo. Si despues en Arcanum le bajan el rol o le cambian los CUITs,
+        // vale lo mas restrictivo de las dos cosas; nunca mas que lo que dio el pase.
+        const { topear, intersecar } = require('./services/suite');
+        const role = topear(u.role, sess.role);
+        const cuitAllow = intersecar(u.cuitAllow, sess.cuitAllow);
+        if (!role || (cuitAllow && !cuitAllow.length)) throw Object.assign(new Error('La sesión ya no corresponde a tus permisos: volvé a entrar.'), { httpStatus: 401 });
+        return { ...sess, role, cuitAllow, debeCambiar: u.debeCambiar, via: 'sesion' };
+      }
+      return { ...sess, role: u.role, cuitAllow: u.cuitAllow, debeCambiar: u.debeCambiar, via: 'sesion' };
+    }
+    return { ...sess, via: 'sesion' };
+  }
   throw Object.assign(new Error(MSG_SIN_CLAVE), { httpStatus: 401 });
 }
 
@@ -139,7 +173,7 @@ const mcp = crearServidorMcp({
 async function handleMcp(req, res) {
   if (req.method !== 'POST') {
     res.writeHead(405, { Allow: 'POST', 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({ ok: false, error: 'Servidor MCP sin estado: usa POST /mcp (no ofrece stream SSE).' }));
+    return res.end(JSON.stringify({ ok: false, error: 'Servidor MCP sin estado: usá POST /mcp (no ofrece stream SSE).' }));
   }
   // Anti DNS-rebinding: si el pedido viene de un navegador, el Origin debe ser este host.
   if (req.headers.origin) {
@@ -153,11 +187,35 @@ async function handleMcp(req, res) {
     throw Object.assign(new Error('Falta la clave: enviá Authorization: Bearer <clave> (o X-API-Key).'), { httpStatus: 401 });
   }
   req._user = principal.username;
-  req._ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null;
+  req._ip = ipCliente(req); // la que agrego el proxy de confianza, no la que dice el cliente
   aplicarLimiteDeClave(req, res, principal);
+  // Cada herramienta (tambien dentro de un lote) descuenta del limite de la clave, deja su fila de
+  // auditoria y pasa por el detector de uso anomalo con su propio CUIT (M-01). La primera ya la
+  // desconto aplicarLimiteDeClave al entrar el pedido.
+  let herramientas = 0;
   const ctx = {
     principal,
     alLlamar: (herramienta) => { req._op = herramienta; },
+    antesDeHerramienta: () => {
+      herramientas += 1;
+      if (herramientas > 1 && principal.via === 'clave') {
+        const r = limitador.permitir(principal.claveId, principal.limitePorMinuto);
+        if (!r.ok) throw Object.assign(new Error(`Límite de pedidos de esta clave alcanzado. Probá de nuevo en ${r.reintentarEnS} s.`), { httpStatus: 429 });
+      }
+    },
+    despuesDeHerramienta: ({ herramienta, ok, cuit, cuitConsultado }) => {
+      guardarFila(db, {
+        cuit: esCuit(cuit), service: 'mcp', operation: `tools/call ${herramienta}`.slice(0, 200), http_method: 'MCP',
+        path: '/mcp', status: ok ? 200 : 500, ok, duration_ms: null, usuario: principal.username || null,
+        ip: req._ip || null, clave_id: principal.claveId || null,
+      });
+      if (principal.claveId) {
+        for (const a of detector.registrar({ id: principal.claveId, nombre: principal.username, status: ok ? 200 : 500, cuitConsultado: esCuit(cuitConsultado) })) {
+          console.warn(`[arcanum] uso anomalo de ${a.clave}: ${a.detalle}`);
+          webhooks.emitir('clave_anomala', a).catch(() => {});
+        }
+      }
+    },
   };
   const salida = await mcp.atender(await readTextBody(req), ctx);
   if (ctx.cuit) req._cuit = ctx.cuit;
@@ -170,22 +228,8 @@ async function handleMcp(req, res) {
 }
 
 // Rate-limit en memoria para el login (anti fuerza bruta).
-const loginFails = new Map(); // key -> { count, until }
-function loginThrottle(key) {
-  const rec = loginFails.get(key);
-  if (rec && rec.until > Date.now()) {
-    throw Object.assign(new Error('Demasiados intentos. Espera unos minutos.'), { httpStatus: 429 });
-  }
-}
-function loginFailed(key) {
-  const rec = loginFails.get(key) || { count: 0, until: 0 };
-  rec.count += 1;
-  if (rec.count >= 5) rec.until = Date.now() + Math.min(15 * 60_000, 30_000 * 2 ** (rec.count - 5));
-  loginFails.set(key, rec);
-}
-function loginOk(key) {
-  loginFails.delete(key);
-}
+// Intentos de login: por IP del proxy de confianza + usuario, por usuario y global (M-04, M-05).
+const limiteLogin = crearLimiteLogin();
 
 // Rol tope admin o superadmin en una clave de la suite: solo lo pone un superadmin (una sesion,
 // no la clave maestra), a proposito. Llegar como superadmin desde otra app exige eso.
@@ -206,7 +250,8 @@ async function route(req, res, url) {
 
   // Publicas (sin API key)
   if (req.method === 'GET' && url.pathname === '/api/health') {
-    return sendJson(res, 200, { ok: true, service: 'arcanum', version: config.version, env: config.env });
+    // Sin version ni entorno: es publico (B-08). La version esta en /api/config, con sesion.
+    return sendJson(res, 200, { ok: true });
   }
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/app')) {
     return serveDashboard(res);
@@ -223,8 +268,22 @@ async function route(req, res, url) {
   }
   // Metricas Prometheus: publicas (agregados, sin datos sensibles) para scrapers.
   if (req.method === 'GET' && url.pathname === '/metrics') {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    return res.end(await metrics.prometheus());
+    // Con ARCANUM_METRICS_TOKEN, solo quien scrapea con ese token. Primero se calcula y despues se
+    // responde: un error de la base es un 503, nunca una caida del proceso (M-02).
+    const tokenScrape = process.env.ARCANUM_METRICS_TOKEN || '';
+    if (tokenScrape) {
+      const dado = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const a = Buffer.from(dado); const b = Buffer.from(tokenScrape);
+      if (a.length !== b.length || !require('crypto').timingSafeEqual(a, b)) {
+        throw Object.assign(new Error('Falta el token de /metrics (ARCANUM_METRICS_TOKEN)'), { httpStatus: 401 });
+      }
+    }
+    let texto;
+    try { texto = await metricasCacheadas(); } catch (e) {
+      throw Object.assign(new Error('Metricas no disponibles: ' + e.message), { httpStatus: 503 });
+    }
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(texto);
   }
 
   // Config de auth (publico): la UI lo usa para mostrar "Entrar con Lockatus" y,
@@ -235,7 +294,7 @@ async function route(req, res, url) {
   }
   // OIDC: inicio del login
   if (req.method === 'GET' && url.pathname === '/api/auth/oidc/login') {
-    if (!oidc.enabled()) throw badRequest('Federacion OIDC no configurada');
+    if (!oidc.enabled()) throw badRequest('Federación OIDC no configurada');
     const redirectUri = oidcRedirect(req, url);
     const { url: authUrl, state, verifier } = await oidc.buildAuthUrl(redirectUri);
     res.setHeader('Set-Cookie', [
@@ -251,11 +310,12 @@ async function route(req, res, url) {
       const i = p.indexOf('='); if (i > 0) a[p.slice(0, i).trim()] = p.slice(i + 1).trim(); return a;
     }, {});
     if (!url.searchParams.get('code') || url.searchParams.get('state') !== cookies.arcanum_oidc_state) {
-      throw Object.assign(new Error('OIDC: state invalido'), { httpStatus: 400 });
+      throw Object.assign(new Error('OIDC: state inválido'), { httpStatus: 400 });
     }
     const principal = await oidc.exchangeCode(url.searchParams.get('code'), cookies.arcanum_oidc_verifier, oidcRedirect(req, url));
+    const sid = await sesiones.servicio().crear(principal, 'oidc');
     res.setHeader('Set-Cookie', [
-      session.cookieHeader(session.sign(principal)),
+      session.cookieHeader(session.sign({ ...principal, sid, origen: 'oidc' }), req),
       'arcanum_oidc_state=; Path=/; Max-Age=0',
       'arcanum_oidc_verifier=; Path=/; Max-Age=0',
     ]);
@@ -270,21 +330,32 @@ async function route(req, res, url) {
     if (oidc.enabled() && !config.allowLocalLogin) {
       throw Object.assign(new Error('Login local deshabilitado: ingresá con Lockatus (SSO).'), { httpStatus: 403 });
     }
-    const { username, password } = await readJsonBody(req);
-    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '?';
-    const key = `${ip}:${username}`;
-    loginThrottle(key);
+    const cuerpo = await readJsonBody(req, { max: 8 * 1024 }); // un login no pesa mas
+    if (!cuerpo || typeof cuerpo !== 'object') throw badRequest('Falta usuario y contraseña');
+    const { username, password } = cuerpo;
+    req._ip = ipCliente(req); // B-11: el login deja IP y usuario intentado en la auditoria
+    req._op = 'login';
+    validarUsuario(username);
+    req._user = String(username).slice(0, 64);
+    if (typeof password !== 'string' || password.length > 1024) throw badRequest('Contraseña inválida');
+    const ip = ipCliente(req);
+    limiteLogin.chequear(ip, username);
     try {
       const principal = await users.login(username, password);
-      loginOk(key);
-      res.setHeader('Set-Cookie', session.cookieHeader(session.sign(principal)));
-      return sendJson(res, 200, { ok: true, usuario: { username: principal.username, role: principal.role } });
+      limiteLogin.exito(ip, username);
+      const sid = await sesiones.servicio().crear(principal, 'local');
+      res.setHeader('Set-Cookie', session.cookieHeader(session.sign({ ...principal, sid, origen: 'local' }), req));
+      return sendJson(res, 200, { ok: true, usuario: { username: principal.username, role: principal.role, debeCambiar: !!principal.debeCambiar } });
     } catch (e) {
-      loginFailed(key);
+      if (e.httpStatus === 401) limiteLogin.fallo(ip, username);
       throw e;
     }
   }
   if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
+    // Revoca la sesion en el servidor: una copia de la cookie deja de valer (M-06).
+    const sess = session.fromRequest(req);
+    req._ip = ipCliente(req); req._op = 'logout'; if (sess) req._user = sess.username;
+    if (sess) await sesiones.servicio().revocar(sess.sid).catch(() => {});
     res.setHeader('Set-Cookie', session.clearCookieHeader());
     return sendJson(res, 200, { ok: true });
   }
@@ -296,9 +367,32 @@ async function route(req, res, url) {
   if (url.pathname === '/mcp') return handleMcp(req, res);
 
   // A partir de aca, todo requiere autenticacion (clave o sesion).
-  req._ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || null;
+  req._ip = ipCliente(req); // la que agrego el proxy de confianza, no la que dice el cliente
   const principal = await checkAuth(req, res);
   req._user = principal.username;
+  chequearCsrf(req, principal); // sesion por cookie: solo desde el panel y con JSON (M-07)
+  // Contrasena generada al instalar: hasta cambiarla, solo se puede cambiarla o salir (B-07).
+  if (principal.debeCambiar && !['/api/auth/me', '/api/auth/password', '/api/auth/logout'].includes(url.pathname)) {
+    throw Object.assign(new Error('Antes de seguir, cambiá la contraseña inicial.'), { httpStatus: 403 });
+  }
+
+  // POST /api/auth/password { actual, nueva } -> cambia la contrasena del usuario local (B-07)
+  if (req.method === 'POST' && url.pathname === '/api/auth/password') {
+    if (principal.via !== 'sesion' || principal.origen !== 'local') {
+      throw badRequest('Solo los usuarios locales cambian la contraseña acá; los de Lockatus, en Lockatus.');
+    }
+    const { actual, nueva } = await readJsonBody(req, { max: 8 * 1024 });
+    const ip = ipCliente(req);
+    limiteLogin.chequear(ip, principal.username);
+    try {
+      await users.cambiarClave(principal.username, String(actual || ''), nueva, principal.sid);
+      sesiones.servicio().olvidarUsuario(principal.username);
+    } catch (e) {
+      if (e.httpStatus === 401) limiteLogin.fallo(ip, principal.username);
+      throw e;
+    }
+    return sendJson(res, 200, { ok: true, mensaje: 'Contraseña cambiada. Las otras sesiones abiertas se cerraron.' });
+  }
   // Rol "lectura" (usuario o clave): solo GET/HEAD (mas una lista cerrada de POST que
   // no escriben, como la vista previa), en todas las rutas. Falla cerrado.
   assertPuedeEscribir(principal, req.method, url.pathname);
@@ -310,7 +404,9 @@ async function route(req, res, url) {
     const misComprobantes = await require('./services/fisherboy').configurado();
     // Analisis: solo si hay comprobantes bajados de algun CUIT que esta persona puede ver.
     const analisis = await require('./services/misComprobantes').servicio().hayComprobantes(principal).catch(() => false);
-    return sendJson(res, 200, { ok: true, usuario: principal, funciones: { misComprobantes, analisis } });
+    // Sin sid ni datos internos de la sesion: solo lo que la UI necesita.
+    const usuario = { username: principal.username, role: principal.role, cuitAllow: principal.cuitAllow || null, origen: principal.origen || null, debeCambiar: !!principal.debeCambiar, via: principal.via || null };
+    return sendJson(res, 200, { ok: true, usuario, funciones: { misComprobantes, analisis } });
   }
 
   // Mis Comprobantes (via Fisherboy) y la conexion con Fisherboy: ver src/rutas/misComprobantes.js
@@ -383,27 +479,43 @@ async function route(req, res, url) {
       return sendJson(res, 200, { ok: true, asociado: false, servicio: seg[2], wsaaService: svc.wsaaService, motivo: e.message });
     }
   }
-  // Admin de catalogo (superadmin): crear/editar/borrar/restaurar
+  // Admin de catalogo: SOLO superadmin con sesion (no claves de API, ni la maestra). El catalogo
+  // decide a donde viaja el Ticket de Acceso de cada CUIT (auditoria 2026-11-26, A-08).
   if (seg[0] === 'api' && seg[1] === 'services' && req.method !== 'GET') {
-    requireRole(principal, 'superadmin', 'admin');
+    requireRole(principal, 'superadmin');
+    if (principal.via === 'clave' || principal.via === 'maestra') {
+      throw Object.assign(new Error('El catálogo de servicios se edita desde el panel, con sesión de superadmin'), { httpStatus: 403 });
+    }
+    const quien = principal.username || 'superadmin';
+    const avisar = (accion, id) => webhooks.emitir('catalogo_cambiado', { servicio: id, accion, usuario: quien }).catch(() => {});
     if (req.method === 'POST' && !seg[2]) {
       const def = await readJsonBody(req);
-      return sendJson(res, 200, { ok: true, servicio: await catalog.upsert(def, 'admin') });
+      const servicio = await catalog.upsert(def, quien);
+      avisar('creado o editado', servicio && servicio.id);
+      return sendJson(res, 200, { ok: true, servicio });
     }
     if (req.method === 'PUT' && seg[2]) {
       const def = await readJsonBody(req);
       def.id = seg[2];
-      return sendJson(res, 200, { ok: true, servicio: await catalog.upsert(def, 'admin') });
+      const servicio = await catalog.upsert(def, quien);
+      avisar('editado', seg[2]);
+      return sendJson(res, 200, { ok: true, servicio });
     }
     if (req.method === 'DELETE' && seg[2]) {
-      return sendJson(res, 200, { ok: true, resultado: await catalog.remove(seg[2], 'admin') });
+      const resultado = await catalog.remove(seg[2], quien);
+      avisar('borrado', seg[2]);
+      return sendJson(res, 200, { ok: true, resultado });
     }
     if (req.method === 'POST' && seg[2] && seg[3] === 'reset') {
-      return sendJson(res, 200, { ok: true, servicio: await catalog.reset(seg[2], 'admin') });
+      const servicio = await catalog.reset(seg[2], quien);
+      avisar('restaurado', seg[2]);
+      return sendJson(res, 200, { ok: true, servicio });
     }
     if (req.method === 'POST' && seg[2] && seg[3] === 'enabled') {
       const { enabled } = await readJsonBody(req);
-      return sendJson(res, 200, { ok: true, servicio: await catalog.setEnabled(seg[2], enabled, 'admin') });
+      const servicio = await catalog.setEnabled(seg[2], enabled, quien);
+      avisar(enabled ? 'habilitado' : 'deshabilitado', seg[2]);
+      return sendJson(res, 200, { ok: true, servicio });
     }
   }
 
@@ -414,13 +526,18 @@ async function route(req, res, url) {
     requireRole(principal, 'superadmin', 'admin', 'operador');
     const body = await readJsonBody(req);
     if (body.cuit) assertCuitAllowed(principal, body.cuit);
-    const result = await engine.call(seg[2], seg[3], body.params || {}, { cuit: body.cuit, entorno: body.entorno });
+    // Otro entorno que el del sistema, solo admin (B-09): cambiar de entorno exige admin.
+    const entornoPedido = body.entorno && ['superadmin', 'admin'].includes(principal.role) ? body.entorno : undefined;
+    const result = await engine.call(seg[2], seg[3], body.params || {}, { cuit: body.cuit, entorno: entornoPedido });
     return sendJson(res, 200, { ok: true, servicio: seg[2], operacion: seg[3], resultado: result });
   }
 
   // GET /api/wsaa/:cuit/:service  -> fuerza/inspecciona el TA (diagnostico)
   if (req.method === 'GET' && seg[0] === 'api' && seg[1] === 'wsaa' && seg[2] && seg[3]) {
+    // Diagnostico que dispara un login a ARCA: operador o mas, y solo servicios del catalogo (M-03).
+    requireRole(principal, 'superadmin', 'admin', 'operador');
     assertCuitAllowed(principal, seg[2]);
+    if (!catalog.list().some((s) => s.wsaaService === seg[3])) throw badRequest(`Servicio WSAA desconocido: ${seg[3]}`);
     const ta = await wsaa.getAccessTicket(seg[2], seg[3]);
     return sendJson(res, 200, { ok: true, token: ta.token.slice(0, 12) + '…', sign: '***', expirationTime: ta.expirationTime, service: ta.service });
   }
@@ -572,7 +689,7 @@ async function route(req, res, url) {
       if (req.method === 'POST' && seg[4] === 'completar' && !seg[5]) {
         return sendJson(res, 200, { ok: true, ...(await datosImpresion.completarEmisor(seg[2], { forzar: true })) });
       }
-      if (seg[4]) return false;
+      if (seg[4]) throw notFound();
       if (req.method === 'GET') {
         const emisor = await emisores.get(seg[2]);
         return sendJson(res, 200, { ok: true, emisor, faltan: datosImpresion.faltantesEmisor(emisor) });
@@ -606,7 +723,9 @@ async function route(req, res, url) {
 
   // --- Metricas ---
   if (req.method === 'GET' && url.pathname === '/api/metrics') {
-    return sendJson(res, 200, { ok: true, metricas: await metrics.resumen() });
+    // Con alcance por CUIT, los numeros son solo de esos CUITs (B-08).
+    const cuits = scopedRequiresCuit(principal) ? principal.cuitAllow : null;
+    return sendJson(res, 200, { ok: true, metricas: await metrics.resumen({ cuits }) });
   }
 
   // --- Comprobantes emitidos ---
@@ -643,6 +762,10 @@ async function route(req, res, url) {
       assertCuitAllowed(principal, seg[2]);
       const cmp = await comprobantes.get(seg[2], seg[3], seg[4], seg[5]);
       if (!cmp) throw notFound();
+      // Un importado es de un tercero: Arcanum no arma su PDF (saldria con este CUIT como emisor). M-09.
+      if (cmp.origen === 'importado') {
+        throw Object.assign(new Error('Es un comprobante importado de un tercero: su PDF lo tiene quien lo emitió.'), { httpStatus: 409 });
+      }
       // Multi-emisor: el encabezado legal sale de los datos fiscales de ESE CUIT.
       // Modelo y nombre: los del pedido (?modelo, ?nombre, ?copias), si no los elegidos al facturar,
       // si no el modelo de ARCA y su nombre (CUIT_TIPO_PV_NUMERO.pdf).
@@ -671,10 +794,21 @@ async function route(req, res, url) {
       requireRole(principal, 'superadmin');
       return sendJson(res, 200, { ok: true, usuario: await users.crear(await readJsonBody(req)) });
     }
-    // PATCH /api/usuarios/:username  { email?, nombre?, role?, activo? }
+    // PATCH /api/usuarios/:username  { email?, nombre?, role?, activo? }. Desactivar a alguien corta
+    // sus sesiones al instante (tambien las abiertas con un pase de la suite).
     if (req.method === 'PATCH' && seg[2] && !seg[3]) {
       requireRole(principal, 'superadmin');
-      return sendJson(res, 200, { ok: true, usuario: await users.actualizar(decodeURIComponent(seg[2]), await readJsonBody(req), principal.username) });
+      const quien = decodeURIComponent(seg[2]);
+      const usuario = await users.actualizar(quien, await readJsonBody(req, { max: 8 * 1024 }), principal.username);
+      sesiones.servicio().olvidarUsuario(quien);
+      return sendJson(res, 200, { ok: true, usuario });
+    }
+    // DELETE /api/usuarios/:username -> baja (B-07). No a uno mismo ni al ultimo superadmin.
+    if (req.method === 'DELETE' && seg[2] && !seg[3]) {
+      requireRole(principal, 'superadmin');
+      await users.borrar(decodeURIComponent(seg[2]), principal.username);
+      sesiones.servicio().olvidarUsuario(decodeURIComponent(seg[2]));
+      return sendJson(res, 200, { ok: true, borrado: decodeURIComponent(seg[2]) });
     }
   }
 
@@ -739,7 +873,7 @@ async function route(req, res, url) {
     // GET /api/lotes?cuit=   -> lista con resumen de aging
     if (req.method === 'GET' && !seg[2]) {
       const cuit = q.get('cuit');
-      if (scopedRequiresCuit(principal) && !cuit) throw badRequest('Indica un CUIT autorizado en ?cuit=');
+      if (scopedRequiresCuit(principal) && !cuit) throw badRequest('Indicá un CUIT autorizado en ?cuit=');
       if (cuit) assertCuitAllowed(principal, cuit);
       return sendJson(res, 200, { ok: true, lotes: await lotes.listar(cuit) });
     }
@@ -790,6 +924,9 @@ async function route(req, res, url) {
       return sendJson(res, 200, { ok: true, ...r });
     }
     // GET /api/eventanilla/comunicacion/:id?cuit=        -> cuerpo del mensaje
+    // Leer una comunicacion (o sus adjuntos) la marca como leida en ARCA: es una escritura, rol
+    // operador o mas (P-01). Listarlas sigue abierto a lectura.
+    if (req.method === 'GET' && seg[2] === 'comunicacion' && seg[3]) requireRole(principal, 'superadmin', 'admin', 'operador');
     if (req.method === 'GET' && seg[2] === 'comunicacion' && seg[3] && !seg[4]) {
       const cuit = requireQ(q, 'cuit');
       assertCuitAllowed(principal, cuit);
@@ -860,7 +997,7 @@ function conIdempotencia(req, inv) {
 
 function requireQ(q, name) {
   const v = q.get(name);
-  if (!v) throw badRequest(`Falta el parametro de query "${name}"`);
+  if (!v) throw badRequest(`Falta el parámetro de query "${name}"`);
   return v;
 }
 function badRequest(msg) {
@@ -889,7 +1026,7 @@ function serveDashboard(res) {
     const html = conVersionEnEstaticos(fs.readFileSync(p, 'utf8'), config.version);
     // El HTML lleva todo el JS/CSS inline: nunca servir una version cacheada vieja
     // (evita quedar con un bundle stale tras un update -> UI rara/lenta).
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, must-revalidate' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, must-revalidate', 'Content-Security-Policy': CSP_PANEL });
     res.end(html);
   } catch {
     sendError(res, Object.assign(new Error('UI no encontrada'), { httpStatus: 404 }));
@@ -924,27 +1061,19 @@ function serveDocsPage(res) {
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     '</head><body style="margin:0">' +
     '<redoc spec-url="/openapi.yaml"></redoc>' +
-    '<script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>' +
+    // Version fija con SRI: "latest" paso a Redoc 3 (modulo ES) y dejo la pagina en blanco, y una
+    // version movil permite que el CDN cambie el script que corre en este origen.
+    '<script src="https://cdn.redoc.ly/redoc/v2.5.0/bundles/redoc.standalone.js" ' +
+    'integrity="sha384-4vOjrBu7SuDWXcAw1qFznVLA/sKL+0l4nn+J1HY8w7cpa6twQEYuh4b0Cwuo7CyX" crossorigin="anonymous"></script>' +
     '</body></html>';
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': CSP_DOCS });
   res.end(html);
 }
 
 // Auditoria de pedidos. Nunca se registran cabeceras (ni la clave), ni bodies.
 function logRequest(req, res, url, startedAt) {
-  const esMcp = url.pathname === '/mcp';
-  if (!url.pathname.startsWith('/api/') && !esMcp) return;
-  const seg = url.pathname.split('/').filter(Boolean);
-  const service = esMcp ? 'mcp' : seg[1] === 'ws' ? seg[2] : seg[1];
-  const duration = Date.now() - startedAt;
-  const ok = res.statusCode < 400;
-  // No bloqueamos la respuesta: log best-effort.
-  db.query(
-    `INSERT INTO requests (cuit, service, operation, http_method, path, status, ok, duration_ms, usuario, ip, clave_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-    [req._cuit || url.searchParams.get('cuit') || null, service || null, req._op || null, req.method, url.pathname,
-      res.statusCode, ok, duration, req._user || null, req._ip || null, req._claveId || null],
-  ).catch(() => {});
+  // Fila acotada (ruta truncada, CUIT validado, sin anonimos rechazados): ver lib/auditoria.js (M-12).
+  guardarFila(db, filaAuditoria(req, res, url, Date.now() - startedAt));
   // Uso anomalo de una clave (barrido de CUITs, muchos rechazos): aviso por webhook/email.
   if (req._claveId) {
     for (const a of detector.registrar({ id: req._claveId, nombre: req._claveNombre, status: res.statusCode, cuitConsultado: req._cuitConsultado })) {
@@ -959,12 +1088,19 @@ const server = http.createServer(async (req, res) => {
   let url;
   try {
     url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    cabecerasComunes(req, res); // M-08
     res.on('finish', () => logRequest(req, res, url, startedAt));
     await route(req, res, url);
   } catch (err) {
     sendError(res, err);
   }
 });
+
+// Timeouts y tope de conexiones propios (B-10): los de Node dejan 300 s para mandar un cuerpo y no
+// limitan conexiones. 120 s alcanza para subir un lote de facturas a Factorum.
+server.headersTimeout = 30_000;
+server.requestTimeout = parseInt(process.env.ARCANUM_REQUEST_TIMEOUT_MS || '120000', 10);
+server.maxConnections = parseInt(process.env.ARCANUM_MAX_CONEXIONES || '1000', 10);
 
 async function start() {
   // Lo primero que se ve en los registros al levantar: version y que cambia (CHANGELOG).
@@ -976,7 +1112,7 @@ async function start() {
   await db.waitForDb();
   await db.migrate();
   await catalog.init();
-  console.log(`[arcanum] catalogo: ${catalog.list().length} servicios cargados`);
+  console.log(`[arcanum] catálogo: ${catalog.list().length} servicios cargados`);
   // Entorno persistido (si el admin lo cambio desde la UI) pisa al del env var.
   try {
     const { rows } = await db.query("SELECT value FROM settings WHERE key = 'entorno'");
@@ -988,17 +1124,17 @@ async function start() {
   });
   if (seeded && seeded.generated && seeded.creado) {
     // La contrasena NUNCA va al log: queda en un archivo 0600 del volumen.
-    console.log(`\n[arcanum] Usuario superadmin creado: ${seeded.username} (contrasena generada, no se muestra en el log)`);
+    console.log(`\n[arcanum] Usuario superadmin creado: ${seeded.username} (contraseña generada, no se muestra en el log)`);
     console.log(`[arcanum]   Leela desde la consola del servicio: cat ${seeded.ruta}`);
-    console.log('[arcanum]   Cambiala despues de entrar y borra ese archivo. (defini ARCANUM_ADMIN_PASS para fijarla)\n');
+    console.log('[arcanum]   Cambiala después de entrar y borrá ese archivo. (definí ARCANUM_ADMIN_PASS para fijarla)\n');
   } else if (seeded && seeded.generated) {
-    console.error(`[arcanum] No se creo el superadmin: no se pudo guardar la contrasena generada (${seeded.error}).`);
-    console.error('[arcanum]   Defini ARCANUM_ADMIN_PASS y reinicia: el superadmin se crea con esa contrasena.');
+    console.error(`[arcanum] No se creó el superadmin: no se pudo guardar la contraseña generada (${seeded.error}).`);
+    console.error('[arcanum]   Definí ARCANUM_ADMIN_PASS y reiniciá: el superadmin se crea con esa contraseña.');
   }
   try {
     const n = await require('./services/colaEmision').servicio().reencolarProcesando();
     if (n) console.log(`[arcanum] ${n} comprobante(s) de la cola vuelven a pendiente tras el reinicio`);
-  } catch (e) { console.error('[arcanum] cola de emision:', e.message); }
+  } catch (e) { console.error('[arcanum] cola de emisión:', e.message); }
   try {
     const n = await require('./services/misComprobantes').servicio().marcarHuerfanas();
     if (n) console.log(`[arcanum] ${n} corrida(s) de Mis Comprobantes interrumpidas por el reinicio`);
@@ -1011,8 +1147,12 @@ async function start() {
 }
 
 if (require.main === module) {
+  // Red de contencion (M-02): una promesa rechazada sin manejar se registra, no tira el gateway
+  // (con emisiones en vuelo). Una excepcion sincronica no atrapada si termina el proceso: el
+  // estado puede haber quedado inconsistente y el orquestador lo reinicia.
+  process.on('unhandledRejection', (e) => console.error('[arcanum] promesa rechazada sin manejar:', (e && e.stack) || e));
   start().catch((e) => {
-    console.error('[arcanum] fallo el arranque:', e.message);
+    console.error('[arcanum] falló el arranque:', e.message);
     process.exit(1);
   });
 }

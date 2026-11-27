@@ -2,12 +2,19 @@
 
 // Cache del Ticket de Acceso (Token + Sign) por CUIT + servicio + entorno, en
 // Postgres. ARCA rechaza pedir un TA nuevo si el anterior sigue vigente, asi que
-// reutilizamos hasta que falte poco para vencer. Para que dos requests (o dos
-// instancias del contenedor) no disparen dos logins a la vez usamos advisory
-// locks de Postgres: lock real, distribuido, no solo en memoria.
+// reutilizamos hasta que falte poco para vencer. Los pedidos concurrentes de una
+// instancia comparten un solo login (ver getOrCreate).
 
 const db = require('../db');
 const { config } = require('../config');
+
+// Token y Sign se guardan cifrados con el vault (B-14): un dump de Postgres no entrega tickets
+// vigentes. Los guardados en claro antes de 2.1.18 se siguen leyendo hasta que venzan.
+function cifrar(v) { return v == null ? v : require('../crypto/vault').encrypt(String(v)); }
+function descifrar(v) {
+  if (typeof v !== 'string' || !v.startsWith('v1:')) return v;
+  try { return require('../crypto/vault').decrypt(v); } catch { return null; }
+}
 
 function lockKey(cuit, service, entorno) {
   return `${cuit}:${service}:${entorno}`;
@@ -22,9 +29,11 @@ async function read(cuit, service, entorno, client = db) {
   const ta = rows[0];
   const expMs = new Date(ta.expiration_time).getTime();
   if (Number.isFinite(expMs) && Date.now() < expMs - config.tokenRenewMarginMs) {
+    const token = descifrar(ta.token); const sign = descifrar(ta.sign);
+    if (!token || !sign) return null; // cifrado con otra master key: se pide uno nuevo
     return {
-      token: ta.token,
-      sign: ta.sign,
+      token,
+      sign,
       generationTime: ta.generation_time,
       expirationTime: ta.expiration_time,
       service,
@@ -44,7 +53,9 @@ async function readRaw(cuit, service, entorno) {
   if (!rows.length) return null;
   const ta = rows[0];
   if (new Date(ta.expiration_time).getTime() <= Date.now()) return null;
-  return { token: ta.token, sign: ta.sign, generationTime: ta.generation_time, expirationTime: ta.expiration_time, service, cuit };
+  const token = descifrar(ta.token); const sign = descifrar(ta.sign);
+  if (!token || !sign) return null;
+  return { token, sign, generationTime: ta.generation_time, expirationTime: ta.expiration_time, service, cuit };
 }
 
 async function write(cuit, service, entorno, ta, client = db) {
@@ -53,26 +64,34 @@ async function write(cuit, service, entorno, ta, client = db) {
      VALUES ($1,$2,$3,$4,$5,$6,$7, now())
      ON CONFLICT (cuit, service, entorno) DO UPDATE SET
        token = $4, sign = $5, generation_time = $6, expiration_time = $7, updated_at = now()`,
-    [cuit, service, entorno, ta.token, ta.sign, ta.generationTime || null, ta.expirationTime],
+    [cuit, service, entorno, cifrar(ta.token), cifrar(ta.sign), ta.generationTime || null, ta.expirationTime],
   );
 }
 
+// Logins a WSAA en curso, por (cuit, service, entorno). Los pedidos concurrentes de esta instancia
+// esperan el mismo login en vez de disparar otro.
+const enCurso = new Map();
+
 /**
- * Devuelve un TA vigente; si no hay, llama a `fetcher()` bajo advisory lock.
+ * Devuelve un TA vigente; si no hay, llama a `fetcher()` una sola vez por clave.
+ *
+ * El login a WSAA NO corre dentro de una transaccion (auditoria 2026-11-26, M-03): antes tenia
+ * tomada una conexion del pool mientras esperaba a ARCA, y con ARCA lento 10 pedidos dejaban a
+ * toda la aplicacion sin base. Si otra instancia pide el mismo TA a la vez, ARCA rechaza el
+ * segundo login ("ya posee un TA valido") y wsaa.js usa el guardado (readRaw).
  */
 async function getOrCreate(cuit, service, entorno, fetcher) {
   const cached = await read(cuit, service, entorno);
   if (cached) return cached;
-
-  return db.tx(async (client) => {
-    // Lock por (cuit, service, entorno): serializa el login concurrente.
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey(cuit, service, entorno)]);
-    const again = await read(cuit, service, entorno, client);
-    if (again) return again;
+  const clave = lockKey(cuit, service, entorno);
+  if (enCurso.has(clave)) return enCurso.get(clave);
+  const p = (async () => {
     const ta = await fetcher();
-    await write(cuit, service, entorno, ta, client);
+    await write(cuit, service, entorno, ta);
     return ta;
-  });
+  })();
+  enCurso.set(clave, p);
+  try { return await p; } finally { enCurso.delete(clave); }
 }
 
 async function invalidate(cuit, service, entorno) {

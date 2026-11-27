@@ -18,7 +18,7 @@ const zlib = require('zlib');
 const crypto = require('crypto');
 
 const MAGIA = 'ARCBAK1\n';
-const TABLAS_EXCLUIDAS = ['requests', 'service_status', 'access_tickets'];
+const TABLAS_EXCLUIDAS = ['requests', 'service_status', 'access_tickets', 'sesiones'];
 const PADRES_PRIMERO = ['lotes']; // lote_items referencia a lotes
 const NOMBRE = /^arcanum-\d{8}-\d{4}(-\d+)?\.arcbak$/;
 
@@ -26,8 +26,15 @@ function e422(msg) {
   return Object.assign(new Error(msg), { httpStatus: 422 });
 }
 
-/** Clave de backup: ARCANUM_BACKUP_KEY (hex) o derivada de la master key. */
+/**
+ * Clave de backup: ARCANUM_BACKUP_KEY (hex) o derivada de la master key, siempre que alguna venga
+ * por entorno (B-15). Si la master key se genero en el volumen, quedaria junto a los backups: con
+ * esos dos archivos se descifra todo, asi que no se crean.
+ */
 function clave() {
+  if (!process.env.ARCANUM_BACKUP_KEY && !process.env.ARCANUM_MASTER_KEY) {
+    throw Object.assign(new Error('No se crean backups sin ARCANUM_MASTER_KEY o ARCANUM_BACKUP_KEY por entorno: la clave quedaria en el mismo volumen que los backups.'), { httpStatus: 409 });
+  }
   const env = process.env.ARCANUM_BACKUP_KEY;
   if (env) {
     const b = Buffer.from(env, 'hex');
@@ -61,10 +68,10 @@ function desempaquetar(buf, k) {
   const b = Buffer.from(buf);
   if (b.slice(0, MAGIA.length).toString() !== MAGIA) throw e422('No es un backup de Arcanum');
   const fin = b.indexOf(0x0a, MAGIA.length);
-  if (fin < 0) throw e422('Backup danado (sin cabecera)');
+  if (fin < 0) throw e422('Backup dañado (sin cabecera)');
   const cabeceraTxt = b.slice(MAGIA.length, fin).toString();
   let meta;
-  try { meta = JSON.parse(cabeceraTxt); } catch { throw e422('Backup danado (cabecera ilegible)'); }
+  try { meta = JSON.parse(cabeceraTxt); } catch { throw e422('Backup dañado (cabecera ilegible)'); }
   const iv = b.slice(fin + 1, fin + 13);
   const tag = b.slice(fin + 13, fin + 29);
   const cifrado = b.slice(fin + 29);
@@ -82,7 +89,7 @@ function desempaquetar(buf, k) {
 }
 
 function ruta(dir, nombre) {
-  if (!NOMBRE.test(String(nombre || ''))) throw Object.assign(new Error('Nombre de backup invalido'), { httpStatus: 400 });
+  if (!NOMBRE.test(String(nombre || ''))) throw Object.assign(new Error('Nombre de backup inválido'), { httpStatus: 400 });
   return path.join(dir, nombre);
 }
 
@@ -123,10 +130,11 @@ function nombreNuevo(dir, fecha = new Date()) {
 
 /** Crea un backup en `dir` y poda. */
 async function crear({ dir = directorio(), repo = repoSql(), retener = Number(process.env.ARCANUM_BACKUP_RETENER) || 14 } = {}) {
+  const k = clave(); // antes de tocar nada: sin clave por entorno no hay backup (B-15)
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const tablas = await repo.volcar();
   const { config } = require('../config');
-  const buf = empaquetar(tablas, { version: config.version, entorno: config.env }, clave());
+  const buf = empaquetar(tablas, { version: config.version, entorno: config.env }, k);
   const nombre = nombreNuevo(dir);
   fs.writeFileSync(path.join(dir, nombre), buf, { mode: 0o600 });
   const podados = podar(dir, retener);

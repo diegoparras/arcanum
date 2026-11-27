@@ -1,9 +1,9 @@
 'use strict';
 
 // Stub de ARCA (WSAA + WSFEv1) para pruebas de punta a punta. NUNCA se usa contra ARCA real:
-// Arcanum se apunta aca con ARCANUM_ENDPOINT_WSAA / ARCANUM_ENDPOINT_WSFEV1 (solo homologacion).
+// Arcanum se apunta acá con ARCANUM_ENDPOINT_WSAA / ARCANUM_ENDPOINT_WSFEV1 (solo homologación).
 //
-// Imita lo que importa: numeracion por (CUIT, punto de venta, tipo), CAE, consultas, puntos de
+// Imita lo que importa: numeración por (CUIT, punto de venta, tipo), CAE, consultas, puntos de
 // venta (uno CAE y uno CAEA), CAEA por quincena, informe y "sin movimiento". Valida los nombres
 // de elemento como ARCA: si falta FeCabReq responde la misma NullReferenceException.
 //
@@ -17,7 +17,7 @@ const PUERTO = Number(process.argv[2] || process.env.PUERTO || 8099);
 const DEMORA_LENTO_MS = Number(process.env.DEMORA_LENTO_MS || 6000);
 
 let modo = 'ok';
-const ultimos = {}; // "cuit|pv|tipo" -> numero
+const ultimos = {}; // "cuit|pv|tipo" -> número
 const cbtes = {}; // "cuit|pv|tipo|n" -> datos
 const caeas = {}; // "cuit|periodo|orden" -> datos
 const informados = [];
@@ -111,7 +111,7 @@ async function wsfev1(body, res) {
     return responder({ CAEA: tag(body, 'CAEA'), PtoVta: tag(body, 'PtoVta'), FchProceso: hoyYmd(), Resultado: 'A' });
   }
   res.writeHead(500, { 'Content-Type': 'text/xml' });
-  return res.end(fault(`Metodo no soportado por el stub: ${metodo}`));
+  return res.end(fault(`Método no soportado por el stub: ${metodo}`));
 }
 
 const srv = http.createServer((req, res) => {

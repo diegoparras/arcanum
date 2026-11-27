@@ -1,9 +1,13 @@
 'use strict';
 
-// Rutinas de fondo:
-//  - monitor: hace dummy a cada servicio que lo soporte y guarda uptime/latencia.
-//  - renovacion: mantiene los Tickets de Acceso calientes (renueva antes de vencer).
+// Rutinas de fondo (ARCANUM_DAEMONS=0 las apaga todas):
+//  - monitor: hace dummy a cada servicio que lo soporte y guarda uptime/latencia. Los Tickets
+//    de Acceso NO se renuevan de antemano: ARCA rechaza un TA nuevo mientras el anterior sigue
+//    vigente, asi que se piden recien cuando hacen falta.
 //  - vencimientos: avisa por webhook cuando un certificado o una clave de API esta por vencer.
+//  - cola de emision: reintenta lo encolado durante una caida de ARCA.
+//  - CAEA: pide los codigos de la quincena, avisa topes e informa lo emitido con CAEA.
+//  - emitidos y backup: una vez por dia, trae lo facturado por fuera de Arcanum y hace el backup.
 //  - e-Ventanilla: avisa por webhook cuando llega una comunicacion nueva de ARCA.
 //  - Mis Comprobantes: una vez por dia (ARCANUM_MC_HORA, hora argentina) baja emitidos y
 //    recibidos de los CUIT con sincronizacion diaria desde la ultima vez que se bajaron (la
@@ -13,7 +17,6 @@ const db = require('./db');
 const { config } = require('./config');
 const catalog = require('./catalog');
 const engine = require('./soap/engine');
-const { getAccessTicket } = require('./auth/wsaa');
 const webhooks = require('./services/webhooks');
 const eventanilla = require('./services/eventanilla');
 const tenants = require('./auth/tenants');
@@ -30,6 +33,11 @@ function maskCuit(c) {
 async function monitor() {
   // Limpieza: historial de status mas viejo que 7 dias.
   db.query("DELETE FROM service_status WHERE checked_at < now() - interval '7 days'").catch(() => {});
+  // Retencion de la auditoria de pedidos (M-12): ARCANUM_AUDITORIA_DIAS, 90 por defecto.
+  const dias = Math.max(7, parseInt(process.env.ARCANUM_AUDITORIA_DIAS || '90', 10) || 90);
+  db.query('DELETE FROM requests WHERE ts < now() - make_interval(days => $1)', [dias]).catch(() => {});
+  // La auditoria de la suite Escriba (2.2.0) con la misma retencion.
+  db.query('DELETE FROM suite_auditoria WHERE ts < now() - make_interval(days => $1)', [dias]).catch(() => {});
   const servicios = catalog.list().filter((s) => s.dummyOp);
   for (const s of servicios) {
     const t0 = Date.now();
@@ -64,24 +72,6 @@ async function monitor() {
   }
 }
 
-async function renovarTokens() {
-  // Refresca los TA que esten activos: si estan dentro del margen, getAccessTicket
-  // dispara un relogin proactivo; si no, no hace nada (barato).
-  let rows = [];
-  try {
-    ({ rows } = await db.query('SELECT DISTINCT cuit, service, entorno FROM access_tickets WHERE entorno = $1', [config.env]));
-  } catch {
-    return;
-  }
-  for (const r of rows) {
-    try {
-      await getAccessTicket(r.cuit, r.service, r.entorno);
-    } catch (e) {
-      console.error('[arcanum][daemon] no se pudo renovar TA', maskCuit(r.cuit), r.service, e.message);
-    }
-  }
-}
-
 async function avisarVencimientos() {
   let rows = [];
   try {
@@ -96,13 +86,13 @@ async function avisarVencimientos() {
   }
   for (const r of rows) {
     const dias = Math.ceil((new Date(r.cert_not_after).getTime() - Date.now()) / 86400000);
-    console.warn(`[arcanum] certificado del CUIT ${maskCuit(r.cuit)} vence en ${dias} dias`);
+    console.warn(`[arcanum] certificado del CUIT ${maskCuit(r.cuit)} vence en ${dias} días`);
     webhooks.emitir('cert_por_vencer', { cuit: r.cuit, nombre: r.nombre, vence: r.cert_not_after, dias }).catch(() => {});
   }
   // Claves de API que vencen en menos de 7 dias (se avisa una vez por clave).
   try {
     for (const k of await apikeys.porVencerSinAviso(7)) {
-      console.warn(`[arcanum] la clave de API "${k.nombre}" vence en ${k.dias} dias`);
+      console.warn(`[arcanum] la clave de API "${k.nombre}" vence en ${k.dias} días`);
       webhooks.emitir('clave_por_vencer', k).catch(() => {});
     }
   } catch (e) {
@@ -239,7 +229,7 @@ async function backupDiario(ahoraFecha = new Date()) {
     console.log(`[arcanum][backup] ${r.nombre} (${r.bytes} bytes)`);
     webhooks.emitir('backup_creado', { nombre: r.nombre, bytes: r.bytes, tablas: r.tablas }).catch(() => {});
   } catch (e) {
-    console.error('[arcanum][backup] fallo:', e.message);
+    console.error('[arcanum][backup] falló:', e.message);
     webhooks.emitir('backup_fallo', { error: e.message }).catch(() => {});
   }
 }
@@ -334,4 +324,4 @@ function stop() {
   timers.forEach(clearInterval);
 }
 
-module.exports = { start, stop, monitor, renovarTokens, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, backupDiario, sinSolapar, tocaDiaria, rangoDiario, horaMcDiaria };
+module.exports = { start, stop, monitor, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, backupDiario, sinSolapar, tocaDiaria, rangoDiario, horaMcDiaria };

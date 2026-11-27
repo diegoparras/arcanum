@@ -11,7 +11,7 @@ const mono = require('../src/services/monotributo');
 const HASTA = new Date('2026-11-19T12:00:00Z');
 const mc = (fecha, cbte, total, extra = {}) => ({ tipo: 'emitido', fecha, cbte_tipo: cbte, total: String(total), punto_venta: 1, numero_desde: Math.floor(Math.random() * 1e6), cae: null, tipo_cambio: '1', ...extra });
 
-test('NC resta', () => {
+test('las notas de credito restan de lo facturado', () => {
   const r = mono.calcularIngresos([mc('2026-10-01', 11, 1000), mc('2026-10-05', 13, 300)], [], HASTA);
   assert.strictEqual(r.total, 700);
   assert.deepStrictEqual(r.porMes, { '2026-10': 700 });
@@ -54,7 +54,7 @@ test('moneda extranjera se pasa a pesos con el tipo de cambio', () => {
 
 const CATS = { topes: { A: 100, B: 200, C: 300 } };
 
-test('alerta 80 y 100', () => {
+test('alerta al llegar al 80% y al pasar el 100% del tope', () => {
   assert.strictEqual(mono.evaluar(79, 'A', CATS).alerta, 'ok');
   assert.strictEqual(mono.evaluar(80, 'A', CATS).alerta, '80');
   const e = mono.evaluar(100.01, 'A', CATS);
@@ -63,7 +63,7 @@ test('alerta 80 y 100', () => {
   assert.ok(e.usado > 1);
 });
 
-test('sugiere categoria siguiente', () => {
+test('sugiere la categoria que corresponde y avisa si excede la maxima', () => {
   assert.strictEqual(mono.evaluar(150, 'A', CATS).categoriaSugerida, 'B');
   assert.strictEqual(mono.evaluar(50, 'C', CATS).categoriaSugerida, 'A');
   const fuera = mono.evaluar(301, 'C', CATS);

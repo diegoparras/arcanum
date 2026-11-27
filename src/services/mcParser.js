@@ -44,13 +44,16 @@ function parsearCsv(texto) {
 }
 
 /** ZIP -> [{nombre, datos}]. Lee el directorio central; metodos 0 (stored) y 8 (deflate). */
+// Tope de cada archivo descomprimido del ZIP de Mis Comprobantes (50 MB sobra para un CSV).
+const MAX_DESCOMPRIMIDO = 50 * 1024 * 1024;
+
 function leerZip(buf) {
   const b = Buffer.from(buf);
   let eocd = -1;
   for (let i = b.length - 22; i >= Math.max(0, b.length - 65557); i -= 1) {
     if (b.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
   }
-  if (eocd < 0) throw Object.assign(new Error('El ZIP de Mis Comprobantes esta danado'), { httpStatus: 422 });
+  if (eocd < 0) throw Object.assign(new Error('El ZIP de Mis Comprobantes está dañado'), { httpStatus: 422 });
   const total = b.readUInt16LE(eocd + 10);
   let p = b.readUInt32LE(eocd + 16);
   const out = [];
@@ -67,7 +70,8 @@ function leerZip(buf) {
     const crudo = b.slice(ini, ini + tamComp);
     if (!nombre.endsWith('/')) {
       if (metodo === 0) out.push({ nombre, datos: crudo });
-      else if (metodo === 8) out.push({ nombre, datos: zlib.inflateRawSync(crudo) });
+      // Con tope (I-02): un ZIP chico que se infla a cientos de MB no tumba el proceso.
+      else if (metodo === 8) out.push({ nombre, datos: zlib.inflateRawSync(crudo, { maxOutputLength: MAX_DESCOMPRIMIDO }) });
     }
     p += 46 + lnNombre + lnExtra + lnComent;
   }
@@ -206,7 +210,7 @@ function desdeJson(texto, tipo) {
   try { doc = JSON.parse(texto); } catch { return null; }
   if (!doc || typeof doc !== 'object' || !('estado' in doc)) return null;
   if (doc.estado !== 'ok') {
-    throw e422(`ARCA no devolvio los comprobantes: ${String(doc.mensajeError || doc.estado).slice(0, 200)}`);
+    throw e422(`ARCA no devolvió los comprobantes: ${String(doc.mensajeError || doc.estado).slice(0, 200)}`);
   }
   const data = doc.datos && doc.datos.data;
   if (!Array.isArray(data)) throw e422('La respuesta de Mis Comprobantes no trae la lista de comprobantes');
@@ -214,11 +218,11 @@ function desdeJson(texto, tipo) {
   if (!k) throw e422(`Tipo de Mis Comprobantes desconocido: ${tipo}`);
   const raras = data.find((f) => !Array.isArray(f) || f.length !== k.largo);
   if (raras) {
-    throw e422(`Mis Comprobantes devolvio filas de ${Array.isArray(raras) ? raras.length : 0} columnas y se esperaban ${k.largo} (${tipo}s): ARCA puede haber cambiado el formato`);
+    throw e422(`Mis Comprobantes devolvió filas de ${Array.isArray(raras) ? raras.length : 0} columnas y se esperaban ${k.largo} (${tipo}s): ARCA puede haber cambiado el formato`);
   }
   const filas = data.map((f) => normalizarFilaJson(f, tipo));
   if (filas.some((c) => !c.cbteTipo || c.numeroDesde == null || !c.fecha)) {
-    throw e422('Mis Comprobantes devolvio filas sin tipo, numero o fecha donde se esperaban: ARCA puede haber cambiado el formato');
+    throw e422('Mis Comprobantes devolvió filas sin tipo, número o fecha donde se esperaban: ARCA puede haber cambiado el formato');
   }
   return filas;
 }
@@ -249,12 +253,12 @@ function desdeArchivo(buf, nombre, tipo) {
     ? leerZip(b).filter((a) => /\.(csv|txt)$/i.test(a.nombre)).map((a) => decodificar(a.datos))
     : [decodificar(b)];
   if (textos.some((t) => /^\s*</.test(t) && /<(html|body|!doctype)/i.test(t))) {
-    throw e422('ARCA devolvio una pagina en vez del CSV (sesion vencida o error de ARCA)');
+    throw e422('ARCA devolvió una página en vez del CSV (sesión vencida o error de ARCA)');
   }
   const crudas = textos.flatMap((t) => parsearCsv(t));
   const filas = crudas.map((f) => normalizarFila(f, tipo)).filter((c) => c.cbteTipo && c.numeroDesde != null);
   if (crudas.length && !filas.length) {
-    throw e422('El CSV de Mis Comprobantes no tiene las columnas esperadas (tipo, numero, fecha): ARCA puede haber cambiado el formato');
+    throw e422('El CSV de Mis Comprobantes no tiene las columnas esperadas (tipo, número, fecha): ARCA puede haber cambiado el formato');
   }
   return filas;
 }

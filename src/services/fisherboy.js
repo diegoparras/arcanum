@@ -19,25 +19,14 @@ function err(message, httpStatus) {
   return Object.assign(new Error(message), { httpStatus });
 }
 
-async function leerConfigDeBase() {
-  const db = require('../db');
-  const vault = require('../crypto/vault');
-  let guardada = null;
-  try {
-    const { rows } = await db.query("SELECT value FROM settings WHERE key = 'fisherboy'");
-    if (rows[0] && rows[0].value) guardada = JSON.parse(rows[0].value);
-  } catch { /* sin tabla todavia: se usa el entorno */ }
-  let token = process.env.FISHERBOY_TOKEN || '';
-  if (guardada && guardada.tokenCifrado) {
-    try { token = vault.decrypt(guardada.tokenCifrado); } catch { /* clave maestra distinta */ }
-  }
-  return { url: (guardada && guardada.url) || process.env.FISHERBOY_URL || '', token };
-}
+// URL + token: ver services/conexiones.js (el token solo viaja al destino para el que se cargo).
+const conexion = require('./conexiones').crearConexion({ clave: 'fisherboy', nombre: 'Fisherboy', varUrl: 'FISHERBOY_URL', varToken: 'FISHERBOY_TOKEN' });
+const leerConfigDeBase = () => conexion.leer();
 
 function pedir(cfg, method, ruta, { cuerpo, timeoutMs = TIMEOUT_MS, binario = false } = {}) {
   return new Promise((resolve, reject) => {
     let base;
-    try { base = new URL(cfg.url); } catch { return reject(err('Fisherboy no esta configurado (URL invalida)', 503)); }
+    try { base = new URL(cfg.url); } catch { return reject(err('Fisherboy no está configurado (URL inválida)', 503)); }
     const lib = base.protocol === 'https:' ? https : http;
     const datos = cuerpo === undefined ? null : Buffer.from(JSON.stringify(cuerpo));
     const req = lib.request(new URL(ruta, base), {
@@ -58,7 +47,7 @@ function pedir(cfg, method, ruta, { cuerpo, timeoutMs = TIMEOUT_MS, binario = fa
       });
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(partes) }));
     });
-    req.on('timeout', () => req.destroy(err('Fisherboy no respondio a tiempo', 504)));
+    req.on('timeout', () => req.destroy(err('Fisherboy no respondió a tiempo', 504)));
     req.on('error', (e) => reject(e.httpStatus ? e : err(`No se pudo contactar a Fisherboy (${e.code || e.message})`, 503)));
     if (datos) req.write(datos);
     req.end();
@@ -68,7 +57,7 @@ function pedir(cfg, method, ruta, { cuerpo, timeoutMs = TIMEOUT_MS, binario = fa
 function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
   async function cfg() {
     const c = await leerConfig();
-    if (!c || !c.url || !c.token) throw err('Fisherboy no esta configurado: carga FISHERBOY_URL y FISHERBOY_TOKEN', 503);
+    if (!c || !c.url || !c.token) throw err('Fisherboy no está configurado: cargá FISHERBOY_URL y FISHERBOY_TOKEN', 503);
     return c;
   }
 
@@ -77,7 +66,7 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
     let datos = {};
     try { datos = r.body.length ? JSON.parse(r.body.toString('utf8')) : {}; } catch { datos = {}; }
     if (r.status >= 400) {
-      throw err(`Fisherboy: ${datos.detail || datos.error || `respondio ${r.status}`}`, r.status === 401 || r.status === 403 ? 502 : r.status);
+      throw err(`Fisherboy: ${datos.detail || datos.error || `respondió ${r.status}`}`, r.status === 401 || r.status === 403 ? 502 : r.status);
     }
     return datos;
   }
@@ -116,24 +105,10 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
 }
 
 /** Config visible para la UI: nunca devuelve el token. */
-async function config() {
-  const c = await leerConfigDeBase();
-  return { url: c.url, tokenCargado: !!c.token };
-}
+const config = () => conexion.config();
 
-async function guardarConfig({ url, token }, usuario) {
-  const db = require('../db');
-  const vault = require('../crypto/vault');
-  const limpia = String(url || '').trim().replace(/\/+$/, '');
-  if (limpia && !/^https?:\/\/[^\s]+$/i.test(limpia)) throw err('La URL de Fisherboy tiene que empezar con http:// o https://', 400);
-  const previa = await leerConfigDeBase();
-  const tokenCifrado = token ? vault.encrypt(String(token)) : (previa.token ? vault.encrypt(previa.token) : null);
-  await db.query(
-    "INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('fisherboy',$1,$2,now()) ON CONFLICT (key) DO UPDATE SET value=$1, updated_by=$2, updated_at=now()",
-    [JSON.stringify({ url: limpia, tokenCifrado }), usuario || null],
-  );
-  return config();
-}
+/** { url, token, borrarToken }: ver las reglas en services/conexiones.js. */
+const guardarConfig = (datos, usuario) => conexion.guardar(datos || {}, usuario);
 
 const cliente = crearCliente();
 

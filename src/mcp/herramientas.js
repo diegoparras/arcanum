@@ -56,7 +56,7 @@ function error(msg) {
 // ---------- parsers (puros) ----------
 function cuit11(v, campo = 'cuit') {
   const c = tenants.normalizeCuit(v);
-  if (!/^\d{11}$/.test(c)) throw error(`"${campo}" debe ser un CUIT de 11 digitos`);
+  if (!/^\d{11}$/.test(c)) throw error(`"${campo}" debe ser un CUIT de 11 dígitos`);
   return c;
 }
 
@@ -65,11 +65,11 @@ function parseTipo(v) {
   if (v === undefined || v === null || v === '') return null;
   if (typeof v === 'number' || /^\d+$/.test(String(v).trim())) {
     const n = parseInt(v, 10);
-    if (!n) throw error('"tipo" invalido');
+    if (!n) throw error('"tipo" inválido');
     return n;
   }
   const a = ALIAS_TIPO[String(v).trim().toUpperCase().replace(/[^A-Z]/g, '')];
-  if (!a) throw error(`"tipo" no reconocido: ${v}. Usa el codigo de ARCA (11 = Factura C, 6 = Factura B, 1 = Factura A) o la letra.`);
+  if (!a) throw error(`"tipo" no reconocido: ${v}. Usá el código de ARCA (11 = Factura C, 6 = Factura B, 1 = Factura A) o la letra.`);
   return a;
 }
 
@@ -77,7 +77,7 @@ function parseTipo(v) {
 function parseComprobante(texto) {
   if (!texto) return null;
   const m = String(texto).trim().match(/^(?:([A-Za-z]{1,3})[\s-]*)?(\d{1,5})\s*-\s*(\d{1,8})$/);
-  if (!m) throw error(`"comprobante" debe tener la forma 0003-00000124 (punto de venta-numero); recibido: ${texto}`);
+  if (!m) throw error(`"comprobante" debe tener la forma 0003-00000124 (punto de venta-número); recibido: ${texto}`);
   return { puntoVenta: parseInt(m[2], 10), numero: parseInt(m[3], 10), tipo: m[1] ? parseTipo(m[1]) : null };
 }
 
@@ -94,7 +94,7 @@ function fechaIso(v) {
 
 function entero(v, campo) {
   const n = parseInt(v, 10);
-  if (!Number.isFinite(n) || n <= 0) throw error(`"${campo}" debe ser un numero entero positivo`);
+  if (!Number.isFinite(n) || n <= 0) throw error(`"${campo}" debe ser un número entero positivo`);
   return n;
 }
 
@@ -113,8 +113,8 @@ async function resolverEmisor(ctx, valor, campo = 'cuit_emisor') {
   let lista = (await tenants.list(config.env)).filter((t) => t.tieneCertificado);
   if (principal.cuitAllow && principal.cuitAllow.length) lista = lista.filter((t) => principal.cuitAllow.includes(t.cuit));
   if (lista.length === 1) return lista[0].cuit;
-  if (!lista.length) throw error(`No hay ningun CUIT con certificado cargado en Arcanum (entorno ${config.env}).`);
-  throw error(`Hay ${lista.length} CUITs con certificado; indica "${campo}". Opciones: ${lista.map((t) => `${t.cuit}${t.nombre ? ` (${t.nombre})` : ''}`).join(', ')}.`);
+  if (!lista.length) throw error(`No hay ningún CUIT con certificado cargado en Arcanum (entorno ${config.env}).`);
+  throw error(`Hay ${lista.length} CUITs con certificado; indicá "${campo}". Opciones: ${lista.map((t) => `${t.cuit}${t.nombre ? ` (${t.nombre})` : ''}`).join(', ')}.`);
 }
 
 // ---------- padron ----------
@@ -269,7 +269,7 @@ const comprobanteTool = {
     const delTexto = parseComprobante(args.comprobante);
     const pv = delTexto ? delTexto.puntoVenta : args.punto_venta != null ? entero(args.punto_venta, 'punto_venta') : null;
     const numero = delTexto ? delTexto.numero : args.numero != null ? entero(args.numero, 'numero') : null;
-    if (!pv || !numero) throw error('Indica "comprobante" (ej. 0003-00000124) o "punto_venta" y "numero".');
+    if (!pv || !numero) throw error('Indicá "comprobante" (ej. 0003-00000124) o "punto_venta" y "numero".');
     const tipo = parseTipo(args.tipo) || (delTexto && delTexto.tipo) || null;
 
     const candidatos = tipo ? [tipo] : await tiposCandidatos(emisor, pv, numero);
@@ -295,7 +295,7 @@ const comprobanteTool = {
               importeTotal: Number(local.importe_total), moneda: (local.raw && local.raw.moneda) || 'PES', cae: local.cae,
               caeVencimiento: local.cae_vto, resultado: local.resultado, docTipo: local.doc_tipo, docNro: local.doc_nro,
             }, local, 'Registro local de Arcanum'),
-            aviso: `ARCA no respondio (${ultimoError.message}); son los datos guardados por Arcanum al emitir.`,
+            aviso: `ARCA no respondió (${ultimoError.message}); son los datos guardados por Arcanum al emitir.`,
           };
         }
       }
@@ -449,7 +449,7 @@ const riesgoTool = {
       cuit: r.cuit,
       nombre: r.nombre,
       semaforo: r.semaforo,
-      motivo: r.motivoRiesgo || (r.semaforo === 'VERDE' ? 'Clave activa, condicion de IVA determinada y no figura como apocrifo.' : null),
+      motivo: r.motivoRiesgo || (r.semaforo === 'VERDE' ? 'Clave activa, condición de IVA determinada y no figura como apócrifo.' : null),
       fiscal: {
         tipoContribuyente: r.fiscal.tipoContribuyente,
         condicionIVA: r.fiscal.condicionIVA,
@@ -740,7 +740,7 @@ const misComprobantesTool = {
       const { rows } = await db.query('SELECT DISTINCT cuit FROM mc_comprobantes ORDER BY cuit');
       let lista = rows.map((r) => r.cuit);
       if (ctx.principal.cuitAllow && ctx.principal.cuitAllow.length) lista = lista.filter((c) => ctx.principal.cuitAllow.includes(c));
-      if (lista.length !== 1) throw error(lista.length ? `Hay ${lista.length} CUITs con Mis Comprobantes; indica "cuit": ${lista.join(', ')}.` : 'Todavia no se sincronizo Mis Comprobantes para ningun CUIT.');
+      if (lista.length !== 1) throw error(lista.length ? `Hay ${lista.length} CUITs con Mis Comprobantes; indicá "cuit": ${lista.join(', ')}.` : 'Todavía no se sincronizó Mis Comprobantes para ningún CUIT.');
       cuit = lista[0];
     }
     assertCuitAllowed(ctx.principal, cuit);

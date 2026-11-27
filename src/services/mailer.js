@@ -46,10 +46,10 @@ const ASUNTOS = {
   cola_requiere_humano: 'Un comprobante de la cola necesita tu decision',
   caea_obtenido: 'CAEA obtenido',
   caea_informe_pendiente: 'CAEA: falta informar y vence el plazo',
-  caea_informe_error: 'CAEA: ARCA rechazo un informe',
+  caea_informe_error: 'CAEA: ARCA rechazó un informe',
   emitidos_por_fuera: 'Comprobantes emitidos por fuera de Arcanum',
   backup_creado: 'Backup diario creado',
-  backup_fallo: 'Fallo el backup diario',
+  backup_fallo: 'Falló el backup diario',
 };
 
 async function notify(evento, data) {
@@ -71,7 +71,7 @@ async function notify(evento, data) {
 // Envio directo a un destinatario (ej. solicitar comprobante a un profesional).
 async function send(to, subject, text) {
   const t = init();
-  if (!t) throw Object.assign(new Error('SMTP no configurado (defini ARCANUM_SMTP_HOST)'), { httpStatus: 422 });
+  if (!t) throw Object.assign(new Error('SMTP no configurado (definí ARCANUM_SMTP_HOST)'), { httpStatus: 422 });
   if (!to) throw Object.assign(new Error('Falta el destinatario'), { httpStatus: 422 });
   await t.sendMail({ from: process.env.ARCANUM_SMTP_FROM || 'arcanum@localhost', to, subject: `[Arcanum] ${subject}`, text });
   return { enviado: true, to };

@@ -23,6 +23,32 @@ function assertCuitAllowed(principal, cuit) {
   if (!c || !allow.includes(c)) throw Object.assign(new Error('No autorizado para ese CUIT'), { httpStatus: 403 });
 }
 
+/**
+ * Lista de CUITs permitidos al dar de alta una clave o un usuario (auditoria 2026-11-26, M-10).
+ * Ausente o vacia: sin limite (null). Con algun elemento que no sea un CUIT de 11 digitos: 400.
+ * Antes un CUIT mal tipeado se descartaba en silencio y la credencial quedaba con acceso a todos.
+ */
+function listaCuits(v, campo = 'cuits') {
+  if (v === undefined || v === null) return null;
+  if (!Array.isArray(v)) throw Object.assign(new Error(`"${campo}" tiene que ser una lista de CUITs`), { httpStatus: 400 });
+  const out = [];
+  for (const c of v) {
+    const n = normalizeCuit(c);
+    if (!/^\d{11}$/.test(n)) {
+      throw Object.assign(new Error(`CUIT inválido en "${campo}": ${String(c).slice(0, 20)} (tienen que ser 11 dígitos)`), { httpStatus: 400 });
+    }
+    if (!out.includes(n)) out.push(n);
+  }
+  return out.length ? out : null;
+}
+
+/** Admin y superadmin ven todos los CUITs: una lista para ellos no se aplicaria. */
+function sinCuitsParaAdmin(rol, cuits) {
+  if (cuits && ['admin', 'superadmin'].includes(rol)) {
+    throw Object.assign(new Error('El rol admin ve todos los CUITs: para limitar a algunos, usá operador o lectura'), { httpStatus: 400 });
+  }
+}
+
 function scopedRequiresCuit(principal) {
   return !['superadmin', 'admin'].includes(principal.role) && !!(principal.cuitAllow && principal.cuitAllow.length);
 }
@@ -52,4 +78,4 @@ function assertPuedeEscribir(principal, method, pathname = '') {
   throw Object.assign(new Error('Acceso de solo lectura: este usuario o clave no puede emitir ni modificar nada.'), { httpStatus: 403 });
 }
 
-module.exports = { requireRole, assertCuitAllowed, scopedRequiresCuit, assertPuedeEscribir, POST_SOLO_LECTURA, POST_SOLO_LECTURA_PREFIJOS };
+module.exports = { requireRole, assertCuitAllowed, scopedRequiresCuit, assertPuedeEscribir, listaCuits, sinCuitsParaAdmin, POST_SOLO_LECTURA, POST_SOLO_LECTURA_PREFIJOS };

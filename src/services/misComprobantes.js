@@ -11,7 +11,17 @@
 // La clave fiscal vive cifrada con el vault. Se descifra solo para armar `secretos` del pedido
 // a Fisherboy y nunca se registra, ni se devuelve por la API.
 
+const { celdaCsv } = require('../lib/csv');
 const { RECETA_DEFAULT, DOMINIOS, OK_AUTOMATICO } = require('./misComprobantes.receta');
+
+/** true si la URL es de un dominio de la receta (o no es http: about:blank, data:). */
+function enDominiosArca(url) {
+  let u;
+  try { u = new URL(String(url)); } catch { return true; }
+  if (!/^https?:$/.test(u.protocol)) return true;
+  const h = u.hostname.toLowerCase();
+  return DOMINIOS.some((d) => h === d || h.endsWith('.' + d));
+}
 const { desdeArchivo } = require('./mcParser');
 const { analizar, periodoPorDefecto, periodoAnterior } = require('./mcAnalisis');
 const { NOTAS_CREDITO, NOTAS_DEBITO } = require('./tiposCbte');
@@ -25,6 +35,9 @@ const TIMEOUT_SESION_MS = 25 * 60 * 1000;
 // mando), la sesion esta trabada: se corta con el paso donde quedo en vez de esperar los 25 min.
 const SIN_AVANCE_MS = (Number(process.env.ARCANUM_MC_SIN_AVANCE_MIN) > 0 ? Number(process.env.ARCANUM_MC_SIN_AVANCE_MIN) : 5) * 60 * 1000;
 const TRAMO_DIAS = Number(process.env.ARCANUM_MC_TRAMO_DIAS) || 365;
+// Tope del rango de una sincronizacion (B-13): cada tramo de un anio es un login con la clave
+// fiscal; desde 1990 eran 74 logins seguidos, con riesgo de captcha o bloqueo de la cuenta.
+const MAX_RANGO_DIAS = Number(process.env.ARCANUM_MC_MAX_DIAS) || 3 * 366;
 // Sincronizacion incremental: la primera trae los ultimos 12 meses completos (lo que necesitan
 // los topes de Monotributo); las siguientes arrancan en lo ultimo bajado menos un solape, porque
 // ARCA muestra algunos comprobantes dias despues de su fecha (CAEA, servicios con fecha atras).
@@ -40,13 +53,13 @@ function err(message, httpStatus) {
 
 function cuitDe(c) {
   const s = String(c || '').replace(/\D/g, '');
-  if (s.length !== 11) throw err('CUIT invalido (11 digitos)', 400);
+  if (s.length !== 11) throw err('CUIT inválido (11 dígitos)', 400);
   return s;
 }
 
 function iso(d) { return d.toISOString().slice(0, 10); }
 function dia(s) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) throw err(`Fecha invalida: ${s} (use AAAA-MM-DD)`, 400);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) throw err(`Fecha inválida: ${s} (use AAAA-MM-DD)`, 400);
   return new Date(`${s}T00:00:00Z`);
 }
 /** Fecha de hoy en Argentina (UTC-3), AAAA-MM-DD. */
@@ -54,22 +67,24 @@ function hoyAr(d) { return iso(new Date(d.getTime() - 3 * 3600000)); }
 function ddmmaaaa(s) { const [a, m, d] = s.split('-'); return `${d}/${m}/${a}`; }
 
 const CLASES = ['facturas', 'nc', 'nd'];
-const MAX_DIAS_ANALISIS = 5 * 366;
+// Tope del analisis (B-16): con el periodo anterior se leen hasta 4 anios de comprobantes.
+const MAX_DIAS_ANALISIS = 2 * 366;
+const MAX_FILAS_ANALISIS = 100000;
 
 /** Filtros extra del listado y del analisis (los del clic): validados, o error 400. */
 function filtrosExtra(o = {}) {
   const f = {};
   if (o.clase) {
-    if (!CLASES.includes(o.clase)) throw err(`Clase invalida: ${o.clase} (facturas, nc o nd)`, 400);
+    if (!CLASES.includes(o.clase)) throw err(`Clase inválida: ${o.clase} (facturas, nc o nd)`, 400);
     f.clase = o.clase;
   }
   if (o.cbte != null && o.cbte !== '') {
-    if (!/^\d{1,4}$/.test(String(o.cbte))) throw err('Tipo de comprobante invalido', 400);
+    if (!/^\d{1,4}$/.test(String(o.cbte))) throw err('Tipo de comprobante inválido', 400);
     f.cbte = Number(o.cbte);
   }
   if (o.contraparte) {
     const d = String(o.contraparte).replace(/\D/g, '');
-    if (!d || d.length > 13) throw err('Contraparte invalida (CUIT o documento)', 400);
+    if (!d || d.length > 13) throw err('Contraparte inválida (CUIT o documento)', 400);
     f.contraparte = d;
   }
   if (o.q) f.q = String(o.q).slice(0, 80);
@@ -259,7 +274,7 @@ function repoSql() {
     async paraAnalisis(cuit, desde, hasta) {
       const { rows } = await db.query(
         `SELECT tipo, fecha, cbte_tipo, doc_nro, contraparte, tipo_cambio, iva, total
-           FROM mc_comprobantes WHERE cuit = $1 AND fecha >= $2 AND fecha <= $3 LIMIT 200000`, [cuit, desde, hasta]);
+           FROM mc_comprobantes WHERE cuit = $1 AND fecha >= $2 AND fecha <= $3 LIMIT 100001`, [cuit, desde, hasta]);
       return rows;
     },
     async corridas(cuit, limite = 20) {
@@ -321,6 +336,7 @@ function loginRechazado(st) {
 // --- el servicio --------------------------------------------------------------
 function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () => new Date(), sinAvanceMs = SIN_AVANCE_MS, ia = iaPorEntorno() } = {}) {
   const lanzados = new Set();
+  const cancelados = new Map(); // id de corrida -> quien la cancelo (B-13)
 
   async function receta() {
     return (await repo.receta()) || RECETA_DEFAULT;
@@ -398,13 +414,16 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       hasta = hasta || r.hasta;
     }
     tramos(desde, hasta); // valida fechas
+    if ((dia(hasta) - dia(desde)) / 86400000 + 1 > MAX_RANGO_DIAS) {
+      throw err(`El rango es demasiado largo: máximo 3 años por sincronización (cada año es un login con la clave fiscal en ARCA).`, 400);
+    }
     const cred = await repo.credencial(c);
     if (!cred || !cred.clave_cifrada) throw err('Este CUIT no tiene clave fiscal cargada en Mis Comprobantes', 400);
     if (cred.rechazada_at) {
-      throw err(`ARCA rechazo esta clave fiscal${cred.rechazo_motivo ? ` (${cred.rechazo_motivo})` : ''}. Para no bloquear la cuenta no se reintenta: volve a cargar la clave antes de sincronizar`, 409);
+      throw err(`ARCA rechazó esta clave fiscal${cred.rechazo_motivo ? ` (${cred.rechazo_motivo})` : ''}. Para no bloquear la cuenta no se reintenta: volvé a cargar la clave antes de sincronizar`, 409);
     }
     const r = await repo.crearCorridaExclusiva({ cuit: c, tipo, desde, hasta, origen, usuario });
-    if (r.viva) throw Object.assign(err(`Ya hay una sincronizacion en curso para este CUIT (corrida ${r.viva.id})`, 409), { corrida: r.viva.id });
+    if (r.viva) throw Object.assign(err(`Ya hay una sincronización en curso para este CUIT (corrida ${r.viva.id})`, 409), { corrida: r.viva.id });
     return r.corrida;
   }
 
@@ -436,7 +455,14 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       let avance = Date.now();
       let okDado = false;
       for (;;) {
+        if (cancelados.has(id)) throw err(`Cancelada por ${cancelados.get(id)}.`, 499);
         st = await fisherboy.estado(token);
+        // Segunda barrera (P-02): Fisherboy limita los dominios al navegar, pero no revalida tras
+        // una redireccion HTTP. Si el navegador, ya con la clave fiscal adentro, quedo fuera de
+        // ARCA, se corta la sesion.
+        if (st.url && !enDominiosArca(st.url)) {
+          throw err(`El navegador quedó fuera de los dominios de ARCA (${String(st.url).slice(0, 80)}): se cortó la sesión.`, 502);
+        }
         if (['terminado', 'error', 'cerrado'].includes(st.estado)) break;
         const n = Array.isArray(st.log) ? st.log.length : 0;
         const pideOk = st.estado === 'esperando_ok';
@@ -459,7 +485,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
         // Con una persona al mando (o un OK pendiente) no hay corte: la espera es de ella, no del robot.
         if (!conPersona && Date.now() - avance > sinAvanceMs) {
           const min = Math.max(1, Math.round(sinAvanceMs / 60000));
-          const e = err(`Sin avance hace ${min} min en el paso ${progreso.paso} de ${progreso.total} (${progreso.descripcion})${progreso.error ? `: ${progreso.error}` : ''}. Se corto la sesion para no dejarla abierta.`, 504);
+          const e = err(`Sin avance hace ${min} min en el paso ${progreso.paso} de ${progreso.total} (${progreso.descripcion})${progreso.error ? `: ${progreso.error}` : ''}. Se cortó la sesión para no dejarla abierta.`, 504);
           e.logFb = (st.log || []).slice(-40);
           throw e;
         }
@@ -467,22 +493,22 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
           avisado.hecho = true;
           await webhooks.emitir('mis_comprobantes_fallo', { cuit: corrida.cuit, corrida: id, necesitaHumano: true, motivo: st.motivo_humano || 'ARCA pide a una persona' }).catch(() => {});
         }
-        if (Date.now() > fin) throw err('La sesion de Fisherboy no termino en 25 minutos', 504);
+        if (Date.now() > fin) throw err('La sesión de Fisherboy no terminó en 25 minutos', 504);
         await new Promise((res) => setTimeout(res, esperaMs));
       }
       if (st.estado !== 'terminado') {
-        const motivo = st.error || 'la sesion se cerro antes de terminar';
+        const motivo = st.error || 'la sesión se cerró antes de terminar';
         const e = err(st.alerta ? `${motivo} (ARCA dice: ${st.alerta})` : motivo, 502);
         e.logFb = (st.log || []).slice(-40);
         if (loginRechazado(st)) {
-          e.message = `ARCA rechazo el ingreso: ${e.message}. La credencial queda bloqueada hasta que la vuelvas a cargar.`;
+          e.message = `ARCA rechazó el ingreso: ${e.message}. La credencial queda bloqueada hasta que la vuelvas a cargar.`;
           await repo.marcarRechazada(corrida.cuit, st.alerta || motivo);
         }
         throw e;
       }
       const archivos = st.archivos || [];
       if (!archivos.length) {
-        const e = err('La receta termino sin descargar nada de Mis Comprobantes', 502);
+        const e = err('La receta terminó sin descargar nada de Mis Comprobantes', 502);
         e.logFb = (st.log || []).slice(-40);
         throw e;
       }
@@ -522,7 +548,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     let log = [];
     try {
       const cred = await repo.credencial(fila.cuit);
-      if (!cred || !cred.clave_cifrada) throw err('La clave fiscal se borro durante la corrida', 400);
+      if (!cred || !cred.clave_cifrada) throw err('La clave fiscal se borró durante la corrida', 400);
       const r = await receta();
       const secretos = { clave_fiscal: vault.decrypt(cred.clave_cifrada) };
       const tipos = fila.tipo === 'ambos' ? ['emitido', 'recibido'] : [TIPOS[fila.tipo]];
@@ -530,6 +556,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       const hasta = typeof fila.hasta === 'string' ? fila.hasta : iso(new Date(fila.hasta));
       for (const tipo of tipos) {
         for (const tramo of tramos(desde, hasta)) {
+          if (cancelados.has(id)) throw err(`Cancelada por ${cancelados.get(id)}.`, 499);
           const res = await correrSesion(id, fila, cred, tipo, tramo, r, secretos, avisado);
           total += res.n;
           log = log.concat(res.log.slice(-40));
@@ -543,10 +570,23 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
       if (total > 0) msg += ` Se guardaron ${total} comprobantes de los tramos que terminaron antes del error; el resto no se bajo.`;
       await repo.actualizarCorrida(id, { estado: 'error', cantidad: total, terminada_at: ahora(), log, error: msg.slice(0, 600) });
       if (e.captura && typeof repo.guardarCaptura === 'function') {
-        await repo.guardarCaptura(id, e.captura).catch((x) => console.error('[arcanum] mis comprobantes: no se guardo la pantalla de la corrida', id, x.message));
+        await repo.guardarCaptura(id, e.captura).catch((x) => console.error('[arcanum] mis comprobantes: no se guardó la pantalla de la corrida', id, x.message));
       }
       await webhooks.emitir('mis_comprobantes_fallo', { cuit: fila.cuit, corrida: id, error: String(e.message || e).slice(0, 300) }).catch(() => {});
     }
+  }
+
+  /**
+   * Cancela una corrida en curso (B-13): el seguimiento corta en el proximo sondeo, cierra la
+   * sesion de Fisherboy y la corrida queda en error con quien la cancelo. Lo ya bajado queda.
+   */
+  async function cancelar(id, usuario) {
+    const fila = await repo.corrida(Number(id));
+    if (!fila) throw err(`No existe la corrida ${id}`, 404);
+    if (!ESTADOS_VIVOS.includes(fila.estado) || cancelados.has(fila.id)) throw err('La corrida no está en curso', 409);
+    cancelados.set(fila.id, usuario || 'alguien');
+    setTimeout(() => cancelados.delete(fila.id), 30 * 60 * 1000).unref?.();
+    return { ok: true };
   }
 
   /** JPEG de la pantalla del robot cuando fallo la corrida, o null. */
@@ -558,7 +598,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
   async function responderOk(id, si) {
     const fila = await repo.corrida(Number(id));
     if (!fila) throw err(`No existe la corrida ${id}`, 404);
-    if (fila.estado !== 'esperando_ok' || !fila.token_fb) throw err('La corrida no esta esperando un OK', 409);
+    if (fila.estado !== 'esperando_ok' || !fila.token_fb) throw err('La corrida no está esperando un OK', 409);
     return si ? fisherboy.ok(fila.token_fb) : fisherboy.no(fila.token_fb);
   }
 
@@ -569,20 +609,18 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     const desde = o.desde ? iso(dia(o.desde)) : def.desde;
     const hasta = o.hasta ? iso(dia(o.hasta)) : def.hasta;
     if (desde > hasta) throw err('"desde" es posterior a "hasta"', 400);
-    if ((dia(hasta) - dia(desde)) / 86400000 > MAX_DIAS_ANALISIS) throw err('El periodo del analisis no puede pasar de 5 años', 400);
-    if (o.tipo && !['emitido', 'recibido'].includes(o.tipo)) throw err('Tipo invalido (emitido o recibido)', 400);
+    if ((dia(hasta) - dia(desde)) / 86400000 > MAX_DIAS_ANALISIS) throw err('El período del análisis no puede pasar de 2 años', 400);
+    if (o.tipo && !['emitido', 'recibido'].includes(o.tipo)) throw err('Tipo inválido (emitido o recibido)', 400);
     const ant = periodoAnterior({ desde, hasta });
     const filas = await repo.paraAnalisis(c, ant.desde, hasta);
+    if (filas.length > MAX_FILAS_ANALISIS) throw err('Hay demasiados comprobantes en ese período para analizarlos juntos: achicá el rango.', 413);
     return analizar(filas, { desde, hasta, tipo: o.tipo || undefined, ...filtrosExtra(o) });
   }
 
   async function exportarCsv(cuit, filtros) {
     const filas = await repo.listar(cuitDe(cuit), { ...filtros, ...filtrosExtra(filtros), limite: 5000 });
     const cols = ['tipo', 'fecha', 'cbte_tipo', 'punto_venta', 'numero_desde', 'numero_hasta', 'cae', 'doc_tipo', 'doc_nro', 'contraparte', 'moneda', 'tipo_cambio', 'neto_gravado', 'no_gravado', 'exento', 'iva', 'total'];
-    const esc = (v) => {
-      const s = v == null ? '' : (v instanceof Date ? iso(v) : String(v));
-      return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
+    const esc = (v) => celdaCsv(v instanceof Date ? iso(v) : v, ';'); // sin formulas (B-03)
     return [cols.join(';'), ...filas.map((f) => cols.map((k) => esc(f[k])).join(';'))].join('\n') + '\n';
   }
 
@@ -590,9 +628,9 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     receta, guardarReceta, restaurarReceta,
     estadoCredencial, guardarCredencial,
     borrarCredencial: async (cuit) => repo.borrarCredencial(cuitDe(cuit)),
-    sincronizar, seguir, lanzar, responderOk, rangoSugerido, captura,
+    sincronizar, seguir, lanzar, cancelar, responderOk, rangoSugerido, captura,
     /** Al arrancar: las corridas que seguian vivas perdieron su seguimiento (estaba en memoria). */
-    marcarHuerfanas: async () => repo.marcarHuerfanas('Arcanum se reinicio durante la corrida: volve a sincronizar'),
+    marcarHuerfanas: async () => repo.marcarHuerfanas('Arcanum se reinició durante la corrida: volvé a sincronizar'),
     corrida: async (id) => repo.corrida(Number(id)),
     listar: async (cuit, filtros = {}) => repo.listar(cuitDe(cuit), { ...filtros, ...filtrosExtra(filtros) }),
     analisis,

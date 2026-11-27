@@ -1,7 +1,7 @@
 # Changelog
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
-Versionado semantico.
+Versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
 ## [2.2.0] - 2026-11-27
 
@@ -9,8 +9,8 @@ Versionado semantico.
 - **Suite Escriba: pase entre Arcanum y Factorum.** Con las dos apps conectadas se pasa de una a
   la otra sin volver a loguearse. Contrato en `docs/suite-pase.md`.
 - **Grilla de la suite** arriba a la derecha (solo si hay alguna app conectada): tocando
-  **Factorum**, Arcanum le pide un pase con `FACTORUM_TOKEN` y entrás directo. La puede usar
-  cualquier sesión, también la de rol lectura (en Arcanum no modifica nada). Por API:
+  **Factorum**, Arcanum le pide un pase con su token de Factorum y entrás directo. La puede usar
+  cualquier sesión del panel, también la de rol lectura (en Arcanum no modifica nada). Por API:
   `GET /api/suite/apps` y `POST /api/suite/abrir/factorum`.
 - **Entrar desde Factorum**: `POST /api/suite/pase` con una clave de Arcanum que tenga **Puede
   abrir sesiones de la suite**, y `GET /suite/entrar?pase=...` abre la sesión. Quien ya tiene
@@ -23,15 +23,314 @@ Versionado semantico.
 - **URL pública de Arcanum**: `ARCANUM_PUBLIC_URL` o el menú **Suite Escriba (pase entre apps)**
   (superadmin), que también muestra los últimos pases emitidos, usados y rechazados.
 - **Usuarios con email, origen y activo.** El email identifica a la persona en la suite. Un
-  superadmin edita email, nombre y rol, y desactiva usuarios (`PATCH /api/usuarios/:usuario`): uno
-  desactivado no entra ni con contraseña ni con un pase.
+  superadmin edita email, nombre y rol, y desactiva usuarios (`PATCH /api/usuarios/:usuario`).
 
 ### Seguridad
-- El rol lectura suma una sola excepción de `POST`: `POST /api/suite/abrir/<app>`, desde una sesión
-  del navegador. `POST /api/suite/pase` no es una excepción: solo lo acepta una clave habilitada
-  para la suite (ni una sesión ni la clave maestra).
+- **El pase sigue las reglas de sesiones de 2.1.14 y 2.1.17:**
+  - `GET /suite/entrar` abre la misma sesión registrada y revocable que el login (origen `suite`),
+    con la cookie `Secure` por la misma regla (https del proxy, producción o
+    `ARCANUM_COOKIE_SECURE=1`). **Salir** la cierra en el servidor.
+  - En cada pedido se relee el usuario: desactivarlo, borrarlo o bajarle el rol se nota al
+    instante; vale lo más restrictivo entre lo que dio el pase y lo que tiene hoy en Arcanum.
+  - Desactivar a alguien cierra todas sus sesiones abiertas, también las de un pase. Un
+    desactivado no entra ni con contraseña ni con un pase.
+- **CSRF:** `POST /api/suite/abrir/<app>` pasa por el mismo control que el resto del panel.
+  `POST /api/suite/pase` solo acepta una clave habilitada para la suite (ni la cookie de sesión ni
+  la clave maestra).
+- **Alta estricta, como en 2.1.16:**
+  - Los CUITs que manda la otra app se validan como en cualquier alta: uno mal formado es un
+    `400`, nunca se descarta en silencio.
+  - Admin y superadmin no quedan con una lista de CUITs: con una, la persona entra como operador.
+  - `suite` y `suiteRolTope` de una clave, y `email` y `nombre` de un usuario, que no se entienden
+    son un `400`. El email no acepta comillas, `<` `>` ni separadores.
+  - A un usuario con CUITs no se le puede dar rol admin o superadmin desde Editar.
+- **Política de cuentas:** el usuario creado por un pase no tiene contraseña y no entra por el
+  login normal (que responde igual que con un usuario inexistente). Quien tiene pendiente cambiar
+  la contraseña inicial no puede usar un pase.
+- El token de Factorum viaja solo al destino para el que se cargó (2.1.13), también en el pedido
+  de pase y en el healthz.
 - El token del pase no va a ningún registro ni a la auditoría, y la página que lo recibe responde
-  sin caché y con `Referrer-Policy: no-referrer`. `FACTORUM_TOKEN` nunca sale al navegador.
+  sin caché y con `Referrer-Policy: no-referrer`. Los pases anónimos inválidos no dejan fila en la
+  auditoría de la suite, que se borra con la misma retención que la de pedidos.
+- El rol lectura suma una sola excepción de `POST`: `POST /api/suite/abrir/<app>`, desde una sesión
+  del navegador.
+
+## [2.1.22] - 2026-11-26
+
+### Documentación
+- El video del README muestra el logo como portada antes de reproducirse.
+- `docs/fuentes/video/web.py` arma la versión web del video (720p, menos de 10 MB).
+
+## [2.1.21] - 2026-11-26
+
+### Documentación
+- El video de presentación se reproduce directamente en el README, con sonido, sin descargarlo.
+
+## [2.1.20] - 2026-11-26
+
+### Documentación
+- **README nuevo:** qué es Arcanum, qué problema resuelve y cómo instalarlo en minutos, con
+  portada, galería de pantallas y la referencia técnica completa en secciones desplegables.
+- **Video de presentación** (`docs/media/arcanum.mp4`) con música original, y un adelanto animado
+  en el README.
+- **Dos guías en PDF:** instalación (del servidor vacío al primer CAE, con EasyPanel, homologación,
+  producción y solución de problemas) y uso (cada pantalla y cada integración).
+- **Todo se regenera con scripts** (`docs/fuentes/`): una demo con datos ficticios y sin salida a
+  internet, las capturas, la portada, las guías y el video. Nada se edita a mano.
+- `CONTRIBUTING.md` con la convención de commits y de versiones; plantillas de issues y de pull
+  requests.
+- Ortografía al día en la documentación, los comentarios de configuración, el catálogo de
+  servicios y la referencia de la API.
+
+### Cambiado
+- **Textos del panel y de la API con tildes:** unos 300 mensajes visibles que estaban sin acentos.
+- **Importes con el mismo formato en todo el panel** (`$ 180.000,00`): Facturador, Comprobantes,
+  Contingencia y Verificar factura mostraban `$180000.00`.
+- **Comprobantes:** número con punto de venta y relleno (`0004-00001258`) y el nombre del tipo
+  (Factura A, NC A) en vez del código.
+- **Servicios y Generador:** las categorías se muestran con su nombre (Facturación, Agro y remitos)
+  en vez de la clave interna.
+- Los botones de acción de las tablas (Clientes, Facturador, Contingencia, Webhooks, Claves de API)
+  quedan espaciados y en una sola línea; fechas, importes y etiquetas de estado ya no se cortan.
+- Los títulos de sección respetan las mayúsculas del español ("Nuevo usuario", no "Nuevo Usuario").
+
+### Corregido
+- `openapi.yaml`: la descripción del parámetro `q` de Factorum tenía una coma sin comillas que
+  creaba una clave falsa en el esquema.
+
+### Interno
+- Se quitó código sin uso (`renovarTokens`, `importarClave`) y se ordenaron comentarios.
+
+## [2.1.19] - 2026-11-26
+
+### Seguridad
+- **El CI no publica nada sin pasar tests, lint y `npm audit`.** Antes cada push a `main`
+  publicaba la imagen `:latest` sin correr nada. Ahora un job previo corre `npm ci`, el lint, los
+  tests y `npm audit` de las dependencias de la app, y el build solo arranca si pasan.
+- Las acciones de GitHub van fijadas por SHA (con la versión al lado), y el token del runner
+  solo tiene permiso de escritura en el job que publica.
+- **Imagen:**
+  - Las dependencias se instalan con `npm ci` (exige el lock).
+  - La imagen final no trae npm ni corepack, que la app no usa y tenían avisos de seguridad
+    propios.
+  - El código en `/app` queda de root: el usuario que ejecuta Arcanum no puede modificarlo.
+  - Solo `/data` es escribible.
+
+## [2.1.18] - 2026-11-26
+
+### Agregado
+- **Cancelar una sincronización de Mis Comprobantes** en curso, desde la lista de
+  sincronizaciones. Cierra la sesión del navegador en ARCA; lo ya bajado queda guardado.
+
+### Seguridad
+- **Mis Comprobantes:**
+  - Una sincronización abarca como máximo 3 años (`ARCANUM_MC_MAX_DIAS`). Cada año es un login
+    con la clave fiscal; desde 1990 eran 74 logins seguidos.
+  - Si el navegador de Fisherboy queda fuera de los dominios de ARCA (por ejemplo, tras una
+    redirección), se corta la sesión.
+  - Consultar una corrida ya no devuelve el token de la sesión de Fisherboy ni el log crudo.
+  - El análisis acepta hasta 2 años por vez y frena con un aviso si hay demasiados comprobantes.
+- **Tickets de WSAA cifrados en la base:** un volcado de Postgres ya no entrega tickets vigentes.
+  Los guardados en claro antes de esta versión se siguen leyendo hasta que vencen.
+- **Backups:** sin `ARCANUM_MASTER_KEY` o `ARCANUM_BACKUP_KEY` por entorno ya no se crean, porque
+  la clave quedaría en el mismo volumen que los backups. En producción, Arcanum ya no genera una
+  master key nueva en el volumen; una generada por una instalación previa se sigue usando.
+- **Webhooks:** la protección contra destinos internos ahora valida la IP real a la que se
+  conecta (también si el nombre resuelve a una IP interna), rechaza nombres sin dominio (servicios
+  de la red interna) e IPv6 mapeadas, y no sigue redirecciones.
+- **CSV exportados:** las celdas de texto que empiezan con `=`, `+`, `-` o `@` ya no se ejecutan
+  como fórmula al abrirlas en la planilla. Los números, también los negativos, no cambian.
+- **Lotes:** el email tiene que ser una sola dirección válida; nombre y período van en una línea;
+  "Solicitar" se puede mandar una vez por día por item.
+- **Factorum:**
+  - Subir un lote o verificar responde enseguida si Factorum no está configurado, sin leer
+    antes un cuerpo de hasta 80 MB.
+  - Corregir un comprobante rechaza variantes de `cliente_cuit` con otra capitalización.
+  - El panel fuerza a número el punto de venta y el número que devuelve.
+- e-Ventanilla valida las fechas antes de armar el pedido a ARCA, y el ZIP de Mis Comprobantes se
+  descomprime con tope.
+
+## [2.1.17] - 2026-11-26
+
+### Agregado
+- **Cambiar contraseña** desde el menú (usuarios locales; los de Lockatus la cambian en Lockatus).
+  Pide la actual y cierra las demás sesiones abiertas de ese usuario.
+- **Borrar usuarios** desde Usuarios (superadmin). No se puede borrar el propio ni el último
+  superadmin, y las sesiones del usuario borrado se cierran al instante.
+- **La contraseña que Arcanum genera al instalarse se cambia en el primer ingreso:** hasta
+  hacerlo no se puede usar nada más, y al cambiarla se borra el archivo donde había quedado.
+
+### Seguridad
+- Contraseñas de al menos 12 caracteres y distintas del usuario.
+- Los errores internos (500) ya no muestran el mensaje técnico: dicen "Error interno" con un
+  código para buscarlo en el log. Una cookie mal codificada de otra app del mismo dominio ya no
+  deja el panel en 500, y un login con cuerpo vacío da 400.
+- La cookie de sesión es `Secure` cuando el pedido llega por https, aunque ARCA esté en
+  homologación (antes dependía solo del entorno de ARCA).
+- `/api/health` responde solo `{ "ok": true }`, sin versión ni entorno. `/api/metrics`, para una
+  clave o un usuario limitado a algunos CUITs, muestra solo los números de esos CUITs.
+- El motor genérico (`/api/ws/...`) acepta otro `entorno` que el del sistema solo de un admin.
+- Leer una comunicación de e-Ventanilla (o sus adjuntos) la marca como leída en ARCA: ahora pide
+  rol operador o más. Listarlas sigue abierto al rol lectura.
+- Los intentos de login y los logout quedan en la auditoría con IP y usuario.
+- Una ruta que quedaba colgada sin responder ahora da 404, y el servidor tiene timeouts y tope de
+  conexiones propios (`ARCANUM_REQUEST_TIMEOUT_MS`, `ARCANUM_MAX_CONEXIONES`).
+- `.gitignore` ignora `data/` entera.
+
+## [2.1.16] - 2026-11-26
+
+### Seguridad
+- **Importar un comprobante exige que ARCA lo constate.** Antes, si la constatación no se podía
+  hacer (ARCA caído, certificado sin WSCDC), se importaba igual y quedaba como "Autorizado".
+  Ahora no se guarda y la respuesta (503) dice por qué.
+  - Un importado no genera PDF: es de un tercero y saldría con tu CUIT como emisor. En
+    Comprobantes aparece marcado como **Importado**.
+  - Si un importado ocupa el mismo punto de venta y número que una emisión propia, la emisión lo
+    reemplaza. Antes la emisión no se registraba aunque ARCA hubiera dado el CAE.
+- **Alta de claves y usuarios sin valores por defecto silenciosos.** Un CUIT mal tipeado (por
+  ejemplo, con un dígito de menos) dejaba la credencial con acceso a todos los CUITs; un rol
+  desconocido creaba un operador. Ahora los dos son un error 400 que dice qué está mal. Una clave o
+  un usuario admin no aceptan lista de CUITs, porque el rol admin ve todos.
+- **`docker-compose.yml` oficial:**
+  - Pasa al contenedor todas las variables de `.env.example`; antes `ARCANUM_SESSION_SECRET`,
+    OIDC, SMTP y el resto no llegaban.
+  - Publica Arcanum solo en `127.0.0.1` (`ARCANUM_BIND` lo cambia).
+  - Exige `POSTGRES_PASSWORD`. Si actualizás una instalación con la clave por defecto, poné
+    `POSTGRES_PASSWORD=arcanum`.
+  - El despliegue en EasyPanel por servicios no cambia.
+
+## [2.1.15] - 2026-11-26
+
+### Seguridad y disponibilidad
+- **`/metrics` ya no puede tirar el proceso.** Escribía las cabeceras antes de consultar la base:
+  un error de la base terminaba el proceso. Ahora calcula primero y, si falla, responde 503.
+  Ningún error con la respuesta ya empezada tira el gateway, y una promesa rechazada sin manejar se
+  registra en lugar de terminarlo. Las métricas se cachean 5 s y, con `ARCANUM_METRICS_TOKEN`,
+  piden ese token.
+- **El login a WSAA ya no retiene una conexión de la base mientras espera a ARCA.** Con ARCA lento,
+  10 pedidos dejaban a toda la aplicación sin base. Ahora los pedidos simultáneos del mismo ticket
+  comparten un solo login, sin transacción abierta. El diagnóstico `GET /api/wsaa/:cuit/:servicio`
+  pide rol operador y un servicio del catálogo.
+- **Login más difícil de atacar:**
+  - Tarda lo mismo exista o no el usuario: ya no sirve para averiguar qué usuarios hay.
+  - La verificación de la contraseña ya no frena al resto de los pedidos.
+  - La IP para el límite es la que agrega el proxy (`ARCANUM_PROXIES`, 1 por defecto); cambiar
+    la cabecera `X-Forwarded-For` ya no resetea el límite.
+  - Además del límite por IP hay uno por usuario (10 fallos, 15 min) y uno global.
+  - Usuario de hasta 64 caracteres y cuerpo de hasta 8 KB: el registro de intentos tiene tope
+    de memoria y no guarda el usuario en claro.
+- **MCP:** un lote JSON-RPC acepta hasta 10 mensajes y los atiende de a uno. Cada herramienta
+  descuenta del límite de la clave, deja su fila de auditoría y pasa por el detector de uso
+  anómalo con su propio CUIT. Antes un lote de N contaba como un solo pedido.
+- **Auditoría de pedidos acotada:**
+  - Los pedidos anónimos rechazados ya no dejan fila (los intentos de login sí).
+  - La ruta se trunca y el CUIT se guarda solo si son 11 dígitos.
+  - Las filas se borran a los 90 días (`ARCANUM_AUDITORIA_DIAS`).
+- Los backups ya no incluyen la tabla de sesiones.
+
+## [2.1.14] - 2026-11-26
+
+### Seguridad
+- **Cerrar sesión cierra la sesión de verdad.** Antes la cookie no tenía estado: el logout solo la
+  borraba del navegador y una copia seguía valiendo 12 horas. Ahora cada sesión queda registrada
+  en el servidor (tabla `sesiones`) y el logout la revoca. Para los usuarios locales, el rol y los
+  CUITs se releen de la base: si le cambiás el rol a alguien o lo borrás, aplica en segundos.
+  **Al actualizar, todos tienen que volver a entrar una vez.** Las claves de API no cambian.
+- **CSRF:** con sesión del panel, un pedido que escribe tiene que venir del propio Arcanum
+  (`Sec-Fetch-Site` u `Origin`) y, si trae cuerpo, declararlo JSON. Un POST `text/plain` desde
+  una app hermana del mismo dominio ya no pasa. Las integraciones con clave de API no se ven
+  afectadas.
+- **Cabeceras de seguridad en todas las respuestas:** `X-Content-Type-Options`, `X-Frame-Options`
+  (el panel no se puede enmarcar), `Referrer-Policy`, `Permissions-Policy` y HSTS detrás de https.
+  El panel sale con una CSP que impide cargar scripts de otro origen y mandar datos a otro host.
+- **Catálogo:** el enlace de documentación de un servicio solo acepta `https://`.
+- **Webhooks:** la URL se guarda normalizada (`<`, `>` y comillas quedan codificados).
+
+### Corregido
+- **`/docs` estaba en blanco.** Cargaba Redoc "latest" desde su CDN, que pasó a la versión 3 (un
+  módulo ES que no corre así). Ahora usa una versión fija (2.5.0) con verificación de integridad
+  (SRI): el CDN no puede cambiar el script que corre en este origen.
+- La versión que muestra la documentación de la API estaba congelada en 0.10.6.
+
+## [2.1.13] - 2026-11-26
+
+### Seguridad
+- **Vista en vivo de Mis Comprobantes: un operador ya no maneja el portal de ARCA.** El navegador
+  de Fisherboy ya entró con la clave fiscal, que solo carga un admin. Ahora:
+  - Admin y superadmin toman el control en cualquier momento, como antes.
+  - Un operador solo cuando ARCA pide una persona (captcha o segundo factor), nunca con el control
+    en manos de otro, y solo en el login de ARCA o en Mis Comprobantes. Fuera de ahí (el portal,
+    desde donde se llega a cualquier servicio del contribuyente) recibe 403.
+  - Cada clic o tecla queda en la auditoría con el CUIT y la página. Lo tipeado no se guarda.
+  - El botón **Tomar el control** ya no aparece para el operador; para resolver un captcha no
+    hace falta.
+- **El token de Fisherboy y el de Factorum solo viajan al servidor para el que se cargaron.**
+  Antes, cambiar solo la URL mandaba el token guardado (y, en Fisherboy, la clave fiscal de cada
+  sincronización) al host nuevo. Ahora:
+  - Cambiar a otro host exige cargar el token de nuevo (409 si no).
+  - Si la URL viene por entorno (`FISHERBOY_URL`, `FACTORUM_URL`), no se cambia desde el panel.
+  - El token del entorno solo se usa con la URL del entorno y no se copia a la base.
+  - La URL no puede ser metadata de la nube, link-local ni llevar usuario y clave; fuera de la red
+    interna tiene que ser https.
+  - Hay un botón **Borrar token**, y cada cambio avisa por el webhook nuevo `conexion_cambiada`.
+- **Catálogo de servicios: solo endpoints de ARCA y solo el superadmin.** El sobre SOAP lleva el
+  Ticket de Acceso de WSAA del CUIT. Ahora:
+  - Los endpoints tienen que ser https de `afip.gov.ar`, `afip.gob.ar` o `arca.gob.ar`. Se valida
+    al guardar, antes de cada llamada y al leer el WSDL. Si hubiera uno de antes fuera de ARCA, no
+    se usa y el log lo avisa al arrancar.
+  - Lo edita solo un superadmin con sesión: ni el rol admin ni las claves de API (tampoco la
+    maestra). Queda registrado quién hizo cada cambio y avisa por el webhook nuevo
+    `catalogo_cambiado`.
+  - Para pruebas con stubs locales existe `ARCANUM_CATALOGO_ENDPOINTS_LIBRES=1`. Nunca en un
+    despliegue real.
+
+## [2.1.12] - 2026-11-26
+
+### Seguridad
+- **El panel escapa todo lo que muestra.** Algunas vistas pintaban sin escapar datos que escribe un
+  usuario de menor rol o que vienen de afuera: el nombre de un lote o de un cliente, el CAE de un
+  comprobante importado por QR, la URL de un webhook, mensajes de error, entre otros. Un operador
+  podía guardar ahí código que se ejecutaba con la sesión del admin que abría la vista. Se revisaron
+  todas las vistas: el escape ahora cubre también comillas y `>`, y los botones que pasan un texto a
+  una función (dar de baja una clave, ver el CSR, editar un servicio) lo pasan como literal seguro.
+- **Validación en el servidor, como segunda barrera:**
+  - Nombre de cliente: se rechazan `<`, `>` y caracteres de control (422). Acentos, ñ, comillas,
+    `&`, puntos y paréntesis siguen valiendo.
+  - Importar comprobante (QR o a mano): CUIT de 11 dígitos, CAE de 14, fecha, documento, números e
+    importe con formato estricto (422). El mensaje de error ya no repite el valor recibido.
+  - Lotes, marcar recibido: CAE y número solo dígitos.
+
+## [2.1.11] - 2026-11-26
+
+### Seguridad
+- **El secreto de las sesiones del panel ya no sale de otras claves.** Antes, sin
+  `ARCANUM_SESSION_SECRET`, las cookies se firmaban con la master key, con la clave de API o, sin
+  ninguna de las dos, con un texto fijo que está en el código público: con eso cualquiera podía
+  armarse una sesión de superadmin. Ahora se usa `ARCANUM_SESSION_SECRET`; si falta, Arcanum genera
+  uno aleatorio y lo guarda en el volumen (`/data/session-secret`, permisos 0600), así sobrevive a
+  los reinicios. Al actualizar, quien tenga el panel abierto tiene que volver a entrar.
+  Las integraciones que usan clave de API no se enteran: no usan la cookie.
+- **La clave de idempotencia vale por CUIT y entorno.** Antes era global: quien pudiera emitir o
+  pedir la vista previa para un CUIT recibía el comprobante de otro CUIT si mandaba su misma clave.
+  Ahora la clave de otro CUIT es como si no existiera, en la emisión (WSFEv1, WSFEX, WSMTXCA), la
+  vista previa, la cola de contingencia y las emisiones en vuelo. Migración automática al arrancar:
+  los índices únicos pasan a (cuit, entorno, clave); los datos existentes no cambian.
+
+### Cambiado
+- **Confirmaciones con el diálogo de Arcanum** en lugar del cuadro del navegador: guardar la master
+  key, borrar la clave fiscal, restaurar la receta, cancelar o reemitir en contingencia, emitir un
+  lote, dar de baja una clave de API y cambiar el entorno. Cada uno dice qué pasa si seguís, las
+  acciones que borran van en rojo con el foco en Cancelar, y Escape o un clic afuera cancelan.
+
+## [2.1.10] - 2026-11-26
+
+### Agregado
+- **Mis Comprobantes también se pliega por bloques**, igual que Análisis: Credencial de ARCA,
+  Sincronizar, Navegador en vivo, Monotributo, Sincronizaciones y Comprobantes.
+  - Se pliega tocando el título, y hay botones para plegar y desplegar todo.
+  - Arcanum recuerda qué bloques dejaste plegados, en este navegador.
+  - Una tarjeta plegada ocupa solo su título, aunque esté en una fila con otra.
+- En Análisis también se pliega el listado de Comprobantes.
 
 ## [2.1.9] - 2026-11-26
 

@@ -89,14 +89,14 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
       // 1. Ventana de fecha: nunca re-fechar solo. (Si hubo un intento ambiguo, primero se deja
       //    que la emision resuelva ese vuelo: puede que el CAE ya exista con la fecha original.)
       if (!item.numero_intentado && fueraDeVentana(cuerpo.fecha, item.concepto, ahora())) {
-        const msg = `ARCA ya no acepta la fecha ${cuerpo.fecha} (${Number(item.concepto) === 1 ? '5' : '10'} dias como maximo). Decidi: emitir con fecha de hoy o cancelar.`;
+        const msg = `ARCA ya no acepta la fecha ${cuerpo.fecha} (${Number(item.concepto) === 1 ? '5' : '10'} días como máximo). Decidí: emitir con fecha de hoy o cancelar.`;
         return terminar(item, { estado: 'requiere_humano', ultimo_error: msg }, 'cola_requiere_humano', { id: item.id, cuit, motivo: msg });
       }
       // 2. Emitir. La emision resuelve primero cualquier intento anterior con esta clave
       //    (services/vuelo.js): si ARCA ya lo otorgo, lo adopta en vez de sacar otro CAE.
       const out = await wsfev1.authorizeInvoice(cuit, cuerpo);
       if (!out.aprobado && item.numero_intentado) {
-        const msg = 'ARCA rechazo el reintento de un comprobante cuyo primer intento quedo en duda: revisa en ARCA si ya tiene CAE antes de volver a emitirlo.';
+        const msg = 'ARCA rechazó el reintento de un comprobante cuyo primer intento quedó en duda: revisá en ARCA si ya tiene CAE antes de volver a emitirlo.';
         return terminar(item, { estado: 'requiere_humano', resultado: out, ultimo_error: msg }, 'cola_requiere_humano', { id: item.id, cuit, motivo: msg });
       }
       return terminar(item, { estado: out.aprobado ? 'emitido' : 'rechazado', resultado: out, ultimo_error: null }, null);
@@ -105,7 +105,7 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
         // 3. ARCA sigue sin responder: CAEA, si el CUIT lo prendio y ya se espero lo suficiente.
         //    NUNCA si hubo un intento ambiguo con CAE (o una emision en vuelo sin resolver): ese
         //    CAE pudo haberse otorgado y saldrian dos comprobantes para la misma venta.
-        const enVuelo = wsfev1.hayVuelo ? await wsfev1.hayVuelo(item.idempotency_key).catch(() => true) : false;
+        const enVuelo = wsfev1.hayVuelo ? await wsfev1.hayVuelo(cuit, item.idempotency_key).catch(() => true) : false;
         const ambiguo = !!(e.numeroIntentado || item.numero_intentado || enVuelo);
         if (caea && !ambiguo && (await caea.corresponde(item, ahora()))) {
           const out = await caea.emitirConCaea(cuit, item);
@@ -138,7 +138,7 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
   async function reintentar(id, { fechaHoy = false } = {}) {
     const item = await repo.obtener(id);
     if (!item) throw err('No existe ese item de la cola', 404);
-    if (!['pendiente', 'requiere_humano'].includes(item.estado)) throw err(`El item esta ${item.estado}: no se puede reintentar`, 409);
+    if (!['pendiente', 'requiere_humano'].includes(item.estado)) throw err(`El item está ${item.estado}: no se puede reintentar`, 409);
     const campos = { estado: 'pendiente', proximo_intento_at: ahora(), actualizado_at: ahora() };
     if (fechaHoy) {
       const hoy = ymdAr(ahora());
@@ -146,23 +146,23 @@ function crear({ repo, wsfev1, webhooks, ahora = () => new Date(), caea = null }
       campos.fecha = hoy;
     }
     // Condicional: si el daemon lo tomo entre la lectura y aca, no se pisa (seria procesarlo dos veces).
-    if (!(await repo.reabrir(id, campos))) throw err('El item cambio de estado mientras tanto (lo esta procesando la cola): volve a mirarlo', 409);
+    if (!(await repo.reabrir(id, campos))) throw err('El item cambió de estado mientras tanto (lo está procesando la cola): volvé a mirarlo', 409);
     return procesar(id);
   }
 
   async function cancelar(id) {
     const item = await repo.obtener(id);
     if (!item) throw err('No existe ese item de la cola', 404);
-    if (!['pendiente', 'requiere_humano'].includes(item.estado)) throw err(`El item esta ${item.estado}: no se puede cancelar`, 409);
+    if (!['pendiente', 'requiere_humano'].includes(item.estado)) throw err(`El item está ${item.estado}: no se puede cancelar`, 409);
     const fin = await repo.reabrir(id, { estado: 'cancelado', actualizado_at: ahora() });
-    if (!fin) throw err('El item cambio de estado mientras tanto (lo esta procesando la cola): volve a mirarlo', 409);
+    if (!fin) throw err('El item cambió de estado mientras tanto (lo está procesando la cola): volvé a mirarlo', 409);
     return fin;
   }
 
   return {
     encolar, procesar, procesarPendientes, reintentar, cancelar,
     obtener: (id) => repo.obtener(id),
-    porClave: (k) => (repo.porClave ? repo.porClave(k) : null),
+    porClave: (cuit, k) => (repo.porClave ? repo.porClave(cuit, k) : null),
     listar: (f) => repo.listar(f || {}),
     reencolarProcesando: () => repo.reencolarProcesando(),
   };
@@ -178,7 +178,7 @@ function repoSql() {
       const { rows } = await db.query(
         `INSERT INTO emision_cola (cuit, entorno, idempotency_key, cuerpo, fecha, concepto, estado, numero_intentado, proximo_intento_at, creado_por, origen)
          VALUES ($1,$2,$3,$4,to_date($5,'YYYYMMDD'),$6,'pendiente',$7,$8,$9,$10)
-         ON CONFLICT (idempotency_key) DO UPDATE SET
+         ON CONFLICT (cuit, entorno, idempotency_key) DO UPDATE SET
            numero_intentado = COALESCE(EXCLUDED.numero_intentado, emision_cola.numero_intentado)
          RETURNING *, (xmax = 0) AS insertado`,
         [it.cuit, config.env, it.idempotency_key, json(it.cuerpo), it.fecha, it.concepto, it.numero_intentado, it.proximo_intento_at, it.creado_por, it.origen]);
@@ -194,8 +194,9 @@ function repoSql() {
         `UPDATE emision_cola SET ${set} WHERE id = $1 AND estado IN ('pendiente', 'requiere_humano') RETURNING *`, [id, ...vals]);
       return rows[0] || null;
     },
-    async porClave(k) {
-      const { rows } = await db.query('SELECT * FROM emision_cola WHERE idempotency_key = $1', [k]);
+    async porClave(cuit, k) {
+      const { rows } = await db.query(
+        'SELECT * FROM emision_cola WHERE cuit = $1 AND entorno = $2 AND idempotency_key = $3', [cuit, config.env, k]);
       return rows[0] || null;
     },
     async obtener(id) {

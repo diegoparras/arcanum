@@ -14,7 +14,6 @@
 
 const crypto = require('crypto');
 const db = require('../db');
-const { normalizeCuit } = require('./tenants');
 
 const ROLES = ['lectura', 'operador', 'admin'];
 const PREFIJO = 'ark_';
@@ -44,24 +43,18 @@ function extraerClave(headers = {}) {
   return m ? m[1] : '';
 }
 
-function normCuits(lista) {
-  if (!Array.isArray(lista)) return null;
-  const out = lista.map((c) => normalizeCuit(c)).filter((c) => /^\d{11}$/.test(c));
-  return out.length ? [...new Set(out)] : null;
-}
-
 /** Dias hasta el vencimiento (entero, null = no vence, 0 o 1-n para dias corridos). */
 function normDias(v, campo, max) {
   if (v === undefined || v === null || v === '') return null;
   const n = parseInt(v, 10);
-  if (!Number.isFinite(n) || n < 1 || n > max) throw err(`"${campo}" debe ser un numero de 1 a ${max}`, 400);
+  if (!Number.isFinite(n) || n < 1 || n > max) throw err(`"${campo}" debe ser un número de 1 a ${max}`, 400);
   return n;
 }
 
 function normLimite(v) {
   if (v === undefined || v === null || v === '') return null;
   const n = parseInt(v, 10);
-  if (!Number.isFinite(n) || n < 1 || n > 100000) throw err('"limitePorMinuto" debe ser un numero de 1 a 100000', 400);
+  if (!Number.isFinite(n) || n < 1 || n > 100000) throw err('"limitePorMinuto" debe ser un número de 1 a 100000', 400);
   return n;
 }
 
@@ -70,8 +63,11 @@ function normLimite(v) {
  * superadmin: en Arcanum esos roles ven todos los CUITs y la lista de la clave no se cumpliria.
  */
 function normSuite({ suite, suiteRolTope } = {}, cuits = null) {
-  const tope = suiteRolTope === undefined || suiteRolTope === null || suiteRolTope === '' ? ROL_TOPE_DEFAULT : String(suiteRolTope);
-  if (!ROLES_TOPE.includes(tope)) throw err(`Rol tope invalido: usa ${ROLES_TOPE.join(', ')}`, 400);
+  // Igual que el rol y los CUITs (M-10): un valor que no se entiende es un 400, nunca un
+  // valor por defecto en silencio. Ausente: sin suite y tope operador.
+  if (suite !== undefined && suite !== null && typeof suite !== 'boolean') throw err('"suite" tiene que ser true o false', 400);
+  const tope = suiteRolTope === undefined || suiteRolTope === null || suiteRolTope === '' ? ROL_TOPE_DEFAULT : suiteRolTope;
+  if (typeof tope !== 'string' || !ROLES_TOPE.includes(tope)) throw err(`Rol tope inválido: usá ${ROLES_TOPE.join(', ')}`, 400);
   if (cuits && cuits.length && ['admin', 'superadmin'].includes(tope)) {
     throw err('Una clave con CUITs permitidos no puede tener rol tope admin ni superadmin: esos roles ven todos los CUITs', 400);
   }
@@ -128,17 +124,19 @@ function nuevaClave() {
 async function crear({ nombre, rol, cuits, venceDias, limitePorMinuto, suite, suiteRolTope } = {}, creadaPor = null) {
   const n = String(nombre || '').trim().slice(0, 80);
   if (!n) throw err('Falta el nombre de la clave (ej. "SecretarIA")', 400);
-  if (!ROLES.includes(rol)) throw err(`Rol invalido: usa ${ROLES.join(', ')}`, 400);
+  if (!ROLES.includes(rol)) throw err(`Rol inválido: usá ${ROLES.join(', ')}`, 400);
+  const { listaCuits, sinCuitsParaAdmin } = require('./permisos');
+  const listaCuit = listaCuits(cuits, 'cuits');
+  sinCuitsParaAdmin(rol, listaCuit);
   const dias = normDias(venceDias, 'venceDias', MAX_VENCE_DIAS);
   const limite = normLimite(limitePorMinuto);
-  const allow = normCuits(cuits);
-  const s = normSuite({ suite, suiteRolTope }, allow);
+  const s = normSuite({ suite, suiteRolTope }, listaCuit);
   const clave = nuevaClave();
   const { rows } = await db.query(
     `INSERT INTO api_keys (nombre, key_hash, role, prefix, cuit_allow, created_by, expires_at, rate_limit, suite, suite_rol_tope)
      VALUES ($1,$2,$3,$4,$5,$6, CASE WHEN $7::int IS NULL THEN NULL ELSE now() + make_interval(days => $7::int) END, $8, $9, $10)
      RETURNING ${COLS}`,
-    [n, hash(clave), rol, clave.slice(0, 10), allow, creadaPor, dias, limite, s.suite, s.tope],
+    [n, hash(clave), rol, clave.slice(0, 10), listaCuit, creadaPor, dias, limite, s.suite, s.tope],
   );
   return { ...fmt(rows[0]), clave };
 }
@@ -170,7 +168,7 @@ async function rotar(id, { graciaDias } = {}, creadaPor = null) {
   const gracia = graciaDias === undefined || graciaDias === null || graciaDias === ''
     ? GRACIA_DEFAULT
     : parseInt(graciaDias, 10);
-  if (!Number.isFinite(gracia) || gracia < 0 || gracia > 90) throw err('"graciaDias" debe ser un numero de 0 a 90', 400);
+  if (!Number.isFinite(gracia) || gracia < 0 || gracia > 90) throw err('"graciaDias" debe ser un número de 0 a 90', 400);
   return db.tx(async (client) => {
     const { rows: viejas } = await client.query(
       `SELECT ${COLS} FROM api_keys WHERE id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now()) FOR UPDATE`,

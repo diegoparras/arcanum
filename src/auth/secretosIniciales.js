@@ -42,19 +42,19 @@ function resolverApiKey({ apiKey, dataDir, log = console.log }) {
   const ruta = path.join(dataDir, ARCHIVO_API_KEY);
   const previa = leerSecreto(dataDir, ARCHIVO_API_KEY);
   if (previa) {
-    log(`[arcanum] Sin ARCANUM_API_KEY: se usa la clave de API generada que esta en ${ruta}`);
+    log(`[arcanum] Sin ARCANUM_API_KEY: se usa la clave de API generada que está en ${ruta}`);
     return { clave: previa, ruta };
   }
   const clave = crypto.randomBytes(24).toString('hex');
   try {
     guardarSecreto(dataDir, ARCHIVO_API_KEY, clave);
-    log('[arcanum] No se definio ARCANUM_API_KEY: se genero una clave de API (no se muestra en el log).');
+    log('[arcanum] No se definió ARCANUM_API_KEY: se generó una clave de API (no se muestra en el log).');
     log(`[arcanum]   Leela desde la consola del servicio: cat ${ruta}`);
-    log('[arcanum]   Va en el header X-API-Key. Para fijarla, defini ARCANUM_API_KEY.');
+    log('[arcanum]   Va en el header X-API-Key. Para fijarla, definí ARCANUM_API_KEY.');
     return { clave, ruta };
   } catch (e) {
-    log(`[arcanum] No se definio ARCANUM_API_KEY y no se pudo guardar una generada (${e.message}).`);
-    log('[arcanum]   La clave maestra queda inutilizable: defini ARCANUM_API_KEY o crea claves desde la interfaz.');
+    log(`[arcanum] No se definió ARCANUM_API_KEY y no se pudo guardar una generada (${e.message}).`);
+    log('[arcanum]   La clave maestra queda inutilizable: definí ARCANUM_API_KEY o creá claves desde la interfaz.');
     return { clave, ruta: null };
   }
 }

@@ -75,7 +75,7 @@ test('mcp factorum: sin configurar, cada herramienta devuelve un error claro', a
   for (const [name, args] of [['facturas_recibidas', {}], ['factura_recibida', { id: 5 }], ['resumen_facturas_recibidas', {}], ['verificar_factura', { nombre: 'f.pdf', contenido_base64: 'JVBERi0=' }]]) {
     const { r, datos } = await llamar(s, LECTURA, name, args);
     assert.strictEqual(r.isError, true, name);
-    assert.match(datos.error, /Factorum no esta configurado/, name);
+    assert.match(datos.error, /Factorum no está configurado/, name);
   }
 });
 

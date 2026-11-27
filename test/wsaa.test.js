@@ -49,7 +49,7 @@ test('signTRA produce un CMS base64 que vuelve a parsear con el contenido dentro
 
 test('signTRA rechaza una clave invalida con mensaje claro', () => {
   const { certPem } = makeSelfSigned();
-  assert.throws(() => signTRA('<x/>', certPem, 'no-soy-una-clave'), /Clave privada invalida/);
+  assert.throws(() => signTRA('<x/>', certPem, 'no-soy-una-clave'), /Clave privada inválida/);
 });
 
 test('inspectCert lee vigencia y subject', () => {

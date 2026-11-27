@@ -29,7 +29,7 @@ test('ida y vuelta conserva tablas y filas', () => {
   assert.ok(!buf.toString('latin1').includes('v1:abc'), 'el contenido va cifrado');
 });
 
-test('otra clave da 422', () => {
+test('desempaquetar con otra clave da 422 (no se puede descifrar)', () => {
   const buf = backup.empaquetar(TABLAS, {}, K1);
   assert.throws(() => backup.desempaquetar(buf, K2), (e) => e.httpStatus === 422 && /descifrar/.test(e.message));
 });
@@ -58,7 +58,7 @@ test('ruta rechaza nombres raros y ../', () => {
   assert.strictEqual(backup.ruta('/data/backups', 'arcanum-20261120-0300.arcbak'), path.join('/data/backups', 'arcanum-20261120-0300.arcbak'));
 });
 
-test('huella estable y corta', () => {
+test('la huella de la clave es estable, de 8 hex y distinta por clave', () => {
   assert.strictEqual(backup.huella(K1), backup.huella(Buffer.from(K1)));
   assert.match(backup.huella(K1), /^[0-9a-f]{8}$/);
   assert.notStrictEqual(backup.huella(K1), backup.huella(K2));

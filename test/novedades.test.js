@@ -68,13 +68,13 @@ test('cartel de arranque: primero la version, despues que cambia, cortado al anc
   assert.ok(l.every((x) => x.length <= 60), 'ningun renglon pasa el ancho');
   assert.match(l[0], /^=+$/);
   assert.strictEqual(l[1], 'ARCANUM v0.3.0  (2026-11-21)');
-  assert.strictEqual(l[2], 'Que cambia en esta version:');
+  assert.strictEqual(l[2], 'Qué cambia en esta versión:');
   assert.strictEqual(l[3], '- Nuevo: Novedades en la UI: se ven al entrar despues de una');
   assert.match(l[4], /^ {4}actualizacion/, 'la continuacion queda sangrada');
   assert.match(l[l.length - 1], /^=+$/);
   const sin = nov.cartelArranque('9.9.9', v, 60);
   assert.strictEqual(sin[1], 'ARCANUM v9.9.9');
-  assert.strictEqual(sin[2], 'Sin notas para esta version en el CHANGELOG.');
+  assert.strictEqual(sin[2], 'Sin notas para esta versión en el CHANGELOG.');
 });
 
 test('el CHANGELOG real tiene la seccion de la version de package.json (cada deploy dice que cambia)', () => {

@@ -69,7 +69,7 @@ function revisarComprobante(inv = {}, o = {}) {
   const hoy = ymd(o.hoy || new Date());
 
   const pv = parseInt(inv.puntoVenta, 10);
-  if (!(pv >= 1 && pv <= 99998)) problemas.push('"puntoVenta" debe ser un numero de 1 a 99998.');
+  if (!(pv >= 1 && pv <= 99998)) problemas.push('"puntoVenta" debe ser un número de 1 a 99998.');
   const tipo = parseInt(inv.tipoComprobante, 10);
   const letra = LETRA[tipo] || null;
   if (!letra) problemas.push(`"tipoComprobante" ${inv.tipoComprobante ?? '(vacio)'} no es un comprobante de WSFEv1 conocido (1 = Factura A, 6 = Factura B, 11 = Factura C...).`);
@@ -93,14 +93,14 @@ function revisarComprobante(inv = {}, o = {}) {
     problemas.push(`Los comprobantes ${letra} con neto gravado necesitan "alicuotasIva" (ej. [{ "id": 5, "baseImponible": 100, "importe": 21 }] para 21%).`);
   }
   if (NOTAS.has(tipo) && !(Array.isArray(inv.comprobantesAsociados) && inv.comprobantesAsociados.length)) {
-    problemas.push('Las notas de credito y debito necesitan "comprobantesAsociados" (el comprobante que corrigen).');
+    problemas.push('Las notas de crédito y débito necesitan "comprobantesAsociados" (el comprobante que corrigen).');
   }
 
   // Receptor
   const docTipo = parseInt(inv.tipoDocReceptor ?? 99, 10);
   const docNro = normalizeCuit(inv.nroDocReceptor ?? 0) || '0';
   if (!DOC_TIPOS[docTipo]) advertencias.push(`"tipoDocReceptor" ${docTipo} no es de los habituales (80 CUIT, 86 CUIL, 96 DNI, 99 consumidor final).`);
-  if (docTipo === 80 && !cuitValido(docNro)) problemas.push(`El CUIT del receptor (${docNro}) no es valido (digito verificador).`);
+  if (docTipo === 80 && !cuitValido(docNro)) problemas.push(`El CUIT del receptor (${docNro}) no es válido (dígito verificador).`);
   if (letra === 'A' && docTipo !== 80) problemas.push('Una Factura A necesita al receptor identificado por CUIT ("tipoDocReceptor": 80).');
   try {
     wsfev1.validarIdentificacionConsumidorFinal(inv, tipo);
@@ -111,7 +111,7 @@ function revisarComprobante(inv = {}, o = {}) {
   if (condRec == null) {
     problemas.push('Falta "condicionIvaReceptor" (obligatoria en WSFEv1, RG 5616): 1 = Responsable Inscripto, 5 = Consumidor Final, 6 = Monotributo, 4 = Exento.');
   } else if (!reglas.condicionIvaLabel(condRec)) {
-    problemas.push(`"condicionIvaReceptor" ${condRec} no esta en la tabla de ARCA.`);
+    problemas.push(`"condicionIvaReceptor" ${condRec} no está en la tabla de ARCA.`);
   }
   if (letra === 'A' && condRec != null && ![1, 6, 13, 16].includes(condRec)) {
     advertencias.push(`Factura A a un receptor "${reglas.condicionIvaLabel(condRec) || condRec}": lo habitual es B.`);
@@ -129,13 +129,13 @@ function revisarComprobante(inv = {}, o = {}) {
   const margen = concepto === 1 ? 5 : 10;
   const delta = diasEntre(fecha, hoy);
   if (Math.abs(delta) > margen) {
-    problemas.push(`La fecha ${iso(fecha)} esta a ${Math.abs(delta)} dias de hoy: ARCA acepta hasta ${margen} dias ${delta < 0 ? 'para atras' : 'para adelante'} para este concepto.`);
+    problemas.push(`La fecha ${iso(fecha)} está a ${Math.abs(delta)} días de hoy: ARCA acepta hasta ${margen} días ${delta < 0 ? 'para atrás' : 'para adelante'} para este concepto.`);
   }
   if (concepto !== 1 && !(inv.fechaServicioDesde && inv.fechaServicioHasta && inv.fechaVtoPago)) {
     advertencias.push('Servicios sin "fechaServicioDesde", "fechaServicioHasta" o "fechaVtoPago": se usara la fecha del comprobante.');
   }
   if (!inv.idempotencyKey) {
-    advertencias.push('Sin "idempotencyKey": si al emitir se corta la conexion y se reintenta, podria salir duplicado. Usa la que propone "cuerpoParaEmitir".');
+    advertencias.push('Sin "idempotencyKey": si al emitir se corta la conexión y se reintenta, podría salir duplicado. Usá la que propone "cuerpoParaEmitir".');
   }
 
   return {
@@ -165,12 +165,12 @@ function revisarComprobante(inv = {}, o = {}) {
  */
 async function vistaPrevia(cuit, inv) {
   const emisor = normalizeCuit(cuit);
-  const previo = await wsfev1.previoIdempotente(inv.idempotencyKey || null);
+  const previo = await wsfev1.previoIdempotente(emisor, inv.idempotencyKey || null);
   if (previo) {
     return {
       valido: false,
       yaEmitido: true,
-      problemas: ['Ya se emitio un comprobante con esta "idempotencyKey": emitir de nuevo devuelve ese mismo comprobante, no uno nuevo.'],
+      problemas: ['Ya se emitió un comprobante con esta "idempotencyKey": emitir de nuevo devuelve ese mismo comprobante, no uno nuevo.'],
       advertencias: [],
       comprobanteExistente: previo,
       entorno: config.env,
@@ -207,18 +207,18 @@ async function vistaPrevia(cuit, inv) {
       if (a.estadoClave && a.estadoClave !== 'ACTIVO') r.advertencias.push(`El CUIT del receptor figura con clave fiscal ${a.estadoClave}.`);
       const idPadron = receptorPadron.condicionIvaReceptorId;
       if (idPadron && datos.receptor.condicionIvaId == null) {
-        r.problemas.push(`Falta "condicionIvaReceptor": segun el padron corresponde ${idPadron} (${reglas.condicionIvaLabel(idPadron)}).`);
+        r.problemas.push(`Falta "condicionIvaReceptor": según el padrón corresponde ${idPadron} (${reglas.condicionIvaLabel(idPadron)}).`);
       } else if (idPadron && datos.receptor.condicionIvaId !== idPadron) {
-        r.advertencias.push(`"condicionIvaReceptor" es ${datos.receptor.condicionIvaId} pero el padron dice ${idPadron} (${reglas.condicionIvaLabel(idPadron)}).`);
+        r.advertencias.push(`"condicionIvaReceptor" es ${datos.receptor.condicionIvaId} pero el padrón dice ${idPadron} (${reglas.condicionIvaLabel(idPadron)}).`);
       }
     } catch (e) {
-      r.advertencias.push(`No se pudo consultar el padron del receptor: ${e.message.slice(0, 200)}`);
+      r.advertencias.push(`No se pudo consultar el padrón del receptor: ${e.message.slice(0, 200)}`);
     }
   }
   const condRec = datos.receptor.condicionIvaId ?? (receptorPadron && receptorPadron.condicionIvaReceptorId);
   const sugerencia = reglas.sugerirComprobante({ emisorCondicion, receptorCondicionId: condRec });
   if (sugerencia.letra && datos.letra && sugerencia.letra !== datos.letra && datos.letra !== 'M') {
-    r.advertencias.push(`Por la condicion del emisor y del receptor corresponderia comprobante ${sugerencia.letra}, no ${datos.letra}. ${sugerencia.motivo}`);
+    r.advertencias.push(`Por la condición del emisor y del receptor correspondería comprobante ${sugerencia.letra}, no ${datos.letra}. ${sugerencia.motivo}`);
   }
 
   // Proximo numero (no se reserva: si se emite otro antes, cambia).
@@ -228,7 +228,7 @@ async function vistaPrevia(cuit, inv) {
       const u = await wsfev1.lastAuthorized(emisor, datos.puntoVenta, datos.tipo);
       numero = Number(u.ultimoNumero) + 1;
     } catch (e) {
-      r.advertencias.push(`No se pudo consultar el ultimo numero en ARCA: ${e.message.slice(0, 200)}`);
+      r.advertencias.push(`No se pudo consultar el último número en ARCA: ${e.message.slice(0, 200)}`);
     }
   }
   if (inv.numero && numero && parseInt(inv.numero, 10) !== numero) {
@@ -251,7 +251,7 @@ async function vistaPrevia(cuit, inv) {
     emisor,
     comprobante: datos.tipoNombre && numero ? `${datos.tipoNombre} ${String(datos.puntoVenta).padStart(4, '0')}-${String(numero).padStart(8, '0')}` : null,
     numeroPropuesto: numero,
-    numeroNota: 'El numero no se reserva: si se emite otro comprobante antes, sera el siguiente.',
+    numeroNota: 'El número no se reserva: si se emite otro comprobante antes, será el siguiente.',
     ...datos,
     receptor: { ...datos.receptor, ...(receptorPadron ? { padron: receptorPadron } : {}) },
     letraSugerida: sugerencia.letra,

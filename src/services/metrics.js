@@ -6,8 +6,15 @@ const db = require('./../db');
 const { config } = require('../config');
 const catalog = require('../catalog');
 
-async function resumen() {
+/**
+ * @param {{cuits?: string[]|null}} [o]  con `cuits`, los numeros de comprobantes, tickets,
+ *   certificados y peticiones son solo de esos CUITs (identidades con alcance, B-08).
+ */
+async function resumen({ cuits = null } = {}) {
   const env = config.env;
+  const filtro = Array.isArray(cuits) && cuits.length;
+  const yCuit = (col, n) => (filtro ? ` AND ${col} = ANY($${n}::text[])` : '');
+  const conCuits = (params) => (filtro ? [...params, cuits] : params);
   const [estado, uptime, emisiones, serie, tokens, certs, reqs] = await Promise.all([
     // Estado actual de cada servicio (ultimo chequeo).
     db.query(
@@ -26,8 +33,8 @@ async function resumen() {
       `SELECT count(*) FILTER (WHERE created_at::date = now()::date) AS hoy,
               count(*) AS total,
               coalesce(sum(importe_total) FILTER (WHERE created_at::date = now()::date),0) AS monto_hoy
-       FROM comprobantes WHERE entorno = $1`,
-      [env],
+       FROM comprobantes WHERE entorno = $1${yCuit('cuit', 2)}`,
+      conCuits([env]),
     ),
     // Serie de emisiones de los ultimos 14 dias (hoy incluido), con TODOS los dias: los que no
     // tuvieron emisiones van en 0. Sin esto el grafico recibia solo los dias con datos y un unico
@@ -35,21 +42,22 @@ async function resumen() {
     db.query(
       `SELECT to_char(d.dia, 'YYYY-MM-DD') AS dia, count(c.id) AS n
        FROM generate_series(current_date - 13, current_date, interval '1 day') AS d(dia)
-       LEFT JOIN comprobantes c ON c.entorno = $1 AND c.created_at::date = d.dia::date
+       LEFT JOIN comprobantes c ON c.entorno = $1 AND c.created_at::date = d.dia::date${yCuit('c.cuit', 2)}
        GROUP BY d.dia ORDER BY d.dia`,
-      [env],
+      conCuits([env]),
     ),
-    db.query(`SELECT count(*) AS n FROM access_tickets WHERE entorno = $1 AND expiration_time > now()`, [env]),
+    db.query(`SELECT count(*) AS n FROM access_tickets WHERE entorno = $1 AND expiration_time > now()${yCuit('cuit', 2)}`, conCuits([env])),
     db.query(
       `SELECT count(*) FILTER (WHERE cert_not_after < now() + interval '30 days') AS por_vencer,
               count(*) FILTER (WHERE cert_not_after < now()) AS vencidos
-       FROM tenants WHERE entorno = $1 AND cert_not_after IS NOT NULL`,
-      [env],
+       FROM tenants WHERE entorno = $1 AND cert_not_after IS NOT NULL${yCuit('cuit', 2)}`,
+      conCuits([env]),
     ),
     // Peticiones ultimas 24h: total, errores, latencia media.
     db.query(
       `SELECT count(*) AS total, count(*) FILTER (WHERE ok = false) AS errores, round(avg(duration_ms)) AS lat
-       FROM requests WHERE ts > now() - interval '24 hours'`,
+       FROM requests WHERE ts > now() - interval '24 hours'${filtro ? ' AND cuit = ANY($1::text[])' : ''}`,
+      filtro ? [cuits] : [],
     ),
   ]);
 

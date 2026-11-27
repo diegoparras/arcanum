@@ -27,15 +27,30 @@ function fingerprint(pem) {
   return forge.md.sha256.create().update(der).digest().toHex();
 }
 
+/**
+ * Nombre o razon social de un cliente: se recorta y se rechaza lo que no puede ser un nombre
+ * (< > y caracteres de control) o pasa de 200 caracteres. Vacio -> null. Acentos, comillas, &,
+ * puntos y parentesis son validos. Segunda barrera contra XSS (auditoria 2026-11-26, A-05).
+ */
+function validarNombre(nombre) {
+  if (nombre == null) return null;
+  const n = String(nombre).trim();
+  if (!n) return null;
+  if (/[<>\u0000-\u001f\u007f]/.test(n)) throw new TenantError('El nombre tiene caracteres no permitidos (< > o de control)', 422);
+  if (n.length > 200) throw new TenantError('El nombre es demasiado largo (máximo 200 caracteres)', 422);
+  return n;
+}
+
 /** Crea/asegura el tenant y guarda su clave privada (cifrada). */
 async function storeKey(cuit, entorno, keyPem, nombre) {
   const c = normalizeCuit(cuit);
-  if (!c) throw new TenantError('CUIT invalido', 400);
+  if (!c) throw new TenantError('CUIT inválido', 400);
+  nombre = validarNombre(nombre);
   // Validamos que la clave parsee antes de guardarla.
   try {
     forge.pki.privateKeyFromPem(keyPem);
   } catch (e) {
-    throw new TenantError('Clave privada invalida (PEM): ' + e.message, 400);
+    throw new TenantError('Clave privada inválida (PEM): ' + e.message, 400);
   }
   await db.query(
     `INSERT INTO tenants (cuit, entorno, nombre, key_enc, updated_at)
@@ -51,7 +66,7 @@ async function storeCert(cuit, entorno, certPem) {
   const c = normalizeCuit(cuit);
   const { rows } = await db.query('SELECT key_enc FROM tenants WHERE cuit = $1 AND entorno = $2', [c, entorno]);
   if (!rows.length || !rows[0].key_enc) {
-    throw new TenantError('Primero genera/carga la clave privada de este CUIT', 409);
+    throw new TenantError('Primero generá o cargá la clave privada de este CUIT', 409);
   }
   const keyPem = decrypt(rows[0].key_enc);
 
@@ -60,7 +75,7 @@ async function storeCert(cuit, entorno, certPem) {
   try {
     cert = forge.pki.certificateFromPem(certPem);
   } catch (e) {
-    throw new TenantError('Certificado invalido (PEM): ' + e.message, 400);
+    throw new TenantError('Certificado inválido (PEM): ' + e.message, 400);
   }
   const priv = forge.pki.privateKeyFromPem(keyPem);
   const pubFromPriv = forge.pki.setRsaPublicKey(priv.n, priv.e);
@@ -80,7 +95,7 @@ async function storeCert(cuit, entorno, certPem) {
 /** Devuelve { cuit, certPem, keyPem } descifrado, o lanza si falta algo. */
 async function load(cuit, entorno) {
   const c = normalizeCuit(cuit);
-  if (!c) throw new TenantError('CUIT vacio o invalido', 400);
+  if (!c) throw new TenantError('CUIT vacío o inválido', 400);
   const { rows } = await db.query('SELECT cert_pem, key_enc FROM tenants WHERE cuit = $1 AND entorno = $2', [c, entorno]);
   if (!rows.length) throw new TenantError(`No hay cliente cargado para el CUIT ${c} en ${entorno}`, 404);
   const { cert_pem, key_enc } = rows[0];
@@ -116,4 +131,4 @@ async function list(entorno) {
   }));
 }
 
-module.exports = { load, list, storeKey, storeCert, normalizeCuit, TenantError };
+module.exports = { load, list, storeKey, storeCert, normalizeCuit, validarNombre, TenantError };

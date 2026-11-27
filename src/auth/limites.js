@@ -61,11 +61,11 @@ function crearDetector({ ahora = Date.now, umbrales = UMBRALES_DEFAULT } = {}) {
       const alertas = [];
       if (umbrales.cuitsPorHora > 0 && h.cuits.size >= umbrales.cuitsPorHora && !h.avisados.has('cuits')) {
         h.avisados.add('cuits');
-        alertas.push({ claveId: id, clave: nombre, motivo: 'muchos_cuits', detalle: `Consulto ${h.cuits.size} CUITs distintos en la ultima hora (umbral ${umbrales.cuitsPorHora}).`, cantidad: h.cuits.size });
+        alertas.push({ claveId: id, clave: nombre, motivo: 'muchos_cuits', detalle: `Consultó ${h.cuits.size} CUITs distintos en la última hora (umbral ${umbrales.cuitsPorHora}).`, cantidad: h.cuits.size });
       }
       if (umbrales.rechazosPorHora > 0 && h.rechazos >= umbrales.rechazosPorHora && !h.avisados.has('rechazos')) {
         h.avisados.add('rechazos');
-        alertas.push({ claveId: id, clave: nombre, motivo: 'muchos_rechazos', detalle: `Tuvo ${h.rechazos} pedidos rechazados (sin permiso o por limite) en la ultima hora (umbral ${umbrales.rechazosPorHora}).`, cantidad: h.rechazos });
+        alertas.push({ claveId: id, clave: nombre, motivo: 'muchos_rechazos', detalle: `Tuvo ${h.rechazos} pedidos rechazados (sin permiso o por límite) en la última hora (umbral ${umbrales.rechazosPorHora}).`, cantidad: h.rechazos });
       }
       if (horas.size > 1000) for (const [k, w] of horas) if (w.hora < hora) horas.delete(k);
       return alertas;

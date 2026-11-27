@@ -44,7 +44,14 @@ function repoMemoria({ usuarios = [], ajustes = {} } = {}) {
     if (!p) return null;
     p.usado = true;
     const u = r.usuarios.find((x) => x.username === p.username);
-    return { app: p.app, email: p.email, username: p.username, role: p.role, cuit_allow: p.cuitAllow, clave_id: p.claveId, activo: u ? u.activo !== false : true };
+    return {
+      app: p.app, email: p.email, username: p.username, role: p.role, cuit_allow: p.cuitAllow, clave_id: p.claveId,
+      existe: !!u, activo: u ? u.activo !== false : false, debe_cambiar: !!(u && u.debe_cambiar),
+    };
+  };
+  r.buscarPase = async (h) => {
+    const p = r.pases.find((x) => x.tokenHash === h);
+    return p ? { app: p.app, email: p.email, username: p.username, clave_id: p.claveId, usado_at: p.usado ? new Date() : null } : null;
   };
   r.auditar = async (e) => { r.eventos.push(e); };
   r.auditoria = async () => r.eventos.slice().reverse();
@@ -118,7 +125,51 @@ test('suite: un pase se usa una sola vez', async () => {
   assert.ok(await suite.canjearPase(tokenDe(r.url)));
   assert.strictEqual(await suite.canjearPase(tokenDe(r.url)), null);
   assert.strictEqual(await suite.canjearPase('no-es-un-pase'), null);
-  assert.strictEqual(repo.eventos.filter((e) => e.evento === 'pase_rechazado').length, 2);
+  assert.strictEqual(await suite.canjearPase('A'.repeat(43)), null); // bien formado, pero nunca existio
+  // El reuso queda anotado con la persona; los anonimos (mal formado o inexistente) no dejan fila (M-12).
+  const rech = repo.eventos.filter((e) => e.evento === 'pase_rechazado');
+  assert.strictEqual(rech.length, 1);
+  assert.strictEqual(rech[0].email, 'a@b.com');
+  assert.strictEqual(rech[0].detalle, 'pase ya usado');
+});
+
+test('suite: un pase reusado en un loop no llena la auditoria', async () => {
+  const { repo, suite } = armar();
+  const r = await suite.emitirPase(claveSuite(), { app: 'factorum', email: 'a@b.com', rol: 'lectura' });
+  assert.ok(await suite.canjearPase(tokenDe(r.url)));
+  for (let i = 0; i < 100; i++) assert.strictEqual(await suite.canjearPase(tokenDe(r.url)), null);
+  assert.strictEqual(repo.eventos.filter((e) => e.evento === 'pase_rechazado').length, 30);
+});
+
+test('suite: un usuario borrado despues de emitir el pase no entra con el', async () => {
+  const { repo, suite } = armar({ usuarios: [{ username: 'ana', email: 'ana@b.com', role: 'operador' }] });
+  const r = await suite.emitirPase(claveSuite(), { app: 'factorum', email: 'ana@b.com', rol: 'usuario' });
+  repo.usuarios.length = 0;
+  assert.strictEqual(await suite.canjearPase(tokenDe(r.url)), null);
+  assert.ok(repo.eventos.some((e) => e.evento === 'pase_rechazado' && e.detalle === 'el usuario ya no existe'));
+});
+
+test('suite: quien tiene pendiente cambiar la contrasena inicial no entra con un pase', async () => {
+  const { repo, suite } = armar({ usuarios: [{ username: 'admin', email: 'admin@b.com', role: 'superadmin', debe_cambiar: true }] });
+  await assert.rejects(suite.emitirPase(claveSuite(), { app: 'factorum', email: 'admin@b.com', rol: 'superadmin' }), (e) => e.httpStatus === 403 && e.message === MSG.debeCambiar);
+  assert.strictEqual(repo.pases.length, 0);
+});
+
+test('suite: el alta por un pase valida como un alta a mano (CUITs, email, usuario y admin sin lista)', async () => {
+  const { repo, suite } = armar();
+  // Un CUIT mal formado es un 400, nunca se descarta en silencio (M-10).
+  await assert.rejects(suite.emitirPase(claveSuite(), { app: 'factorum', email: 'x@b.com', rol: 'usuario', cuits: [B, '123'] }), (e) => e.httpStatus === 400);
+  await assert.rejects(suite.emitirPase(claveSuite(), { app: 'factorum', email: 'x@b.com', rol: 'usuario', cuits: 'todos' }), (e) => e.httpStatus === 400);
+  // Email con caracteres que no van en una direccion.
+  await assert.rejects(suite.emitirPase(claveSuite(), { app: 'factorum', email: '"<img>"@b.com', rol: 'usuario' }), (e) => e.httpStatus === 400);
+  // El usuario de Arcanum es el email: hasta 64 caracteres, como en un alta a mano.
+  await assert.rejects(suite.emitirPase(claveSuite(), { app: 'factorum', email: `${'a'.repeat(60)}@b.com`, rol: 'usuario' }), (e) => e.httpStatus === 403 && e.message === MSG.emailLargo);
+  await assert.rejects(suite.emitirPase(claveSuite(), { app: 'factorum', email: 'x@b.com', rol: '__proto__' }), (e) => e.httpStatus === 403);
+  assert.strictEqual(repo.usuarios.length, 0);
+  // admin con una lista de CUITs no existe en Arcanum: entra como operador con esa lista.
+  const r = await suite.emitirPase(claveSuite({ suiteRolTope: 'superadmin' }), { app: 'factorum', email: 'jefa@b.com', rol: 'admin', cuits: [B] });
+  assert.deepStrictEqual(await suite.canjearPase(tokenDe(r.url)), { username: 'jefa@b.com', role: 'operador', cuitAllow: [B] });
+  assert.strictEqual(repo.usuarios[0].role, 'operador');
 });
 
 test('suite: una clave sin el flag (o la maestra) no da pases', async () => {
@@ -327,9 +378,16 @@ test('origen: /api/suite/apps lista Factorum si esta conectado, con su healthz c
 
 // --- Rutas ---
 
-async function conServidor({ suite, principal, clave }, fn) {
+/** Sesiones en memoria con el contrato de src/auth/sesiones.js (crear devuelve el sid). */
+function sesionesMemoria() {
+  const creadas = [];
+  return { creadas, async crear(p, origen) { const sid = `sid-${creadas.length + 1}`; creadas.push({ sid, username: p.username, origen }); return sid; } };
+}
+
+async function conServidor({ suite, principal, clave, sesiones = sesionesMemoria() }, fn) {
   const rutas = crearRutas({
     suite,
+    sesiones,
     principalDeClave: async (req) => {
       const k = req.headers['x-api-key'] || (String(req.headers.authorization || '').match(/^Bearer (\S+)$/) || [])[1];
       if (!k) return null;
@@ -356,12 +414,13 @@ const post = (base, ruta, cuerpo, headers = {}) => fetch(base + ruta, { method: 
 
 test('rutas: POST /api/suite/pase solo con clave, y /suite/entrar abre la sesion una vez', async () => {
   const { suite } = armar();
-  await conServidor({ suite, clave: claveSuite() }, async (base) => {
+  const sesiones = sesionesMemoria();
+  await conServidor({ suite, clave: claveSuite(), sesiones }, async (base) => {
     const cuerpo = { app: 'factorum', email: 'diego@b.com', nombre: 'Diego', rol: 'usuario' };
     assert.strictEqual((await post(base, '/api/suite/pase', cuerpo)).status, 401);
     assert.strictEqual((await post(base, '/api/suite/pase', cuerpo, { 'X-API-Key': 'ark_mala' })).status, 401);
     // Una sesion de navegador no alcanza: hace falta la clave.
-    const cookie = `${session.COOKIE}=${session.sign({ username: 'root', role: 'superadmin' })}`;
+    const cookie = `${session.COOKIE}=${session.sign({ username: 'root', role: 'superadmin', sid: 'sid-root', origen: 'local' })}`;
     assert.strictEqual((await post(base, '/api/suite/pase', cuerpo, { Cookie: cookie })).status, 401);
     const r = await post(base, '/api/suite/pase', cuerpo, { Authorization: 'Bearer ark_buena' });
     assert.strictEqual(r.status, 200);
@@ -375,13 +434,22 @@ test('rutas: POST /api/suite/pase solo con clave, y /suite/entrar abre la sesion
     assert.match(sc, new RegExp(`^${session.COOKIE}=`));
     assert.match(sc, /HttpOnly/);
     assert.match(sc, /SameSite=Lax/);
-    assert.match(sc, /Secure/); // la URL publica es https
+    // Secure con la misma regla que el login: aca el pedido llego por http y sin proxy.
+    assert.doesNotMatch(sc, /Secure/);
     const tok = sc.split(';')[0].split('=').slice(1).join('=');
-    assert.deepStrictEqual(session.verify(tok), { username: 'diego@b.com', role: 'operador', cuitAllow: null });
+    // La misma sesion registrada (y revocable) que abre el login, con origen "suite".
+    assert.deepStrictEqual(sesiones.creadas, [{ sid: 'sid-1', username: 'diego@b.com', origen: 'suite' }]);
+    assert.deepStrictEqual(session.verify(tok), { username: 'diego@b.com', role: 'operador', cuitAllow: null, sid: 'sid-1', origen: 'suite' });
     const e2 = await fetch(`${base}${ruta.pathname}${ruta.search}`, { redirect: 'manual' });
     assert.strictEqual(e2.status, 302);
     assert.strictEqual(e2.headers.get('location'), '/?suite=pase-vencido');
     assert.strictEqual(e2.headers.get('set-cookie'), null);
+    assert.strictEqual(sesiones.creadas.length, 1);
+    // Detras de un proxy con https, Secure (igual que el login).
+    const r3 = await (await post(base, '/api/suite/pase', cuerpo, { Authorization: 'Bearer ark_buena' })).json();
+    const ruta3 = new URL(r3.url);
+    const e3 = await fetch(`${base}${ruta3.pathname}${ruta3.search}`, { redirect: 'manual', headers: { 'X-Forwarded-Proto': 'https' } });
+    assert.match(e3.headers.get('set-cookie'), /Secure/);
   });
   // Clave sin el flag: 403 con el mensaje del contrato.
   await conServidor({ suite, clave: claveSuite({ suite: false }) }, async (base) => {
