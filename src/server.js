@@ -146,11 +146,12 @@ async function checkAuth(req, res) {
         const role = topear(u.role, sess.role);
         const cuitAllow = intersecar(u.cuitAllow, sess.cuitAllow);
         if (!role || (cuitAllow && !cuitAllow.length)) throw Object.assign(new Error('La sesión ya no corresponde a tus permisos: volvé a entrar.'), { httpStatus: 401 });
-        return { ...sess, role, cuitAllow, debeCambiar: u.debeCambiar, via: 'sesion' };
+        return { ...sess, role, cuitAllow, debeCambiar: u.debeCambiar, email: u.email || null, via: 'sesion' };
       }
-      return { ...sess, role: u.role, cuitAllow: u.cuitAllow, debeCambiar: u.debeCambiar, via: 'sesion' };
+      return { ...sess, role: u.role, cuitAllow: u.cuitAllow, debeCambiar: u.debeCambiar, email: u.email || null, via: 'sesion' };
     }
-    return { ...sess, via: 'sesion' };
+    // Federada (Lockatus): el email verificado que quedo en la sesion registrada (2.2.1).
+    return { ...sess, email: await ses.emailFederado(sess.sid), via: 'sesion' };
   }
   throw Object.assign(new Error(MSG_SIN_CLAVE), { httpStatus: 401 });
 }
@@ -405,7 +406,14 @@ async function route(req, res, url) {
     // Analisis: solo si hay comprobantes bajados de algun CUIT que esta persona puede ver.
     const analisis = await require('./services/misComprobantes').servicio().hayComprobantes(principal).catch(() => false);
     // Sin sid ni datos internos de la sesion: solo lo que la UI necesita.
-    const usuario = { username: principal.username, role: principal.role, cuitAllow: principal.cuitAllow || null, origen: principal.origen || null, debeCambiar: !!principal.debeCambiar, via: principal.via || null };
+    // email (2.2.1): el que Arcanum usa en la suite. El de la ficha; si entro por Lockatus y no hay
+    // ficha con email, el verificado de la sesion; null si no hay ninguno.
+    let email = principal.email || null;
+    if (principal.via === 'sesion' && principal.origen === 'oidc') {
+      const ficha = await sesiones.servicio().usuarioLocal(principal.username).catch(() => null);
+      if (ficha && ficha.email) email = ficha.email;
+    }
+    const usuario = { username: principal.username, role: principal.role, cuitAllow: principal.cuitAllow || null, origen: principal.origen || null, debeCambiar: !!principal.debeCambiar, via: principal.via || null, email };
     return sendJson(res, 200, { ok: true, usuario, funciones: { misComprobantes, analisis } });
   }
 

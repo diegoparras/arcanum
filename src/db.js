@@ -432,6 +432,10 @@ CREATE TABLE IF NOT EXISTS suite_auditoria (
   detalle       TEXT
 );
 CREATE INDEX IF NOT EXISTS suite_auditoria_ts_idx ON suite_auditoria (ts DESC);
+
+-- 2.2.1: la sesion federada (origen oidc) guarda el email verificado de Lockatus, para abrir
+-- Factorum sin una ficha local con email. Las demas sesiones lo dejan en NULL.
+ALTER TABLE sesiones ADD COLUMN IF NOT EXISTS email TEXT;
 `;
 
 async function migrate() {

@@ -3,6 +3,30 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [2.2.1] - 2026-11-27
+
+### Corregido
+- **Si entrás por Lockatus, ya no hace falta una ficha local con tu email para abrir Factorum.**
+  Arcanum toma el email verificado que manda Lockatus al iniciar sesión y lo usa en la grilla de
+  la suite. Antes, con un usuario de Lockatus que no es un email (por ejemplo `diegoparras`),
+  abrir Factorum respondía «Tu usuario de Arcanum no tiene email» salvo que un superadmin creara
+  una ficha con ese usuario y el email.
+- Si tenías una sesión de Lockatus abierta de antes de actualizar, cerrá sesión y volvé a entrar
+  para que Arcanum tome tu email.
+
+### Cambiado
+- El email que va a Factorum se elige así: el de tu ficha en **Usuarios** si existe y lo tiene;
+  si no, el email verificado de Lockatus; si no, tu usuario si es un email. Si no hay ninguno, el
+  aviso de siempre.
+- Si Lockatus indica que el email **no está verificado** (`email_verified: false`), Arcanum no lo
+  usa para nada: ni para abrir Factorum ni como nombre de usuario (en ese caso el usuario es el
+  identificador de Lockatus, `sub`).
+- El menú de usuario muestra tu email, y `GET /api/auth/me` lo devuelve en `usuario.email` (o
+  `null`).
+- Quien llega desde Factorum se sigue reconociendo por email, también con el login solo por
+  Lockatus: una ficha local con tu usuario de Lockatus pero sin email no se mezcla con la que se
+  crea por el pase. Si querés que sean la misma, cargale el email a la ficha.
+
 ## [2.2.0] - 2026-11-27
 
 ### Agregado

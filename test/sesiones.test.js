@@ -14,9 +14,9 @@ function baseFalsa() {
   const usuarios = new Map([['ana', { username: 'ana', role: 'admin', cuit_allow: null }]]);
   const db = {
     async query(sql, p = []) {
-      if (/^INSERT INTO sesiones/.test(sql)) { sesiones.set(p[0], { username: p[1], origen: p[2], revocada: false }); return { rows: [] }; }
+      if (/^INSERT INTO sesiones/.test(sql)) { sesiones.set(p[0], { username: p[1], origen: p[2], email: p[4] || null, revocada: false }); return { rows: [] }; }
       if (/^DELETE FROM sesiones/.test(sql)) return { rows: [] };
-      if (/^SELECT 1 FROM sesiones/.test(sql)) { const s = sesiones.get(p[0]); return { rows: s && !s.revocada ? [{}] : [] }; }
+      if (/^SELECT email FROM sesiones/.test(sql)) { const s = sesiones.get(p[0]); return { rows: s && !s.revocada ? [{ email: s.email }] : [] }; }
       if (/^UPDATE sesiones SET revocada_at/.test(sql)) { const s = sesiones.get(p[0]); if (s) s.revocada = true; return { rows: [] }; }
       if (/FROM usuarios/.test(sql)) { const u = usuarios.get(p[0]); return { rows: u ? [u] : [] }; }
       throw new Error('sql inesperado ' + sql);
@@ -78,4 +78,36 @@ test('la cookie lleva el identificador de sesion y el origen; sin identificador 
   assert.deepStrictEqual(session.verify(t), { username: 'ana', role: 'admin', cuitAllow: null, sid: 'abc', origen: 'local' });
   const vieja = session.sign({ username: 'ana', role: 'admin' });
   assert.strictEqual(session.verify(vieja), null, 'una cookie sin sid (de antes de 2.1.14) no vale');
+});
+
+test('2.2.1: la sesion federada guarda el email verificado; las demas no', async () => {
+  const b = baseFalsa();
+  let t = 0;
+  const s = crearSesiones({ db: b.db, ahora: () => t });
+  const fed = await s.crear({ username: 'diegoparras', email: 'diego@ejemplo.com' }, 'oidc');
+  assert.strictEqual(await s.emailFederado(fed), 'diego@ejemplo.com');
+  assert.strictEqual(b.sesiones.get(fed).email, 'diego@ejemplo.com');
+  // Pasado el cache, se lee de la base.
+  t += 31000;
+  assert.strictEqual(await s.emailFederado(fed), 'diego@ejemplo.com');
+  // Una sesion local (o de un pase) no guarda email aunque el principal traiga uno.
+  const loc = await s.crear({ username: 'ana', email: 'ana@otro.com' }, 'local');
+  const pase = await s.crear({ username: 'x@b.com', email: 'x@b.com' }, 'suite');
+  assert.strictEqual(b.sesiones.get(loc).email, null);
+  assert.strictEqual(b.sesiones.get(pase).email, null);
+  assert.strictEqual(await s.emailFederado(loc), null);
+  // Federada sin email, revocada o inexistente: null.
+  const sinMail = await s.crear({ username: 'sub-1' }, 'oidc');
+  assert.strictEqual(await s.emailFederado(sinMail), null);
+  await s.revocar(fed);
+  assert.strictEqual(await s.emailFederado(fed), null);
+  assert.strictEqual(await s.emailFederado('no-existe'), null);
+});
+
+test('2.2.1: el usuario local trae el email de la ficha si lo tiene', async () => {
+  const b = baseFalsa();
+  b.usuarios.set('beto', { username: 'beto', role: 'operador', cuit_allow: null, email: 'beto@b.com' });
+  const s = crearSesiones({ db: b.db, ahora: () => 0 });
+  assert.deepStrictEqual(await s.usuarioLocal('beto'), { role: 'operador', cuitAllow: null, debeCambiar: false, email: 'beto@b.com' });
+  assert.strictEqual((await s.usuarioLocal('ana')).email, undefined);
 });

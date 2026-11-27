@@ -20,6 +20,11 @@
 // por un pase no tiene contrasena (no entra por el login normal ni se le puede poner una que no
 // cumpla la politica) y quien tiene pendiente cambiar la contrasena inicial no entra con un pase.
 // Los pedidos anonimos rechazados en /suite/entrar no dejan fila (M-12).
+//
+// 2.2.1: quien entro por Lockatus sin una ficha local con email abre Factorum con el email
+// verificado que quedo en su sesion federada (ver emailParaAbrir). Al reves, quien llega con un
+// pase se sigue buscando solo por email: una ficha con su usuario de Lockatus pero sin email no se
+// adivina como suya.
 
 const crypto = require('crypto');
 
@@ -83,6 +88,21 @@ function urlLimpia(v) {
   try { p = new URL(u); } catch { throw err('La URL pública no es válida', 400); }
   if (p.username || p.password) throw err('La URL pública no puede llevar usuario ni clave', 400);
   return u;
+}
+
+/**
+ * Email con el que Arcanum presenta a la persona en la otra app (2.2.1), en este orden:
+ *  1. el de su ficha local (mismo usuario), si lo tiene;
+ *  2. si entro por Lockatus, el email verificado que quedo en la sesion federada;
+ *  3. su usuario, si es un email.
+ * null si no hay ninguno. Una sesion local nunca usa el 2 (su email es el de la ficha).
+ */
+function emailParaAbrir(ficha, principal) {
+  const { normEmail } = require('../auth/users');
+  const valido = (v) => { try { return normEmail(typeof v === 'string' ? v : '') || null; } catch { return null; } };
+  if (ficha && ficha.email) return ficha.email;
+  const federado = principal.origen === 'oidc' ? valido(principal.email) : null;
+  return federado || valido(String(principal.username || ''));
 }
 
 /** Repositorio en Postgres. `db` es src/db.js (query + tx). */
@@ -364,8 +384,7 @@ function crearSuite({ repo, factorum, env = process.env, ahora = () => Date.now(
     };
     if (u && u.activo === false) return fallar(err('Tu usuario está desactivado', 403));
     if (!(await factorumConectado())) return fallar(err('Factorum no está conectado a Arcanum', 409));
-    let email = u && u.email ? u.email : null;
-    if (!email) { try { email = require('../auth/users').normEmail(String(principal.username || '')); } catch { email = null; } }
+    const email = emailParaAbrir(u, principal);
     if (!email) return fallar(err('Tu usuario de Arcanum no tiene email: un superadmin lo puede cargar en Usuarios', 409));
     const nombre = (u && u.nombre) || principal.username;
     let r;
@@ -392,4 +411,4 @@ function servicio() {
   return unico;
 }
 
-module.exports = { crearSuite, servicio, repoSql, topear, intersecar, normCuits, hashPase, ROL_DESDE_FACTORUM, ORDEN_ROLES, TTL_PASE_MS, TTL_SALUD_MS, MSG };
+module.exports = { crearSuite, servicio, repoSql, emailParaAbrir, topear, intersecar, normCuits, hashPase, ROL_DESDE_FACTORUM, ORDEN_ROLES, TTL_PASE_MS, TTL_SALUD_MS, MSG };

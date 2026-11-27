@@ -64,7 +64,7 @@ async function buildAuthUrl(redirectUri) {
   return { url: `${d.authorization_endpoint}?${params}`, state, verifier };
 }
 
-/** Intercambia el code por tokens y devuelve el principal { username, role }. */
+/** Intercambia el code por tokens y devuelve el principal { username, role, email? }. */
 async function exchangeCode(code, verifier, redirectUri) {
   const d = await discover();
   const body = new URLSearchParams({
@@ -83,9 +83,31 @@ async function exchangeCode(code, verifier, redirectUri) {
   if (!res.ok) throw new Error('OIDC: falló el intercambio de código');
   const tok = await res.json();
   const claims = await verifyIdToken(tok.id_token);
-  const role = mapRole(claims[CFG.roleClaim]);
-  const username = claims.preferred_username || claims.email || claims.sub || 'oidc-user';
-  return { username, role, federated: true };
+  return principalDeClaims(claims);
+}
+
+/**
+ * Email verificado del id_token, normalizado como el de los usuarios locales, o null. Si el
+ * proveedor manda `email_verified: false` no se toma (si no lo manda, se acepta: Lockatus solo
+ * pone emails que verifico). Un email que no pasa la validacion de usuarios tambien es null.
+ */
+function emailVerificado(claims) {
+  const v = claims && claims.email_verified;
+  if (v === false || (typeof v === 'string' && v.trim().toLowerCase() === 'false')) return null;
+  try { return require('./users').normEmail(claims.email); } catch { return null; }
+}
+
+/**
+ * Principal de una sesion federada a partir de los claims ya verificados: usuario, rol y, si lo
+ * hay, el email verificado (2.2.1: lo usa la suite para abrir Factorum sin ficha local). El
+ * usuario cae en el email solo si esta verificado; si no, en el sub.
+ */
+function principalDeClaims(claims) {
+  const email = emailVerificado(claims);
+  const username = claims.preferred_username || (email ? claims.email : null) || claims.sub || 'oidc-user';
+  const p = { username, role: mapRole(claims[CFG.roleClaim]), federated: true };
+  if (email) p.email = email;
+  return p;
 }
 
 // Palabra exacta del claim -> rol de Arcanum. Lockatus declara para Arcanum superadmin, admin,
@@ -143,4 +165,4 @@ async function verifyIdToken(idToken) {
   return claims;
 }
 
-module.exports = { enabled, buildAuthUrl, exchangeCode, mapRole, CFG };
+module.exports = { enabled, buildAuthUrl, exchangeCode, mapRole, emailVerificado, principalDeClaims, CFG };

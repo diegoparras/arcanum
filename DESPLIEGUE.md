@@ -278,8 +278,11 @@ recibidas)**). En Factorum, esa credencial tiene que poder **abrir sesiones de l
 nombre, el rol de Arcanum tal cual (Factorum lo traduce: operador → usuario) y los CUITs
 permitidos de la persona, y Factorum decide con lo suyo.
 
-Cada usuario de Arcanum que quiera usar la grilla necesita un **email** (Usuarios → Editar). Sin
-email, Arcanum avisa y no pide nada.
+Arcanum presenta a cada persona con un **email**, en este orden: el de su ficha en Usuarios
+(Usuarios → Editar), si lo tiene; si entró por Lockatus, el email verificado que mandó Lockatus
+(desde 2.2.1 no hace falta una ficha local para eso); si no, su usuario si es un email. Sin
+ninguno, Arcanum avisa y no pide nada. Si Lockatus marca el email como no verificado
+(`email_verified: false`), no se usa.
 
 ### 4. Probar
 

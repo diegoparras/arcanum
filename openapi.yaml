@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arcanum — Gateway REST para ARCA (ex-AFIP)
-  version: 2.2.0
+  version: 2.2.1
   description: >
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
@@ -113,7 +113,33 @@ paths:
   /api/auth/logout:
     post: { tags: [Auth], summary: Cierra la sesión, security: [], responses: { '200': { description: ok } } }
   /api/auth/me:
-    get: { tags: [Auth], summary: Usuario autenticado, responses: { '200': { description: ok } } }
+    get:
+      tags: [Auth]
+      summary: Usuario autenticado
+      description: >
+        `usuario.email` (2.2.1) es el email con el que Arcanum presenta a la persona en la suite: el
+        de su ficha en Usuarios o, si entró por Lockatus y la ficha no lo tiene, el email verificado
+        de Lockatus. `null` si no hay ninguno.
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  usuario:
+                    type: object
+                    properties:
+                      username: { type: string }
+                      role: { type: string, enum: [superadmin, admin, operador, lectura] }
+                      cuitAllow: { type: array, nullable: true, items: { type: string } }
+                      origen: { type: string, nullable: true, description: "local, oidc (Lockatus) o suite (entró con un pase)" }
+                      debeCambiar: { type: boolean }
+                      via: { type: string, nullable: true }
+                      email: { type: string, nullable: true, example: diego@estudio.com }
+                  funciones: { type: object }
   /api/auth/config:
     get: { tags: [Auth], summary: Indica si OIDC está habilitado, security: [], responses: { '200': { description: ok } } }
   /api/auth/oidc/login:

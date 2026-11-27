@@ -486,3 +486,68 @@ test('rutas: una sesion de rol lectura puede abrir Factorum; los ajustes son de 
     });
   });
 });
+
+// --- 2.2.1: el email verificado de Lockatus en la sesion federada ---
+
+const cuerpoPase = (pedidos) => JSON.parse(pedidos.filter((x) => x.url === '/api/suite/pase').at(-1).body);
+
+test('origen (2.2.1): quien entro por Lockatus sin ficha local abre Factorum con el email verificado de la sesion', async () => {
+  await conFactorumFalso(RESP_OK, async ({ factorum, pedidos }) => {
+    const { repo, suite } = armar({ factorum });
+    const yo = { username: 'diegoparras', role: 'operador', origen: 'oidc', email: 'diego@ejemplo.com', via: 'sesion' };
+    assert.deepStrictEqual(await suite.abrir('factorum', yo), { ok: true, url: 'https://factorum.ejemplo.com/suite/entrar?pase=abc' });
+    assert.deepStrictEqual(cuerpoPase(pedidos), { app: 'arcanum', email: 'diego@ejemplo.com', nombre: 'diegoparras', rol: 'operador', cuits: null });
+    assert.strictEqual(repo.eventos.at(-1).evento, 'abrir');
+    assert.strictEqual(repo.eventos.at(-1).email, 'diego@ejemplo.com');
+    // Sin email en la sesion federada y con un usuario que no es email: el 409 de siempre.
+    await assert.rejects(suite.abrir('factorum', { ...yo, email: null }), (e) => e.httpStatus === 409 && /email/.test(e.message));
+    // Un usuario federado que es un email sigue sirviendo si Lockatus no mando email.
+    await suite.abrir('factorum', { username: 'Otra@Ejemplo.com', role: 'lectura', origen: 'oidc', email: null });
+    assert.strictEqual(cuerpoPase(pedidos).email, 'otra@ejemplo.com');
+  });
+});
+
+test('origen (2.2.1): la ficha local con email manda sobre el de la sesion federada, y este sobre el usuario', async () => {
+  await conFactorumFalso(RESP_OK, async ({ factorum, pedidos }) => {
+    const { suite } = armar({
+      factorum,
+      usuarios: [
+        { username: 'diegoparras', email: 'diego@estudio.com', nombre: 'Diego Parras', role: 'admin' },
+        { username: 'sinmail', role: 'operador' },
+      ],
+    });
+    await suite.abrir('factorum', { username: 'diegoparras', role: 'admin', origen: 'oidc', email: 'diego@lockatus.com' });
+    assert.deepStrictEqual(cuerpoPase(pedidos), { app: 'arcanum', email: 'diego@estudio.com', nombre: 'Diego Parras', rol: 'admin', cuits: null });
+    // Ficha sin email: va el de la sesion federada.
+    await suite.abrir('factorum', { username: 'sinmail', role: 'operador', origen: 'oidc', email: 'sinmail@lockatus.com' });
+    assert.strictEqual(cuerpoPase(pedidos).email, 'sinmail@lockatus.com');
+    // El email de la sesion manda sobre un usuario que tambien es un email.
+    await suite.abrir('factorum', { username: 'viejo@lockatus.com', role: 'operador', origen: 'oidc', email: 'nuevo@lockatus.com' });
+    assert.strictEqual(cuerpoPase(pedidos).email, 'nuevo@lockatus.com');
+  });
+});
+
+test('origen (2.2.1): una sesion local no toma un email que no sea el de su ficha', async () => {
+  await conFactorumFalso(RESP_OK, async ({ factorum, pedidos }) => {
+    const { suite } = armar({ factorum, usuarios: [{ username: 'ana', role: 'operador' }, { username: 'beto', email: 'beto@b.com', role: 'operador' }] });
+    // Aunque el principal traiga un email (no deberia), una sesion local o de un pase usa la ficha.
+    for (const origen of ['local', 'suite', undefined]) {
+      await assert.rejects(suite.abrir('factorum', { username: 'ana', role: 'operador', origen, email: 'ana@otro.com' }), (e) => e.httpStatus === 409);
+    }
+    await suite.abrir('factorum', { username: 'beto', role: 'operador', origen: 'local', email: 'beto@b.com' });
+    assert.strictEqual(cuerpoPase(pedidos).email, 'beto@b.com');
+    assert.strictEqual(pedidos.filter((x) => x.url === '/api/suite/pase').length, 1);
+  });
+});
+
+test('receptor (2.2.1): una ficha con el usuario de Lockatus pero sin email no se mezcla con quien llega por email', async () => {
+  // Arcanum solo con Lockatus: la ficha "diegoparras" existe sin email. Quien llega de Factorum con
+  // diego@ejemplo.com se da de alta como siempre (por email); la ficha vieja queda como estaba.
+  const { repo, suite } = armar({ usuarios: [{ username: 'diegoparras', role: 'admin' }] });
+  const r = await suite.emitirPase(claveSuite(), { app: 'factorum', email: 'diego@ejemplo.com', nombre: 'Diego', rol: 'usuario' });
+  assert.deepStrictEqual(await suite.canjearPase(tokenDe(r.url)), { username: 'diego@ejemplo.com', role: 'operador', cuitAllow: null });
+  assert.deepStrictEqual(repo.usuarios.map((u) => [u.username, u.email, u.role, u.origen]), [
+    ['diegoparras', null, 'admin', 'local'],
+    ['diego@ejemplo.com', 'diego@ejemplo.com', 'operador', 'factorum'],
+  ]);
+});

@@ -2028,7 +2028,7 @@ async function renderMenu(){
   const admin=['superadmin','admin'].includes(ME.role);
   const dark=document.documentElement.getAttribute('data-theme')==='dark';
   $('#appmenu').innerHTML=`
-   <div class="menu-user">${esc(ME.username)} · ${esc(ME.role)}</div>
+   <div class="menu-user">${esc(ME.username)} · ${esc(ME.role)}${ME.email&&ME.email!==String(ME.username).toLowerCase()?`<br>${esc(ME.email)}`:''}</div>
    <div class="menu-sep"></div>
    <button class="menu-item" onclick="toggleTheme();renderMenu()">${dark?I_SUN:I_MOON}<span>${dark?'Tema claro':'Tema oscuro'}</span></button>
    ${admin?`<div class="menu-sec"><div class="menu-h">Entorno ARCA</div>
