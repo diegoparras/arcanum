@@ -336,7 +336,7 @@ FACTORUM_TOKEN=<span class="s">&lt;el FACTORUM_API_KEY de Factorum&gt;</span></p
   <tbody>
     <tr><td><code>ARCANUM_BACKUP_HORA</code> / <code>_RETENER</code></td><td><code>3</code> / <code>14</code></td><td>Hora del backup diario y cuántos se guardan. <code>ARCANUM_BACKUP_DIARIO=0</code> lo apaga.</td></tr>
     <tr><td><code>ARCANUM_BACKUP_KEY</code></td><td>derivada</td><td>Clave propia de los backups (64 hex).</td></tr>
-    <tr><td><code>ARCANUM_MC_HORA</code></td><td>apagado</td><td>Hora de la sincronización diaria de Mis Comprobantes.</td></tr>
+    <tr><td><code>ARCANUM_MC_HORA</code> / <code>_VENTANA</code></td><td><code>6</code> / <code>120</code></td><td>Sincronización diaria de Mis Comprobantes: desde qué hora y en cuántos minutos se reparten los CUIT (cada uno a un horario distinto, que cambia todos los días). <code>ARCANUM_MC_VENTANA=0</code> los corre a todos a la hora fija.</td></tr>
     <tr><td><code>ARCANUM_MC_MAX_DIAS</code></td><td>3 años</td><td>Rango máximo de una sincronización.</td></tr>
     <tr><td><code>ARCANUM_SYNC_HORA</code> / <code>_DIAS</code></td><td><code>5</code> / <code>90</code></td><td>Traer lo emitido por fuera de Arcanum, una vez por día.</td></tr>
     <tr><td><code>ARCANUM_VENTANILLA_MIN</code></td><td><code>60</code></td><td>Cada cuántos minutos se revisa e-Ventanilla.</td></tr>

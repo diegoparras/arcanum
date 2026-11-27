@@ -3,6 +3,20 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [2.3.2] - 2026-11-27
+
+### Cambiado
+- **La sincronización diaria de Mis Comprobantes reparte los CUIT en una franja.** Antes entraban todos
+  a ARCA juntos a la hora fija. Ahora cada CUIT tiene su propio minuto entre `ARCANUM_MC_HORA` (6 h por
+  defecto) y esa hora más `ARCANUM_MC_VENTANA` (120 minutos), y ese minuto cambia todos los días: el
+  acceso se parece más al de una persona y no se concentra. Sigue de a un CUIT por vez.
+  `ARCANUM_MC_VENTANA=0` vuelve al comportamiento anterior. El panel muestra la franja y el horario
+  de hoy de cada CUIT.
+- Los avisos de topes de Monotributo corren una vez por día, al cerrar la franja.
+
+### Corregido
+- La guía de instalación decía que `ARCANUM_MC_HORA` venía apagada; el valor por defecto es 6.
+
 ## [2.3.1] - 2026-11-27
 
 ### Agregado
