@@ -11,6 +11,7 @@
 //   GET      /api/mis-comprobantes/corridas/:id/captura pantalla del robot al fallar (JPEG, 404 si no hay)
 //   POST     /api/mis-comprobantes/corridas/:id/{evento,tomar-control,devolver,cancelar}
 //   GET      /api/mis-comprobantes/:cuit                comprobantes bajados (cualquier rol, con scope)
+//   GET      /api/mis-comprobantes/:cuit/descargados    listado paginado por cursor (integraciones, MCP)
 //   GET      /api/mis-comprobantes/:cuit/analisis       totales, graficos y subtotales (mismos filtros)
 //   GET      /api/mis-comprobantes/:cuit/export.csv
 //   GET      /api/mis-comprobantes/:cuit/corridas
@@ -220,6 +221,12 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
     if (req.method === 'GET' && !seg[3]) {
       return json(res, 200, { ok: true, cuit, comprobantes: await servicio().listar(cuit, filtros) });
     }
+    if (req.method === 'GET' && seg[3] === 'descargados' && !seg[4]) {
+      // Listado paginado para integraciones (SecretarIA, n8n): montos en número, cursor estable.
+      const descargados = require('../services/descargados');
+      const f = descargados.normalizarFiltros(Object.fromEntries(['tipo', 'desde', 'hasta', 'cuit', 'tipoCbte', 'limite', 'cursor'].map((k) => [k, q.get(k)])));
+      return json(res, 200, { ok: true, cuit, filtros: descargados.filtrosVisibles(f), ...(await descargados.listar(cuit, f)) });
+    }
     if (req.method === 'GET' && seg[3] === 'analisis' && !seg[4]) {
       const f = Object.fromEntries(Object.entries(filtros).filter(([k, v]) => k !== 'limite' && v !== undefined));
       return json(res, 200, { ok: true, cuit, analisis: await servicio().analisis(cuit, f) });
@@ -256,7 +263,14 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       return json(res, 200, { ok: true, corridas: await servicio().corridas(cuit, q.get('limite')) });
     }
     if (seg[3] === 'credencial') {
-      if (req.method === 'GET') return json(res, 200, { ok: true, credencial: await servicio().estadoCredencial(cuit), diaria: require('../daemon').horaMcDiaria() });
+      if (req.method === 'GET') {
+        // Franja de la diaria y el minuto que le toca hoy a este CUIT (cambia cada dia).
+        const daemon = require('../daemon');
+        const cfg = daemon.horaMcDiaria();
+        const fin = cfg.hora * 60 + cfg.ventana;
+        const diaria = { ...cfg, hasta: `${Math.floor(fin / 60)}:${String(fin % 60).padStart(2, '0')}`, hoy: daemon.horarioMc(cfg, cuit, daemon.rangoDiario(new Date()).hoy).texto };
+        return json(res, 200, { ok: true, credencial: await servicio().estadoCredencial(cuit), diaria });
+      }
       requireRole(principal, 'superadmin', 'admin');
       if (req.method === 'PUT') {
         const b = await readJsonBody(req);

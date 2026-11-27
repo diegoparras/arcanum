@@ -9,10 +9,13 @@
 //  - CAEA: pide los codigos de la quincena, avisa topes e informa lo emitido con CAEA.
 //  - emitidos y backup: una vez por dia, trae lo facturado por fuera de Arcanum y hace el backup.
 //  - e-Ventanilla: avisa por webhook cuando llega una comunicacion nueva de ARCA.
-//  - Mis Comprobantes: una vez por dia (ARCANUM_MC_HORA, hora argentina) baja emitidos y
-//    recibidos de los CUIT con sincronizacion diaria desde la ultima vez que se bajaron (la
-//    primera vez, los ultimos 12 meses), y revisa los topes de Monotributo.
+//  - Mis Comprobantes: una vez por dia baja emitidos y recibidos de los CUIT con sincronizacion
+//    diaria desde la ultima vez que se bajaron (la primera vez, los ultimos 12 meses), y revisa
+//    los topes de Monotributo. Cada CUIT entra a ARCA a su propio minuto dentro de una ventana
+//    (ARCANUM_MC_HORA + ARCANUM_MC_VENTANA, hora argentina), distinto cada dia: no todos juntos
+//    ni siempre a la misma hora.
 
+const crypto = require('crypto');
 const db = require('./db');
 const { config } = require('./config');
 const catalog = require('./catalog');
@@ -253,22 +256,55 @@ function rangoDiario(ahora) {
   return { desde, hasta: hoy, hoy };
 }
 
-/** Hora (argentina) de la corrida diaria de Mis Comprobantes y si los daemons corren. */
+/**
+ * Horario (argentino) de la diaria de Mis Comprobantes y si los daemons corren.
+ * hora: desde cuando (ARCANUM_MC_HORA, 6 por defecto). ventana: en cuantos minutos se reparten
+ * los CUIT (ARCANUM_MC_VENTANA, 120 por defecto; 0 = todos a la hora fija). Nunca pasa de la
+ * medianoche, para que ningun CUIT se quede sin su corrida del dia.
+ */
 function horaMcDiaria(env = process.env) {
   const n = Number(env.ARCANUM_MC_HORA);
   const hora = env.ARCANUM_MC_HORA !== undefined && env.ARCANUM_MC_HORA !== '' && Number.isInteger(n) && n >= 0 && n <= 23 ? n : 6;
-  return { hora, activa: env.ARCANUM_DAEMONS !== '0' };
+  const v = Number(env.ARCANUM_MC_VENTANA);
+  const pedida = env.ARCANUM_MC_VENTANA !== undefined && env.ARCANUM_MC_VENTANA !== '' && Number.isInteger(v) && v >= 0 ? v : 120;
+  return { hora, ventana: Math.min(pedida, 24 * 60 - hora * 60), activa: env.ARCANUM_DAEMONS !== '0' };
 }
 
-async function sincronizarMisComprobantes(ahora = new Date()) {
-  const { hora } = horaMcDiaria();
-  const { rows } = await db.query("SELECT value FROM settings WHERE key = 'mc_ultima_diaria'");
-  if (!tocaDiaria(ahora, hora, rows[0] && rows[0].value)) return;
+/** Minuto de la ventana que le toca a un CUIT ese dia: estable en el dia, distinto entre dias. */
+function minutoDelCuit(cuit, hoy, ventana) {
+  if (!ventana) return 0;
+  const h = crypto.createHash('sha256').update(`arcanum-mc|${cuit}|${hoy}`).digest();
+  return h.readUInt32BE(0) % ventana;
+}
+
+/** Horario del CUIT ese dia: minutos desde la medianoche (Argentina) y "H:MM" para mostrar. */
+function horarioMc({ hora, ventana }, cuit, hoy) {
+  const minutos = hora * 60 + minutoDelCuit(cuit, hoy, ventana);
+  return { minutos, texto: `${Math.floor(minutos / 60)}:${String(minutos % 60).padStart(2, '0')}` };
+}
+
+/** Ya paso el horario del CUIT (hora argentina) y todavia no corrio hoy. */
+function tocaCuit(ahora, minutos, ultima) {
+  const ar = fechaAr(ahora);
+  const hoy = ar.toISOString().slice(0, 10);
+  return ar.getUTCHours() * 60 + ar.getUTCMinutes() >= minutos && ultima !== hoy;
+}
+
+const marcar = (clave, valor) => db.query(
+  "INSERT INTO settings (key, value, updated_by, updated_at) VALUES ($1,$2,'daemon',now()) ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=now()", [clave, valor]);
+
+async function sincronizarMisComprobantesUnaVez(ahora = new Date()) {
+  const cfg = horaMcDiaria();
   const { hoy } = rangoDiario(ahora);
-  await db.query(
-    "INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('mc_ultima_diaria',$1,'daemon',now()) ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=now()", [hoy]);
+  const { rows } = await db.query("SELECT key, value FROM settings WHERE key LIKE 'mc_ultima_diaria%' OR key = 'mc_avisos_diarios'");
+  const marcas = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  // Hasta 2.3.1 la marca era una sola para todos: si ya corrio hoy con ese esquema, no repetir.
+  const yaCorrioTodo = marcas.mc_ultima_diaria === hoy;
   const mc = require('./services/misComprobantes').servicio();
   for (const cuit of await mc.conSincronizacion()) {
+    const ultima = yaCorrioTodo ? hoy : marcas[`mc_ultima_diaria:${cuit}`];
+    if (!tocaCuit(ahora, horarioMc(cfg, cuit, hoy).minutos, ultima)) continue;
+    await marcar(`mc_ultima_diaria:${cuit}`, hoy); // antes de correr: un error no se repite cada 10 minutos
     try {
       // Sin rango: arranca desde lo ultimo que se bajo de ese CUIT (incremental).
       const corrida = await mc.sincronizar(cuit, { tipo: 'ambos', origen: 'diaria', usuario: 'daemon' });
@@ -277,9 +313,15 @@ async function sincronizarMisComprobantes(ahora = new Date()) {
       console.error(`[arcanum][mis-comprobantes] ${maskCuit(cuit)}: ${e.message}`);
     }
   }
-  const { rows: conMc } = await db.query('SELECT DISTINCT cuit FROM mc_comprobantes');
-  await require('./services/monotributo').revisarAvisos(conMc.map((r) => r.cuit)).catch((e) => console.error('[arcanum][monotributo]', e.message));
+  // Topes de Monotributo: una vez por dia, cuando ya cerro la ventana.
+  if (marcas.mc_avisos_diarios !== hoy && tocaCuit(ahora, cfg.hora * 60 + cfg.ventana, null)) {
+    await marcar('mc_avisos_diarios', hoy);
+    const { rows: conMc } = await db.query('SELECT DISTINCT cuit FROM mc_comprobantes');
+    await require('./services/monotributo').revisarAvisos(conMc.map((r) => r.cuit)).catch((e) => console.error('[arcanum][monotributo]', e.message));
+  }
 }
+// Una vuelta puede tardar mas que el intervalo de 10 minutos: nunca dos a la vez.
+const sincronizarMisComprobantes = sinSolapar(sincronizarMisComprobantesUnaVez);
 
 function every(ms, fn) {
   const t = setInterval(() => fn().catch((e) => console.error('[arcanum][daemon]', e.message)), ms);
@@ -317,11 +359,11 @@ function start() {
   // Mis Comprobantes: se fija cada 10 minutos si ya toca la corrida diaria.
   setTimeout(() => sincronizarMisComprobantes().catch((e) => console.error('[arcanum][mis-comprobantes]', e.message)), 3 * 60 * 1000);
   every(10 * 60 * 1000, sincronizarMisComprobantes);
-  console.log(`[arcanum] daemons activos (monitor 5m, vencimientos 12h, e-Ventanilla ${ventanillaMin > 0 ? `${ventanillaMin}m` : 'apagado'}, Mis Comprobantes diario ${horaMcDiaria().hora} h)`);
+  console.log(`[arcanum] daemons activos (monitor 5m, vencimientos 12h, e-Ventanilla ${ventanillaMin > 0 ? `${ventanillaMin}m` : 'apagado'}, Mis Comprobantes diario desde las ${horaMcDiaria().hora} h, repartido en ${horaMcDiaria().ventana} min)`);
 }
 
 function stop() {
   timers.forEach(clearInterval);
 }
 
-module.exports = { start, stop, monitor, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, backupDiario, sinSolapar, tocaDiaria, rangoDiario, horaMcDiaria };
+module.exports = { start, stop, monitor, avisarVencimientos, revisarVentanilla, sincronizarMisComprobantes, procesarCola, caeaPedirYAvisar, caeaInformar, sincronizarEmitidos, backupDiario, sinSolapar, tocaDiaria, rangoDiario, horaMcDiaria, minutoDelCuit, horarioMc, tocaCuit };
