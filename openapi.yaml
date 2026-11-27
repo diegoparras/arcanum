@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arcanum — Gateway REST para ARCA (ex-AFIP)
-  version: 2.2.1
+  version: 2.3.0
   description: >
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
@@ -645,6 +645,31 @@ paths:
       responses: { '200': { description: analisis }, '400': { description: filtro o periodo inválido }, '403': { description: CUIT fuera del alcance } }
   /api/mis-comprobantes/{cuit}/export.csv:
     get: { tags: [Mis Comprobantes], summary: Lo mismo en CSV (separador punto y coma), con los mismos filtros, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: CSV } } }
+  /api/mis-comprobantes/{cuit}/recibidos:
+    get:
+      tags: [Mis Comprobantes]
+      summary: Recibidos de un rango y qué período está bajado (para conciliar con Factorum)
+      description: >-
+        Los comprobantes recibidos del CUIT con fecha de emisión entre `desde` y `hasta` (a lo sumo 2 años), ordenados por fecha,
+        hasta 20.000 en una respuesta (`truncado` dice si había más; `total` cuántos hay). `cobertura` dice qué parte del período
+        está bajada según las sincronizaciones que terminaron bien (`rangos`, `faltan`, `cubre`), la última que terminó bien, la
+        última corrida (con su error, si falló) y la que está en curso. Alcanza con el rol lectura, dentro de los CUITs de la clave.
+        Importes en la moneda del comprobante (con `tipoCambio`); `cuitEmisor` es el documento del emisor y `emisorApocrifo` sale
+        de la constatación de recibidos (null si no se constató).
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string } }
+        - { name: desde, in: query, required: true, schema: { type: string, format: date } }
+        - { name: hasta, in: query, required: true, schema: { type: string, format: date } }
+        - { name: limite, in: query, schema: { type: integer, maximum: 20000 } }
+      responses:
+        '200':
+          description: >-
+            { ok, cuit, desde, hasta, total, tope, truncado, cobertura: { sincronizado, cubre, rangos: [{ desde, hasta }], faltan: [{ desde, hasta }],
+            ultimaSincronizacion: { corrida, terminada, desde, hasta, cantidad } | null, ultimaCorrida: { corrida, estado, iniciada, terminada, desde, hasta, error } | null,
+            enCurso: { corrida, estado, desde, hasta } | null, credencial, sincronizarDiaria }, comprobantes: [{ fecha, cbteTipo, puntoVenta, numeroDesde, numeroHasta,
+            cae, docTipo, cuitEmisor, emisor, moneda, tipoCambio, netoGravado, noGravado, exento, iva, total, emisorApocrifo }] }
+        '400': { description: CUIT o fechas inválidas, o período de más de 2 años }
+        '403': { description: CUIT fuera del alcance }
   /api/mis-comprobantes/{cuit}/corridas:
     get: { tags: [Mis Comprobantes], summary: Historial de sincronizaciones, parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: corridas } } }
   /api/mis-comprobantes/{cuit}/credencial:

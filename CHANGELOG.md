@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [2.3.0] - 2026-11-27
+
+### Agregado
+- **Recibidos para conciliar con Factorum.** `GET /api/mis-comprobantes/{cuit}/recibidos?desde=&hasta=`
+  devuelve en una sola respuesta los comprobantes recibidos de ese período (por fecha de emisión,
+  hasta 20.000 y hasta 2 años) y qué parte del período está bajada de Mis Comprobantes. Factorum
+  lo usa para su pantalla **Conciliación**: cruza lo que cargó el estudio con lo que ARCA dice que
+  el cliente recibió.
+- La **cobertura** sale de las sincronizaciones que terminaron bien (de recibidos o de ambos): los
+  rangos bajados, los días del período que faltan, la última sincronización que terminó bien, la
+  última corrida (con su error, si falló) y la que está en curso. Una corrida que falló a mitad no
+  cuenta como cubierta, aunque haya guardado algunos tramos.
+- Alcanza con una clave de rol **lectura** (es un `GET`) y respeta los CUITs permitidos de la clave:
+  otro CUIT responde 403. Cada pedido queda en la auditoría como `mis-comprobantes:recibidos`.
+
 ## [2.2.1] - 2026-11-27
 
 ### Corregido
