@@ -165,6 +165,7 @@ Además de la clave maestra (`API_KEY` del entorno), en **Usuarios → Claves de
 - **Baja individual**: dar de baja una clave la corta al instante sin tocar las demás.
 - **Vencimiento** opcional (en días) y **rotación**: rotar crea una clave nueva con los mismos permisos y deja la anterior andando los días de gracia que elijas (7 por defecto), así cambiás la integración sin cortes.
 - **Límite por minuto** por clave (120 por defecto, `ARCANUM_CLAVE_LIMITE_MIN`; 0 lo apaga). Al pasarse responde `429` con `Retry-After`.
+- **Suite Escriba** opcional: **Puede abrir sesiones de la suite**, con un **rol tope** (`operador` por defecto). Es lo que usa Factorum para que la gente entre a Arcanum sin volver a loguearse (ver [Suite Escriba](#suite-escriba-pase-entre-apps)). El tope `admin` o `superadmin` solo lo pone un superadmin, y una clave con CUITs permitidos llega como mucho a `operador`.
 - **Uso por clave**: pedidos, errores, rechazos, CUITs consultados, operaciones y últimos pedidos (botón "Uso").
 - **Alertas de uso anómalo**: si una clave consulta muchos CUITs distintos en una hora (`ARCANUM_ANOMALIA_CUITS_HORA`, 50) o acumula rechazos por permiso o por límite (`ARCANUM_ANOMALIA_RECHAZOS_HORA`, 20), se dispara el evento `clave_anomala`.
 - La clave se muestra **una sola vez** al crearla; Arcanum guarda solo su hash SHA-256 y nunca la escribe en los logs.
@@ -242,6 +243,25 @@ Leer (lotes, comprobantes, resumen, exportar) lo puede cualquier rol; con **scop
 
 Conexión: `FACTORUM_URL` + `FACTORUM_TOKEN`, o desde el menú **Factorum (facturas recibidas)** (superadmin), donde el token se guarda cifrado y no vuelve nunca por la API. La pestaña aparece solo cuando Factorum responde. Para la vuelta, Factorum necesita una clave de Arcanum de rol `operador` acotada a los CUITs con los que constata: ver [DESPLIEGUE.md](DESPLIEGUE.md).
 
+## Suite Escriba: pase entre apps
+
+Con Factorum conectado, se pasa de una app a la otra **sin volver a loguearse**. En la barra de arriba aparece la **grilla de la suite** (solo si hay alguna app conectada): tocando **Factorum**, Arcanum le pide un pase para esa persona y el navegador entra directo. Y al revés: el botón de Factorum para abrir Arcanum trae a la persona con su usuario de Arcanum. Si las dos apps están federadas con Lockatus el paso ya es directo por el SSO; el pase es para cuando no lo están (y convive con Lockatus si lo están). El contrato entre las dos apps está en [docs/suite-pase.md](docs/suite-pase.md).
+
+**Desde Arcanum a Factorum** (`GET /api/suite/apps`, `POST /api/suite/abrir/factorum`): Arcanum llama a `POST <FACTORUM_URL>/api/suite/pase` con el `FACTORUM_TOKEN` (nunca sale al navegador) y la identidad de la sesión: email, nombre, rol de Arcanum tal cual y CUITs permitidos (o `null` = todos). Factorum decide con qué rol entra la persona. Cualquier sesión puede hacerlo, también la de rol `lectura`: en Arcanum no modifica nada. La persona necesita un **email** en su usuario (Usuarios → Editar); un usuario de Lockatus cuyo nombre es un email usa ese. `disponible` sale del healthz de Factorum, cacheado 60 s.
+
+**Desde Factorum a Arcanum** (`POST /api/suite/pase` y `GET /suite/entrar?pase=...`): Factorum pide el pase con la clave de Arcanum que ya usa para constatar, si esa clave tiene **Puede abrir sesiones de la suite**. Arcanum decide con lo suyo:
+
+- **La persona ya tiene usuario** (por email, sin distinguir mayúsculas; o un usuario igual a ese email): entra con **su rol y sus CUITs de Arcanum**. Venir de Factorum no la escala.
+- **No tiene usuario**: se da de alta con origen `factorum`, el rol traducido (superadmin, admin, `usuario` → operador, lectura) y los CUITs que trae, sin contraseña (solo entra con un pase). Se puede apagar (`ARCANUM_SUITE_CREAR_USUARIOS=0` o el menú **Suite Escriba**): así solo entran los que ya tienen usuario.
+- En los dos casos el rol queda **topeado** por la clave y los CUITs se **intersecan** con los de la clave. Sin CUITs en común, o desactivada, o sin un rol válido: `403`.
+- El pase son 32 bytes aleatorios, sirve **una vez** y **vence a los 60 s**. En la base queda solo su SHA-256; el token no va a ningún registro. `GET /suite/entrar` abre la sesión como el login normal (cookie HttpOnly, SameSite=Lax, Secure con https) y va siempre a `/`. Si el pase venció o ya se usó, vuelve al login con el aviso "El pase para entrar venció o ya se usó. Volvé a tocar el botón en la otra app."
+
+Arcanum necesita su **URL pública** (la que ve el navegador): `ARCANUM_PUBLIC_URL` o el menú **Suite Escriba (pase entre apps)** (superadmin). Sin ella, el pedido de pase responde `409` "Falta la URL pública de Arcanum". En ese menú quedan los **últimos movimientos**: pases emitidos (quién, desde qué app, con qué clave y con qué rol), usados y rechazados, y las aperturas de Factorum (`GET /api/suite/auditoria`, admin o más).
+
+Usuarios: cada uno tiene ahora **email**, **origen** (local o desde Factorum) y **activo**. Uno desactivado no entra ni con contraseña ni con un pase (las sesiones abiertas siguen hasta que vencen, a las 12 horas).
+
+Cómo conectar las dos apps en los dos sentidos: [DESPLIEGUE.md](DESPLIEGUE.md#suite-escriba-pase-entre-arcanum-y-factorum).
+
 ## PDF del comprobante
 
 Por defecto el PDF es **igual al de ARCA** ("Comprobantes en línea": original, duplicado y triplicado) y el archivo se llama como lo nombra ARCA, `CUIT_TIPO_PV_NUMERO.pdf`. Al facturar se puede elegir otro modelo (`arcanum`) y otro nombre con una plantilla (`{receptor}`, `{numero}`, `{pv}`, `{letra}`, `{tipo}`, `{fecha}`, `{cuit}`, `{total}`):
@@ -302,7 +322,7 @@ Las consultas de padrón se guardan en memoria una hora (`ARCANUM_PADRON_CACHE_S
 
 - **Firma local**: la clave privada se usa solo para firmar el TRA, en memoria, dentro del contenedor. No se transmite a ningún lado.
 - **Cifrado en reposo**: claves privadas cifradas con AES-256-GCM; la master key vive fuera de la base.
-- **Roles**: superadmin / admin / operador / lectura. Las operaciones sensibles (clientes, webhooks, usuarios, catálogo) exigen rol. El rol `lectura` (usuario o clave) solo puede hacer `GET`, más dos `POST` que solo consultan (vista previa y constatación de una lista): la regla falla cerrada, para cualquier ruta nueva también.
+- **Roles**: superadmin / admin / operador / lectura. Las operaciones sensibles (clientes, webhooks, usuarios, catálogo) exigen rol. El rol `lectura` (usuario o clave) solo puede hacer `GET`, más una lista cerrada de `POST` que no escriben nada en Arcanum (vista previa, constatación de una lista y, desde una sesión, abrir otra app de la suite): la regla falla cerrada, para cualquier ruta nueva también.
 - **Scope por CUIT** opcional: un usuario puede quedar limitado a ciertos CUITs (cierra el acceso cruzado).
 - **Anti fuerza bruta** en el login, **anti-SSRF** en los webhooks, comparaciones en tiempo constante, imagen sin root, auditoría de peticiones (usuario + IP).
 - En producción: `ARCANUM_ENV=prod`, secretos propios y detrás de HTTPS.
@@ -326,6 +346,12 @@ Operativo y verificado **end-to-end contra ARCA producción** (firma WSAA, consu
 ## Tests
 ```bash
 npm install && npm test
+```
+
+Los tests no necesitan base. Para correr además los que van contra Postgres (hoy, el pase de la suite), apuntá `ARCANUM_TEST_DATABASE_URL` a una base descartable:
+
+```bash
+ARCANUM_TEST_DATABASE_URL=postgres://usuario@localhost:5432/arcanum_test npm test
 ```
 
 ## Licencia

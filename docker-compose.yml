@@ -39,6 +39,7 @@ services:
       ARCANUM_MASTER_KEY: ${ARCANUM_MASTER_KEY:-}   # 32 bytes hex; cifra las claves privadas
       DATABASE_URL: postgres://${POSTGRES_USER:-arcanum}:${POSTGRES_PASSWORD:-arcanum}@arcanum-db:5432/${POSTGRES_DB:-arcanum}
       PORT: 8094
+      ARCANUM_PUBLIC_URL: ${ARCANUM_PUBLIC_URL:-}   # la que ve el navegador (pase entre apps de la suite)
     volumes:
       - arcanum-data:/data                          # master key autogenerada + artefactos
     healthcheck:

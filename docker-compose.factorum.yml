@@ -45,6 +45,9 @@ services:
       ARCANUM_URL: http://arcanum:8094
       ARCANUM_API_KEY: ${FACTORUM_ARCANUM_API_KEY:-}       # clave de Arcanum (rol lectura, acotada a CUITs)
       ARCANUM_CUIT_CONSULTANTE: ${ARCANUM_CUIT_CONSULTANTE:-}
+      # Pase entre apps de la suite (docs/suite-pase.md): las URLs que ve el navegador.
+      FACTORUM_URL_PUBLICA: ${FACTORUM_URL_PUBLICA:-}
+      ARCANUM_URL_PUBLICA: ${ARCANUM_PUBLIC_URL:-}
       LLM_API_BASE_URL: ${FACTORUM_LLM_API_BASE_URL:-}     # ej. http://ollama:11434/v1 con el perfil "ia"
       LLM_API_KEY: ${FACTORUM_LLM_API_KEY:-}
       LLM_MODEL: ${FACTORUM_LLM_MODEL:-}                   # ej. qwen2.5vl:7b

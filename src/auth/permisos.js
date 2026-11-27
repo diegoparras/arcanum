@@ -37,11 +37,19 @@ function scopedRequiresCuit(principal) {
 //    constatacion de los recibidos de Mis Comprobantes, que si guarda, es otra ruta y sigue
 //    exigiendo operador). Es lo que usa Factorum para verificar facturas.
 const POST_SOLO_LECTURA = new Set(['/api/wsfev1/comprobantes/vista-previa', '/api/constatacion']);
+//  - suite/abrir/<app>: pide a la otra app de la suite Escriba (Factorum) un pase para entrar
+//    con la misma persona. En Arcanum no modifica nada (solo anota la auditoria) y lo que la
+//    persona pueda hacer alla lo decide la otra app con su propio rol. Solo sesiones del
+//    navegador (la ruta rechaza claves de API).
+// POST /api/suite/pase NO es una excepcion: se atiende antes de esta regla y solo con una clave
+// habilitada para la suite (ver src/rutas/suite.js).
+const POST_SOLO_LECTURA_PREFIJOS = [/^\/api\/suite\/abrir\/[a-z]+$/];
 
 function assertPuedeEscribir(principal, method, pathname = '') {
   if (principal.role !== 'lectura' || method === 'GET' || method === 'HEAD') return;
   if (method === 'POST' && POST_SOLO_LECTURA.has(pathname)) return;
+  if (method === 'POST' && POST_SOLO_LECTURA_PREFIJOS.some((re) => re.test(pathname))) return;
   throw Object.assign(new Error('Acceso de solo lectura: este usuario o clave no puede emitir ni modificar nada.'), { httpStatus: 403 });
 }
 
-module.exports = { requireRole, assertCuitAllowed, scopedRequiresCuit, assertPuedeEscribir, POST_SOLO_LECTURA };
+module.exports = { requireRole, assertCuitAllowed, scopedRequiresCuit, assertPuedeEscribir, POST_SOLO_LECTURA, POST_SOLO_LECTURA_PREFIJOS };

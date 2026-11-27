@@ -105,6 +105,10 @@ function aplicarLimiteDeClave(req, res, principal) {
   }
 }
 
+// Suite Escriba (pase entre apps): POST /api/suite/pase y GET /suite/entrar se atienden antes de
+// la autenticacion general; el resto de /api/suite, con sesion. Ver src/rutas/suite.js.
+const rutasSuite = require('./rutas/suite').crearRutas({ principalDeClave, aplicarLimite: aplicarLimiteDeClave });
+
 // Autenticacion: clave maestra (rol admin, para n8n), clave con rol, o sesion de UI.
 async function checkAuth(req, res) {
   const p = await principalDeClave(req);
@@ -181,6 +185,14 @@ function loginFailed(key) {
 }
 function loginOk(key) {
   loginFails.delete(key);
+}
+
+// Rol tope admin o superadmin en una clave de la suite: solo lo pone un superadmin (una sesion,
+// no la clave maestra), a proposito. Llegar como superadmin desde otra app exige eso.
+function assertPuedeTopeSuite(principal, tope) {
+  if (['admin', 'superadmin'].includes(tope) && principal.role !== 'superadmin') {
+    throw Object.assign(new Error('Solo un superadmin pone el rol tope admin o superadmin en una clave de la suite'), { httpStatus: 403 });
+  }
 }
 
 function notFound() {
@@ -277,6 +289,9 @@ async function route(req, res, url) {
     return sendJson(res, 200, { ok: true });
   }
 
+  // Suite Escriba: pedir un pase (solo con una clave habilitada para la suite) y entrar con el pase.
+  if (await rutasSuite.publicas(req, res, url)) return;
+
   // Servidor MCP de solo consulta (autentica por su cuenta: solo con clave).
   if (url.pathname === '/mcp') return handleMcp(req, res);
 
@@ -302,6 +317,8 @@ async function route(req, res, url) {
   if (await rutasMc(req, res, url, seg, principal)) return;
   // Facturas recibidas (via Factorum): ver src/rutas/factorum.js
   if (await rutasFactorum(req, res, url, seg, principal)) return;
+  // Suite Escriba: apps conectadas, abrir otra app con un pase, ajustes y auditoria.
+  if (await rutasSuite.privadas(req, res, url, seg, principal)) return;
   if (await rutasMono(req, res, url, seg, principal)) return;
   if (await rutasCola(req, res, url, seg, principal)) return;
   if (await rutasCaea(req, res, url, seg, principal)) return;
@@ -654,6 +671,11 @@ async function route(req, res, url) {
       requireRole(principal, 'superadmin');
       return sendJson(res, 200, { ok: true, usuario: await users.crear(await readJsonBody(req)) });
     }
+    // PATCH /api/usuarios/:username  { email?, nombre?, role?, activo? }
+    if (req.method === 'PATCH' && seg[2] && !seg[3]) {
+      requireRole(principal, 'superadmin');
+      return sendJson(res, 200, { ok: true, usuario: await users.actualizar(decodeURIComponent(seg[2]), await readJsonBody(req), principal.username) });
+    }
   }
 
   // --- Claves de API con rol (integraciones: n8n, SecretarIA) ---
@@ -662,23 +684,34 @@ async function route(req, res, url) {
     // Una clave de API no administra claves (evita que una clave filtrada se multiplique).
     if (principal.via === 'clave') throw Object.assign(new Error('Las claves se administran desde la UI o con la clave maestra.'), { httpStatus: 403 });
     // GET /api/claves
-    if (req.method === 'GET' && !seg[2]) return sendJson(res, 200, { ok: true, claves: await apikeys.listar(), roles: apikeys.ROLES });
+    if (req.method === 'GET' && !seg[2]) return sendJson(res, 200, { ok: true, claves: await apikeys.listar(), roles: apikeys.ROLES, rolesTope: apikeys.ROLES_TOPE });
     // POST /api/claves  { nombre, rol, cuits? }  -> devuelve la clave en claro UNA vez
     if (req.method === 'POST' && !seg[2]) {
       const body = await readJsonBody(req);
       if (body.rol === 'admin' && principal.role !== 'superadmin' && principal.via !== 'maestra') {
         throw Object.assign(new Error('Solo un superadmin crea claves con rol admin'), { httpStatus: 403 });
       }
+      if (body.suite === true) assertPuedeTopeSuite(principal, body.suiteRolTope);
       return sendJson(res, 200, { ok: true, clave: await apikeys.crear(body, principal.username) });
     }
     // POST /api/claves/:id/rotar  { graciaDias? } -> clave nueva; la anterior vence en N dias
     if (req.method === 'POST' && seg[2] && seg[3] === 'rotar' && !seg[4]) {
-      const { rows } = await db.query('SELECT role FROM api_keys WHERE id = $1', [parseInt(seg[2], 10) || 0]);
+      const { rows } = await db.query('SELECT role, suite, suite_rol_tope FROM api_keys WHERE id = $1', [parseInt(seg[2], 10) || 0]);
       if (rows[0] && rows[0].role === 'admin' && principal.role !== 'superadmin' && principal.via !== 'maestra') {
         throw Object.assign(new Error('Solo un superadmin rota claves con rol admin'), { httpStatus: 403 });
       }
+      if (rows[0] && rows[0].suite) assertPuedeTopeSuite(principal, rows[0].suite_rol_tope);
       const body = await readJsonBody(req).catch(() => ({}));
       return sendJson(res, 200, { ok: true, clave: await apikeys.rotar(seg[2], body, principal.username) });
+    }
+    // PATCH /api/claves/:id/suite  { suite, suiteRolTope? }  -> puede abrir sesiones de la suite
+    if (req.method === 'PATCH' && seg[2] && seg[3] === 'suite' && !seg[4]) {
+      const body = await readJsonBody(req);
+      const { rows } = await db.query('SELECT suite, suite_rol_tope FROM api_keys WHERE id = $1', [parseInt(seg[2], 10) || 0]);
+      // Tocar una clave que ya topea en admin o superadmin, o ponerle ese tope, es de superadmin.
+      if (rows[0] && rows[0].suite) assertPuedeTopeSuite(principal, rows[0].suite_rol_tope);
+      if (body.suite === true) assertPuedeTopeSuite(principal, body.suiteRolTope === undefined && rows[0] ? rows[0].suite_rol_tope : body.suiteRolTope);
+      return sendJson(res, 200, { ok: true, clave: await apikeys.configurarSuite(seg[2], body) });
     }
     // GET /api/claves/:id/uso?dias=30
     if (req.method === 'GET' && seg[2] && seg[3] === 'uso' && !seg[4]) {

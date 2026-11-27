@@ -49,8 +49,10 @@ function fromRequest(req) {
   return verify(parseCookies(req)[COOKIE]);
 }
 
-function cookieHeader(token) {
-  const secure = config.isProd ? ' Secure;' : '';
+// Secure en produccion o cuando se sabe que el navegador entro por https (`opts.https`, lo usa el
+// pase de la suite: la URL publica o X-Forwarded-Proto lo dicen).
+function cookieHeader(token, opts = {}) {
+  const secure = config.isProd || opts.https ? ' Secure;' : '';
   return `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/;${secure} Max-Age=${TTL_MS / 1000}`;
 }
 function clearCookieHeader() {

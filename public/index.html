@@ -120,6 +120,14 @@
   .menu-row select{width:auto;padding:5px 8px}
   .menu-item{display:flex;align-items:center;gap:9px;width:100%;border:none;background:none;padding:8px 12px;border-radius:8px;color:var(--ink);font-size:14px;cursor:pointer;text-align:left}
   .menu-item:hover{background:var(--chip)} .menu-item svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  /* Selector de la suite Escriba (grilla): las otras apps conectadas, a un clic y sin loguearse. */
+  .suite-wrap{position:relative;display:inline-flex}
+  .suite-wrap .menu{top:42px;width:260px}
+  .menu-item[disabled]{opacity:.55;cursor:default} .menu-item[disabled]:hover{background:none}
+  .suite-app{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:#0f766e;color:#fff;font-size:12px;font-weight:700;flex:0 0 auto}
+  .menu-item .suite-txt{display:flex;flex-direction:column;line-height:1.25}
+  .menu-item .suite-txt small{color:var(--muted);font-size:12px}
+  .login-msg{margin:0;padding:9px 11px;border-radius:9px;font-size:13px;line-height:1.4;text-align:left;background:rgba(220,38,38,.08);color:var(--err,#b91c1c);border:1px solid rgba(220,38,38,.25)}
   .pwwrap{position:relative} .pwwrap input{padding-right:38px}
   .eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:30px;height:30px;display:grid;place-items:center;color:var(--muted);cursor:pointer;background:none;border:none}
   .eye:hover{color:var(--ink)} .eye svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
@@ -192,6 +200,7 @@
     <div class="logo"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg></div>
     <h2>Arcanum</h2>
     <p class="login-sub">Gateway ARCA — Escriba Suite</p>
+    <p class="login-msg hidden" id="loginMsg" role="alert"></p>
     <input id="lu" autocomplete="username" placeholder="Usuario">
     <div class="pwwrap"><input id="lp" type="password" autocomplete="current-password" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar contraseña" onclick="togglePw('lp',this)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
     <button class="primary" style="width:100%" onclick="doLogin()">Entrar</button>
@@ -205,6 +214,10 @@
   <div class="logo"><svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 56 L12 26 A20 20 0 0 1 52 26 L52 56 L43 56 L43 26 A11 11 0 0 0 21 26 L21 56 Z"/><rect x="21" y="41" width="22" height="6" rx="1" fill="#fff"/></svg></div><h1>Arcanum</h1>
   <span class="crumb" id="crumb"></span>
   <div class="right" style="position:relative">
+    <div class="suite-wrap hidden" id="suiteWrap">
+      <button class="iconbtn" id="suiteBtn" type="button" onclick="toggleSuite()" aria-label="Apps de la suite Escriba" title="Apps de la suite Escriba" aria-haspopup="true" aria-expanded="false" aria-controls="suitemenu"><svg viewBox="0 0 24 24" aria-hidden="true" style="fill:currentColor;stroke:none"><rect x="3.5" y="3.5" width="4.4" height="4.4" rx="1.2"/><rect x="9.8" y="3.5" width="4.4" height="4.4" rx="1.2"/><rect x="16.1" y="3.5" width="4.4" height="4.4" rx="1.2"/><rect x="3.5" y="9.8" width="4.4" height="4.4" rx="1.2"/><rect x="9.8" y="9.8" width="4.4" height="4.4" rx="1.2"/><rect x="16.1" y="9.8" width="4.4" height="4.4" rx="1.2"/><rect x="3.5" y="16.1" width="4.4" height="4.4" rx="1.2"/><rect x="9.8" y="16.1" width="4.4" height="4.4" rx="1.2"/><rect x="16.1" y="16.1" width="4.4" height="4.4" rx="1.2"/></svg></button>
+      <div class="menu menu-right" id="suitemenu" role="menu" aria-label="Apps de la suite Escriba"></div>
+    </div>
     <button class="iconbtn" id="menuBtn" onclick="toggleMenu()" aria-label="Menú"><svg viewBox="0 0 20 20" aria-hidden="true" style="fill:currentColor;stroke:none"><circle cx="10" cy="4" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="10" cy="16" r="1.7"/></svg></button>
     <div class="menu menu-right" id="appmenu"></div>
   </div>
@@ -235,7 +248,12 @@ function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.add('o
 function closeModal(){$('#modal').classList.remove('open');}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
 
+// Pase de la suite que no sirvio (GET /suite/entrar redirige a /?suite=pase-vencido): se toma el
+// aviso y se limpia la direccion para que no quede al recargar.
+let SUITE_AVISO=null;
+(function(){try{const p=new URLSearchParams(location.search);if(p.get('suite')==='pase-vencido'){SUITE_AVISO='El pase para entrar venció o ya se usó. Volvé a tocar el botón en la otra app.';history.replaceState(null,'','/'+location.hash);}}catch(e){}})();
 function showLogin(){$('#loginView').classList.remove('hidden');$('#appView').classList.add('hidden');
+  const lm=$('#loginMsg');if(lm){lm.textContent=SUITE_AVISO||'';lm.classList.toggle('hidden',!SUITE_AVISO);}
   fetch('/api/auth/config').then(r=>r.json()).then(c=>{
     $('#oidcBtn').innerHTML=c.oidc?'<a class="login-sso" href="/api/auth/oidc/login">Entrar con Lockatus</a>':'';
     // Federado (ssoOnly): se entra SOLO por Lockatus → ocultamos el login local.
@@ -247,7 +265,7 @@ function showLogin(){$('#loginView').classList.remove('hidden');$('#appView').cl
   }).catch(()=>{});}
 async function doLogin(){
   try{ await api('/api/auth/login',{method:'POST',body:JSON.stringify({username:$('#lu').value,password:$('#lp').value})});
-    await boot(); }catch(e){ toast('Usuario o contraseña inválidos',true); }
+    SUITE_AVISO=null; await boot(); }catch(e){ toast(e.message==='401'?'Usuario o contraseña inválidos':e.message,true); }
 }
 async function logout(){ await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); showLogin(); }
 
@@ -319,6 +337,8 @@ async function boot(){
   medirTopbar();syncNavBtn();
   go((location.hash||'#panel').slice(1));
   faChequearSalud();
+  suiteCargar();
+  if(SUITE_AVISO){toast(SUITE_AVISO,true);SUITE_AVISO=null;}
   setTimeout(avisarNovedades,400);
 }
 
@@ -1587,11 +1607,18 @@ async function emitirTodo(id){if(!confirm('¿Emitir el CAE de todos los pendient
 /* ---------- USUARIOS ---------- */
 async function vUsuarios(){
   const v=$('#view');const {usuarios}=await api('/api/usuarios');
-  const rows=usuarios.map(u=>`<tr><td>${u.username}</td><td><span class="tag">${u.role}</span></td><td class="hint">${u.last_login?new Date(u.last_login).toLocaleString('es-AR'):'nunca'}</td></tr>`).join('');
   const puede=ME.role==='superadmin';
-  v.innerHTML=`<h2>Usuarios</h2><div class="card"><table><thead><tr><th>Usuario</th><th>Rol</th><th>Último ingreso</th></tr></thead><tbody>${rows}</tbody></table></div>
+  window._usuarios=usuarios;
+  const ORIGEN={local:'local',factorum:'desde Factorum'};
+  const rows=usuarios.map((u,i)=>`<tr${u.activo===false?' style="opacity:.55"':''}><td>${esc(u.username)}${u.nombre&&u.nombre!==u.username?`<div class="hint">${esc(u.nombre)}</div>`:''}</td><td class="hint">${u.email?esc(u.email):'—'}</td><td><span class="tag">${esc(u.role)}</span></td>
+    <td class="hint">${esc(ORIGEN[u.origen]||u.origen||'local')}${u.cuit_allow&&u.cuit_allow.length?`<div>CUITs: ${u.cuit_allow.map(esc).join(', ')}</div>`:''}</td>
+    <td>${u.activo===false?'<span class="tag no">desactivado</span>':'<span class="tag ok">activo</span>'}</td>
+    <td class="hint">${u.last_login?new Date(u.last_login).toLocaleString('es-AR'):'nunca'}</td>
+    ${puede?`<td><button class="ghost" onclick="editarUsuario(${i})">Editar</button></td>`:''}</tr>`).join('');
+  v.innerHTML=`<h2>Usuarios</h2><div class="card" style="overflow-x:auto"><table><thead><tr><th>Usuario</th><th>Email</th><th>Rol</th><th>Origen</th><th>Estado</th><th>Último ingreso</th>${puede?'<th></th>':''}</tr></thead><tbody>${rows}</tbody></table>
+    <p class="hint" style="margin:10px 0 0">El email identifica a la persona en la suite Escriba: con él entra a Factorum desde la grilla de arriba, y quien llega desde Factorum entra con su usuario de Arcanum.</p></div>
    ${puede?`<div class="card" style="margin-top:14px;max-width:480px"><h3 style="margin-top:0">Nuevo usuario</h3>
-    <label>Usuario</label><input id="u_user"><label>Contraseña</label>${pwField('u_pass')}
+    <label>Usuario</label><input id="u_user"><label>Email (opcional)</label><input id="u_email" type="email" autocomplete="off" placeholder="persona@estudio.com"><label>Contraseña</label>${pwField('u_pass','','autocomplete="new-password"')}
     <label>Rol</label><select id="u_role"><option value="operador">operador</option><option value="lectura">lectura</option><option value="admin">admin</option><option value="superadmin">superadmin</option></select>
     <button class="primary" style="margin-top:14px" onclick="addUser()">Crear</button></div>`:'<p class="hint">Solo un superadmin puede crear usuarios.</p>'}
    <h2 style="margin-top:28px">Claves de API</h2>
@@ -1603,6 +1630,7 @@ async function cargarClaves(){
   const box=$('#clavesBox');if(!box)return;
   try{
     const {claves}=await api('/api/claves');
+    window._claves=claves;
     const f=d=>d?new Date(d).toLocaleString('es-AR'):'nunca';
     const fd=d=>d?new Date(d).toLocaleDateString('es-AR'):'';
     const est=c=>c.estado==='activa'?(c.vence&&new Date(c.vence)-Date.now()<7*864e5?`<span class="tag warn">vence ${fd(c.vence)}</span>`:`<span class="tag ok">activa</span>`)
@@ -1610,17 +1638,19 @@ async function cargarClaves(){
     const rows=claves.map(c=>{const n=esc(c.nombre).replace(/'/g,'');const act=c.estado==='activa';
       return `<tr${act?'':' style="opacity:.55"'}><td>${esc(c.nombre)}${c.rotadaDe?' <span class="hint">(rotada)</span>':''}</td><td><code>${esc(c.prefijo||'')}</code></td><td><span class="tag">${esc(c.rol)}</span></td>
       <td class="hint">${c.cuits&&c.cuits.length?c.cuits.map(esc).join(', '):'todos'}</td>
+      <td>${c.suite?`<span class="tag ok" title="Puede abrir sesiones de la suite">sí</span><div class="hint" style="white-space:nowrap">tope ${esc(c.suiteRolTope)}</div>`:'<span class="hint">no</span>'}</td>
       <td>${est(c)}${act&&c.vence&&new Date(c.vence)-Date.now()>=7*864e5?`<div class="hint">vence ${fd(c.vence)}</div>`:''}</td>
       <td class="hint">${f(c.ultimoUso)}<div>${c.usos30d||0} pedidos en 30 días${c.limitePorMinuto?` · tope ${c.limitePorMinuto}/min`:''}</div></td>
       <td style="white-space:nowrap"><button class="ghost" onclick="usoClave(${Number(c.id)})">Uso</button>
-      ${act?`<button class="ghost" onclick="rotarClave(${Number(c.id)},'${n}')">Rotar</button> <button class="ghost" onclick="bajaClave(${Number(c.id)},'${n}')">Dar de baja</button>`:''}</td></tr>`;}).join('');
-    box.innerHTML=`<div class="card">${claves.length?`<table><thead><tr><th>Nombre</th><th>Prefijo</th><th>Rol</th><th>CUITs</th><th>Estado</th><th>Uso</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="hint" style="margin:0">Todavía no hay claves.</p>'}</div>
+      ${act?`<button class="ghost" onclick="suiteClave(${Number(c.id)})">Suite</button> <button class="ghost" onclick="rotarClave(${Number(c.id)},'${n}')">Rotar</button> <button class="ghost" onclick="bajaClave(${Number(c.id)},'${n}')">Dar de baja</button>`:''}</td></tr>`;}).join('');
+    box.innerHTML=`<div class="card">${claves.length?`<table><thead><tr><th>Nombre</th><th>Prefijo</th><th>Rol</th><th>CUITs</th><th>Suite</th><th>Estado</th><th>Uso</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="hint" style="margin:0">Todavía no hay claves.</p>'}</div>
      <div class="card" style="margin-top:14px;max-width:520px"><h3 style="margin-top:0">Nueva clave</h3>
       <label>Nombre</label><input id="k_nom" placeholder="SecretarIA">
       <label>Rol</label><select id="k_rol"><option value="lectura">lectura (solo consulta)</option><option value="operador">operador (puede emitir)</option>${ME.role==='superadmin'?'<option value="admin">admin</option>':''}</select>
       <label>CUITs permitidos (opcional, separados por coma)</label><input id="k_cuits" placeholder="Vacío = todos">
       <div class="f2"><div><label>Vence en (días, opcional)</label><input id="k_vence" class="mono" inputmode="numeric" placeholder="Sin vencimiento"></div>
       <div><label>Límite por minuto (opcional)</label><input id="k_lim" class="mono" inputmode="numeric" placeholder="Por defecto 120"></div></div>
+      ${suiteCampos('k',false,'operador')}
       <button class="primary" style="margin-top:14px" onclick="crearClave()">Crear clave</button></div>`;
   }catch(e){box.innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
@@ -1637,7 +1667,28 @@ async function crearClave(){
   const body={nombre:$('#k_nom').value.trim(),rol:$('#k_rol').value,cuits};
   if($('#k_vence').value.trim())body.venceDias=$('#k_vence').value.trim();
   if($('#k_lim').value.trim())body.limitePorMinuto=$('#k_lim').value.trim();
+  body.suite=$('#k_suite').checked;if(body.suite)body.suiteRolTope=$('#k_tope').value;
   try{const {clave}=await api('/api/claves',{method:'POST',body:JSON.stringify(body)});mostrarClaveNueva(clave);}catch(e){toast(e.message,true);}
+}
+// Suite Escriba: "puede abrir sesiones de la suite" y el rol tope de esas sesiones. admin y
+// superadmin solo los pone un superadmin; con CUITs permitidos, el tope llega hasta operador.
+function suiteCampos(p,on,tope){
+  const sup=ME.role==='superadmin';
+  const op=(r,t)=>`<option value="${r}"${tope===r?' selected':''}>${t}</option>`;
+  return `<label class="chk" style="margin-top:10px"><input type="checkbox" id="${p}_suite" ${on?'checked':''} onchange="$('#${p}_topebox').classList.toggle('hidden',!this.checked)"> Puede abrir sesiones de la suite</label>
+    <div id="${p}_topebox" class="${on?'':'hidden'}"><label>Rol tope de esas sesiones</label><select id="${p}_tope">${op('lectura','lectura')}${op('operador','operador (por defecto)')}${sup||tope==='admin'?op('admin','admin'):''}${sup||tope==='superadmin'?op('superadmin','superadmin'):''}</select>
+    <p class="hint" style="margin-top:4px">Para que Factorum (u otra app de la suite) abra Arcanum sin volver a loguearse. Quien ya tiene usuario entra con su rol de Arcanum; nadie entra por encima de este tope.${sup?'':' admin y superadmin los pone un superadmin.'}</p></div>`;
+}
+function suiteClave(id){
+  const c=(window._claves||[]).find(x=>Number(x.id)===Number(id));if(!c)return;
+  modal(`<button class="modal-x" type="button" onclick="closeModal()" aria-label="Cerrar">&times;</button><h3 style="text-transform:none">Suite Escriba: ${esc(c.nombre)}</h3>
+    <p class="hint" style="margin-top:-6px"><code>${esc(c.prefijo||'')}</code> · rol ${esc(c.rol)}${c.cuits&&c.cuits.length?` · CUITs ${c.cuits.map(esc).join(', ')}`:''}</p>
+    ${suiteCampos('ks',c.suite,c.suiteRolTope||'operador')}
+    <div class="row" style="margin-top:12px"><button class="primary" onclick="guardarSuiteClave(${Number(c.id)})">Guardar</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function guardarSuiteClave(id){
+  const b={suite:$('#ks_suite').checked};if(b.suite)b.suiteRolTope=$('#ks_tope').value;
+  try{await api(`/api/claves/${id}/suite`,{method:'PATCH',body:JSON.stringify(b)});closeModal();toast(b.suite?'La clave puede abrir sesiones de la suite':'La clave ya no abre sesiones de la suite');cargarClaves();}catch(e){toast(e.message,true);}
 }
 async function rotarClave(id,nombre){
   const g=prompt(`Rotar la clave "${nombre}": se crea una nueva con los mismos permisos. ¿Cuántos días sigue funcionando la anterior? (0 a 90)`,'7');
@@ -1668,7 +1719,21 @@ async function bajaClave(id,nombre){
   if(!confirm(`¿Dar de baja la clave "${nombre}"? Deja de funcionar al instante y no se puede reactivar.`))return;
   try{await api('/api/claves/'+id,{method:'DELETE'});toast('Clave dada de baja');cargarClaves();}catch(e){toast(e.message,true);}
 }
-async function addUser(){try{await api('/api/usuarios',{method:'POST',body:JSON.stringify({username:$('#u_user').value,password:$('#u_pass').value,role:$('#u_role').value})});toast('Usuario creado');vUsuarios();}catch(e){toast(e.message,true);}}
+async function addUser(){try{await api('/api/usuarios',{method:'POST',body:JSON.stringify({username:$('#u_user').value,email:$('#u_email').value.trim(),password:$('#u_pass').value,role:$('#u_role').value})});toast('Usuario creado');vUsuarios();}catch(e){toast(e.message,true);}}
+function editarUsuario(i){
+  const u=(window._usuarios||[])[i];if(!u)return;window._usuarioEd=u.username;
+  const op=r=>`<option value="${r}"${u.role===r?' selected':''}>${r}</option>`;
+  modal(`<button class="modal-x" type="button" onclick="closeModal()" aria-label="Cerrar">&times;</button><h3 style="text-transform:none">${esc(u.username)}</h3>
+   <label>Email</label><input id="ue_email" type="email" autocomplete="off" value="${escA(u.email||'')}" placeholder="persona@estudio.com">
+   <label>Nombre</label><input id="ue_nombre" value="${escA(u.nombre||'')}">
+   <label>Rol</label><select id="ue_role">${['lectura','operador','admin','superadmin'].map(op).join('')}</select>
+   <label class="chk" style="margin-top:10px"><input type="checkbox" id="ue_activo" ${u.activo===false?'':'checked'}> Activo (desactivado no entra ni con contraseña ni desde otra app)</label>
+   <div class="row" style="margin-top:12px"><button class="primary" onclick="guardarUsuario()">Guardar</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function guardarUsuario(){
+  const b={email:$('#ue_email').value.trim(),nombre:$('#ue_nombre').value.trim(),role:$('#ue_role').value,activo:$('#ue_activo').checked};
+  try{await api('/api/usuarios/'+encodeURIComponent(window._usuarioEd),{method:'PATCH',body:JSON.stringify(b)});closeModal();toast('Usuario guardado');vUsuarios();}catch(e){toast(e.message,true);}
+}
 
 /* ---------- GENERADOR DE CÓDIGO ---------- */
 const RICH_PRESETS={
@@ -1787,12 +1852,69 @@ const I_EYEOFF='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.9 5.1A10
 function pwField(id,ph,extra){return `<div class="pwwrap"><input id="${id}" type="password" ${extra||''} ${ph?'placeholder="'+ph+'"':''}><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar" onclick="togglePw('${id}',this)">${I_EYE}</button></div>`;}
 function togglePw(id,btn){const el=$('#'+id);const show=el.type==='password';el.type=show?'text':'password';btn.innerHTML=show?I_EYEOFF:I_EYE;}
 
+/* ---------- SUITE ESCRIBA: selector de apps (grilla) y pase entre apps ---------- */
+// Solo aparece si hay alguna app conectada (hoy, Factorum con URL y token). Al tocar una, Arcanum
+// le pide a esa app un pase para esta persona y el navegador entra sin volver a loguearse.
+const SUITE={apps:[]};
+const SUITE_INICIAL={factorum:'F'};
+const SUITE_DESC={factorum:'Facturas recibidas'};
+async function suiteCargar(){
+  try{SUITE.apps=(await api('/api/suite/apps')).apps||[];}catch{SUITE.apps=[];}
+  $('#suiteWrap').classList.toggle('hidden',!SUITE.apps.length);
+  return SUITE.apps;
+}
+function suiteRender(){
+  const m=$('#suitemenu');
+  m.innerHTML=`<div class="menu-h">Suite Escriba</div>`+(SUITE.apps.length?SUITE.apps.map(a=>`<button class="menu-item" type="button" role="menuitem" ${a.disponible?`onclick="suiteAbrir('${escA(a.app)}')"`:'disabled aria-disabled="true"'}>
+     <span class="suite-app" aria-hidden="true">${esc(SUITE_INICIAL[a.app]||a.nombre.slice(0,1))}</span><span class="suite-txt"><span>${esc(a.nombre)}</span><small>${a.disponible?esc(SUITE_DESC[a.app]||''):'No responde ahora'}</small></span></button>`).join(''):'<p class="hint" style="padding:4px 12px;margin:0">No hay apps conectadas.</p>');
+}
+async function toggleSuite(){
+  const m=$('#suitemenu'),b=$('#suiteBtn');
+  const open=m.classList.toggle('open');b.setAttribute('aria-expanded',String(open));
+  if(!open)return;
+  $('#appmenu').classList.remove('open');
+  suiteRender();
+  await suiteCargar();if(m.classList.contains('open'))suiteRender();
+}
+async function suiteAbrir(app){
+  const m=$('#suitemenu');m.classList.remove('open');$('#suiteBtn').setAttribute('aria-expanded','false');
+  const a=SUITE.apps.find(x=>x.app===app);
+  toast('Abriendo '+(a?a.nombre:app)+'…');
+  try{const r=await api('/api/suite/abrir/'+encodeURIComponent(app),{method:'POST',body:'{}'});location.href=r.url;}
+  catch(e){if(e.message!=='401')toast(e.message,true);}
+}
+document.addEventListener('click',e=>{const m=$('#suitemenu'),w=$('#suiteWrap');if(m&&m.classList.contains('open')&&w&&!w.contains(e.target)){m.classList.remove('open');$('#suiteBtn').setAttribute('aria-expanded','false');}});
+addEventListener('keydown',e=>{if(e.key==='Escape'){const m=$('#suitemenu');if(m&&m.classList.contains('open')){m.classList.remove('open');$('#suiteBtn').setAttribute('aria-expanded','false');$('#suiteBtn').focus();}}});
+
+/* Ajustes de superadmin: la suite (URL publica de Arcanum, alta automatica y auditoria) */
+const SUITE_EVENTO={pase_emitido:['ok','Pase emitido'],pase_usado:['ok','Entró con pase'],pase_rechazado:['no','Pase rechazado'],abrir:['ok','Abrió otra app'],abrir_rechazado:['no','No pudo abrir otra app']};
+async function ajustesSuite(){
+  $('#appmenu').classList.remove('open');
+  let s={urlPublica:'',urlPublicaDesde:null,urlPublicaEntorno:null,crearUsuarios:true};
+  try{s=(await api('/api/suite/config')).suite;}catch(e){toast(e.message,true);return;}
+  let ev=[];try{ev=(await api('/api/suite/auditoria?limite=20')).eventos||[];}catch{}
+  const filas=ev.map(x=>{const t=SUITE_EVENTO[x.evento]||['',x.evento];return `<tr><td class="hint" style="white-space:nowrap">${new Date(x.ts).toLocaleString('es-AR')}</td><td style="white-space:nowrap"><span class="tag ${t[0]}">${esc(t[1])}</span></td><td>${esc(x.email||x.usuario||'')}${x.rol?` <span class="hint">(${esc(x.rol)})</span>`:''}${x.clavePrefijo?`<div class="hint">clave <code>${esc(x.clavePrefijo)}…</code></div>`:''}</td><td class="hint">${esc(x.detalle||'')}</td></tr>`;}).join('')||'<tr><td colspan="4" class="hint">Todavía no hay movimientos.</td></tr>';
+  modal(`<button class="modal-x" type="button" onclick="closeModal()" aria-label="Cerrar">&times;</button><h3 style="text-transform:none">Suite Escriba (pase entre apps)</h3>
+   <p class="hint">Desde Factorum se entra a Arcanum sin volver a loguearse, y al revés con la grilla de arriba. Para la vuelta, Factorum usa una clave de Arcanum con <b>Puede abrir sesiones de la suite</b> (Usuarios → Claves de API).</p>
+   <label>URL pública de Arcanum (la que ve el navegador)</label><input id="aj_suiteurl" class="mono" value="${escA(s.urlPublicaDesde==='ajustes'?s.urlPublica:'')}" placeholder="${escA(s.urlPublicaEntorno||'https://arcanum.tu-dominio.com')}">
+   <p class="hint" style="margin-top:4px">${s.urlPublicaDesde==='entorno'?'Ahora se usa la de <code>ARCANUM_PUBLIC_URL</code>; lo que cargues acá la reemplaza.':s.urlPublica?'':'Sin esta dirección, Arcanum no puede dar pases (responde 409).'}</p>
+   <label class="chk" style="margin-top:6px"><input type="checkbox" id="aj_suitecrear" ${s.crearUsuarios?'checked':''}> Dar de alta a quien llega de otra app y no tiene usuario en Arcanum</label>
+   <p class="hint" style="margin-top:2px">Se crea con el rol de la otra app traducido (usuario pasa a operador) y topeado por la clave, sin contraseña: solo entra con el pase. Apagado, solo entran los que ya tienen usuario.</p>
+   <div class="row" style="margin-top:10px"><button class="primary" onclick="ajGuardarSuite()">Guardar</button></div>
+   <h4 style="margin:18px 0 6px">Últimos movimientos</h4>
+   <div style="max-height:220px;overflow:auto"><table><tbody>${filas}</tbody></table></div>`);
+}
+async function ajGuardarSuite(){
+  const b={urlPublica:$('#aj_suiteurl').value.trim(),crearUsuarios:$('#aj_suitecrear').checked};
+  try{await api('/api/suite/config',{method:'PUT',body:JSON.stringify(b)});toast('Guardado');ajustesSuite();}catch(e){toast(e.message,true);}
+}
+
 /* ---------- MENÚ (kebab): tema + entorno + Acerca de (modal) + salir ---------- */
 const I_LOGOUT='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
 const I_INFO='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>';
 const I_NEWS='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>';
 const I_GEAR='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>';
-function toggleMenu(){const m=$('#appmenu');const open=m.classList.toggle('open');if(open)renderMenu();}
+function toggleMenu(){const m=$('#appmenu');const open=m.classList.toggle('open');if(open){$('#suitemenu').classList.remove('open');renderMenu();}}
 async function renderMenu(){
   let cfg={entorno:ENV||'?',version:'?'};
   try{ cfg=await api('/api/config'); }catch{}
@@ -1809,7 +1931,7 @@ async function renderMenu(){
          <option value="prod"${cfg.entorno==='prod'?' selected':''}>Producción</option>
        </select></div>
      <div class="hint" style="padding:2px 12px 6px">Cambia los endpoints de ARCA para toda la instancia.</div></div>`:''}
-   ${ME.role==='superadmin'?`<button class="menu-item" onclick="ajustesMc()">${I_GEAR}<span>Fisherboy y Mis Comprobantes</span></button><button class="menu-item" onclick="ajustesFactorum()">${I_GEAR}<span>Factorum (facturas recibidas)</span></button><button class="menu-item" onclick="verBackups()">${I_GEAR}<span>Backups y master key</span></button>`:''}
+   ${ME.role==='superadmin'?`<button class="menu-item" onclick="ajustesMc()">${I_GEAR}<span>Fisherboy y Mis Comprobantes</span></button><button class="menu-item" onclick="ajustesFactorum()">${I_GEAR}<span>Factorum (facturas recibidas)</span></button><button class="menu-item" onclick="ajustesSuite()">${I_GEAR}<span>Suite Escriba (pase entre apps)</span></button><button class="menu-item" onclick="verBackups()">${I_GEAR}<span>Backups y master key</span></button>`:''}
    <button class="menu-item" onclick="novedadesTodas()">${I_NEWS}<span>Novedades</span></button>
    <button class="menu-item" onclick="acercaDe()">${I_INFO}<span>Acerca de Arcanum</span></button>
    <div class="menu-sep"></div>

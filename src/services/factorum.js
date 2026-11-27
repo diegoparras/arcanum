@@ -172,10 +172,34 @@ function crearCliente({ leerConfig = leerConfigDeBase } = {}) {
   }
 
   return {
-    async salud() {
-      const r = await pedir(await cfg(), 'GET', '/healthz');
+    async salud({ timeoutMs } = {}) {
+      const r = await pedir(await cfg(), 'GET', '/healthz', timeoutMs ? { timeoutMs } : {});
       const d = leerJson(r.body);
       return { ...d, ok: r.status === 200 && d.ok !== false };
+    },
+
+    /**
+     * Suite Escriba: pide a Factorum un pase para que esta persona entre sin loguearse
+     * (POST /api/suite/pase, ver docs/suite-pase.md). Devuelve { url, vence }. Los errores de
+     * Factorum vuelven con su mensaje; un 401 es el token de Arcanum (502, para que la UI no lo
+     * tome como la sesion de Arcanum vencida). La URL nunca se loguea: lleva el pase.
+     */
+    async pase({ email, nombre, rol, cuits } = {}) {
+      const cuerpo = { app: 'arcanum', email, nombre: nombre || email, rol, cuits: cuits && cuits.length ? cuits : null };
+      const r = await pedir(await cfg(), 'POST', '/api/suite/pase', { cuerpo, timeoutMs: TIMEOUT_MS });
+      const d = leerJson(r.body);
+      if (r.status === 401) throw err('Factorum rechazo el token de Arcanum: revisa FACTORUM_TOKEN', 502);
+      if (r.status === 404 && !d.error) throw err('Factorum no tiene el pase de la suite: actualizalo', 502);
+      if (r.status >= 400) {
+        const msg = d.error || d.detail || `respondio ${r.status}`;
+        throw err(`Factorum: ${msg}`, r.status >= 500 ? 502 : r.status);
+      }
+      let destino = null;
+      try { destino = new URL(String(d.url || '')); } catch { destino = null; }
+      if (!d.ok || !destino || !['http:', 'https:'].includes(destino.protocol)) {
+        throw err('Factorum no devolvio la direccion para entrar', 502);
+      }
+      return { url: destino.toString(), vence: d.vence || null };
     },
 
     /** Veredicto de una factura (no guarda nada: guardar=false). */

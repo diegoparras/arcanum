@@ -21,6 +21,7 @@ tags:
   - name: Monotributo
   - name: Contingencia
   - name: Claves
+  - name: Suite
   - name: Auth
   - name: Config
   - name: Clientes
@@ -136,7 +137,7 @@ paths:
     post:
       tags: [Claves]
       summary: Crea una clave de API. La clave en claro se devuelve una sola vez.
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [nombre, rol], properties: { nombre: { type: string, example: SecretarIA }, rol: { type: string, enum: [lectura, operador, admin] }, cuits: { type: array, items: { type: string } }, venceDias: { type: integer, minimum: 1, maximum: 3650 }, limitePorMinuto: { type: integer, minimum: 1 } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [nombre, rol], properties: { nombre: { type: string, example: SecretarIA }, rol: { type: string, enum: [lectura, operador, admin] }, cuits: { type: array, items: { type: string } }, venceDias: { type: integer, minimum: 1, maximum: 3650 }, limitePorMinuto: { type: integer, minimum: 1 }, suite: { type: boolean, description: "Puede abrir sesiones de la suite (POST /api/suite/pase)" }, suiteRolTope: { type: string, enum: [lectura, operador, admin, superadmin], default: operador, description: "admin y superadmin solo los pone un superadmin; con cuits, hasta operador" } } } } } }
       responses: { '200': { description: clave creada }, '400': { description: datos invalidos }, '403': { description: rol insuficiente } }
   /api/claves/{id}/rotar:
     post:
@@ -159,6 +160,61 @@ paths:
       summary: Da de baja una clave (deja de funcionar al instante)
       parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
       responses: { '200': { description: ok }, '404': { description: no existe o ya dada de baja } }
+  /api/claves/{id}/suite:
+    patch:
+      tags: [Claves, Suite]
+      summary: Prende o apaga "puede abrir sesiones de la suite" y fija el rol tope (admin+; tope admin o superadmin, solo superadmin)
+      parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [suite], properties: { suite: { type: boolean }, suiteRolTope: { type: string, enum: [lectura, operador, admin, superadmin] } } } } } }
+      responses: { '200': { description: la clave }, '400': { description: tope invalido (o admin/superadmin con CUITs) }, '403': { description: rol insuficiente }, '404': { description: no existe, vencida o dada de baja } }
+
+  /api/suite/pase:
+    post:
+      tags: [Suite]
+      summary: Pase para entrar a Arcanum desde otra app de la suite (Factorum). Solo con una clave habilitada para la suite.
+      description: >
+        Contrato en docs/suite-pase.md. Si la persona ya existe en Arcanum (por email, sin distinguir mayusculas)
+        manda su rol y sus CUITs de Arcanum; si no, se crea (origen factorum) con el rol traducido
+        (superadmin, admin, usuario -> operador, lectura). En los dos casos el rol queda topeado por la clave y
+        los CUITs se intersecan con los de la clave. El pase sirve una vez y vence a los 60 s.
+      security: [ { ApiKeyAuth: [] }, { BearerAuth: [] } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [app, email, rol], properties: { app: { type: string, enum: [factorum] }, email: { type: string }, nombre: { type: string }, rol: { type: string, enum: [superadmin, admin, usuario, lectura] }, cuits: { type: array, nullable: true, items: { type: string } } } } } } }
+      responses:
+        '200': { description: '{ ok, url: "https://<publica>/suite/entrar?pase=<token>", vence }' }
+        '401': { description: sin clave o clave invalida }
+        '403': { description: 'clave sin el flag ("Esta clave no está habilitada para abrir sesiones de la suite"), persona desactivada, alta automatica apagada, sin rol valido o sin CUITs en comun' }
+        '409': { description: '"Falta la URL pública de Arcanum"' }
+  /suite/entrar:
+    get:
+      tags: [Suite]
+      summary: Canjea un pase y abre la sesion (302 a /). Invalido o vencido, 302 a /?suite=pase-vencido.
+      security: []
+      parameters: [ { name: pase, in: query, required: true, schema: { type: string } } ]
+      responses: { '302': { description: redirige a / (con la cookie de sesion) o al login } }
+  /api/suite/apps:
+    get:
+      tags: [Suite]
+      summary: Apps de la suite conectadas (Factorum) y si respondieron a su healthz en los ultimos 60 s. Sesion, cualquier rol.
+      responses: { '200': { description: '{ ok, apps: [ { app, nombre, disponible } ] }' } }
+  /api/suite/abrir/{app}:
+    post:
+      tags: [Suite]
+      summary: Pide a la otra app un pase para la persona de la sesion y devuelve la URL para entrar. Sesion, cualquier rol (tambien lectura).
+      parameters: [ { name: app, in: path, required: true, schema: { type: string, enum: [factorum] } } ]
+      responses: { '200': { description: '{ ok, url }' }, '403': { description: con clave de API, usuario desactivado o la otra app lo rechazo }, '409': { description: Factorum sin conectar o el usuario no tiene email }, '502': { description: Factorum no responde o rechazo el token de Arcanum } }
+  /api/suite/config:
+    get: { tags: [Suite], summary: URL publica de Arcanum y alta automatica (superadmin), responses: { '200': { description: ok } } }
+    put:
+      tags: [Suite]
+      summary: Cambia la URL publica de Arcanum y el alta automatica (superadmin). Pisa a ARCANUM_PUBLIC_URL.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { urlPublica: { type: string }, crearUsuarios: { type: boolean } } } } } }
+      responses: { '200': { description: ok } }
+  /api/suite/auditoria:
+    get:
+      tags: [Suite]
+      summary: Pases emitidos, usados y rechazados, y pedidos a la otra app (admin+). Nunca el token.
+      parameters: [ { name: limite, in: query, required: false, schema: { type: integer, default: 50, maximum: 500 } } ]
+      responses: { '200': { description: ok } }
 
   /api/config:
     get: { tags: [Config], summary: Entorno activo y version, responses: { '200': { description: ok } } }
@@ -500,8 +556,15 @@ paths:
     post:
       tags: [Usuarios]
       summary: Crea un usuario (superadmin)
-      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { username: { type: string }, password: { type: string }, role: { type: string, enum: [superadmin, admin, operador, lectura] }, cuitAllow: { type: array, items: { type: string } } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { username: { type: string }, email: { type: string }, nombre: { type: string }, password: { type: string }, role: { type: string, enum: [superadmin, admin, operador, lectura] }, cuitAllow: { type: array, items: { type: string } } } } } } }
       responses: { '200': { description: ok } }
+  /api/usuarios/{username}:
+    patch:
+      tags: [Usuarios]
+      summary: Cambia email, nombre, rol o si esta activo (superadmin). Desactivado no entra ni con contrasena ni con un pase de la suite.
+      parameters: [ { name: username, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { email: { type: string }, nombre: { type: string }, role: { type: string, enum: [superadmin, admin, operador, lectura] }, activo: { type: boolean } } } } } }
+      responses: { '200': { description: ok }, '404': { description: no existe }, '409': { description: email repetido } }
 
   /api/webhooks:
     get: { tags: [Webhooks], summary: Lista webhooks (admin+), responses: { '200': { description: ok } } }

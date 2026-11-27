@@ -53,25 +53,93 @@ async function seedAdmin({ guardarClave } = {}) {
 }
 
 async function login(username, password) {
-  const { rows } = await db.query('SELECT username, pass_hash, role, cuit_allow FROM usuarios WHERE username = $1', [username]);
+  const { rows } = await db.query('SELECT username, pass_hash, role, cuit_allow, activo FROM usuarios WHERE username = $1', [username]);
   if (!rows.length || !verifyPassword(password, rows[0].pass_hash)) {
     throw Object.assign(new Error('Usuario o contrasena invalidos'), { httpStatus: 401 });
+  }
+  if (rows[0].activo === false) {
+    throw Object.assign(new Error('Usuario desactivado: pedile a un superadmin que lo reactive'), { httpStatus: 403 });
   }
   await db.query('UPDATE usuarios SET last_login = now() WHERE username = $1', [username]);
   return { username: rows[0].username, role: rows[0].role, cuitAllow: rows[0].cuit_allow || null };
 }
 
-async function crear({ username, password, role, cuitAllow }) {
+const ROLES = ['superadmin', 'admin', 'operador', 'lectura'];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function err(message, httpStatus) {
+  return Object.assign(new Error(message), { httpStatus });
+}
+
+/** Email normalizado (minusculas, sin espacios) o null. Invalido: 400. */
+function normEmail(v) {
+  if (v === undefined || v === null || String(v).trim() === '') return null;
+  const e = String(v).trim().toLowerCase();
+  if (e.length > 254 || !EMAIL_RE.test(e)) throw err('Email invalido', 400);
+  return e;
+}
+
+function normNombre(v) {
+  if (v === undefined || v === null) return null;
+  const n = String(v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 120);
+  return n || null;
+}
+
+async function crear({ username, password, role, cuitAllow, email, nombre }) {
   if (!username || !password) throw Object.assign(new Error('Faltan usuario y contrasena'), { httpStatus: 400 });
-  const r = ['superadmin', 'admin', 'operador', 'lectura'].includes(role) ? role : 'operador';
+  const r = ROLES.includes(role) ? role : 'operador';
   const allow = Array.isArray(cuitAllow) && cuitAllow.length ? cuitAllow.map((c) => String(c).replace(/[^0-9]/g, '')) : null;
-  await db.query('INSERT INTO usuarios (username, pass_hash, role, cuit_allow) VALUES ($1, $2, $3, $4)', [username, hashPassword(password), r, allow]);
-  return { username, role: r, cuitAllow: allow };
+  const mail = normEmail(email);
+  try {
+    await db.query('INSERT INTO usuarios (username, pass_hash, role, cuit_allow, email, nombre) VALUES ($1, $2, $3, $4, $5, $6)',
+      [username, hashPassword(password), r, allow, mail, normNombre(nombre)]);
+  } catch (e) {
+    if (e.code === '23505') throw err('Ya hay un usuario con ese nombre o ese email', 409);
+    throw e;
+  }
+  return { username, role: r, cuitAllow: allow, email: mail };
 }
 
 async function listar() {
-  const { rows } = await db.query('SELECT username, role, last_login, created_at FROM usuarios ORDER BY username');
+  const { rows } = await db.query(
+    'SELECT username, email, nombre, role, origen, activo, cuit_allow, last_login, created_at FROM usuarios ORDER BY username',
+  );
   return rows;
 }
 
-module.exports = { hashPassword, verifyPassword, seedAdmin, login, crear, listar };
+/**
+ * Cambia email, nombre, rol o si esta activo (superadmin). Nadie se desactiva ni se baja el
+ * rol a si mismo (para no quedarse afuera).
+ */
+async function actualizar(username, { email, nombre, role, activo } = {}, quien = null) {
+  const sets = [];
+  const vals = [];
+  const add = (col, v) => { vals.push(v); sets.push(`${col} = $${vals.length}`); };
+  if (email !== undefined) add('email', normEmail(email));
+  if (nombre !== undefined) add('nombre', normNombre(nombre));
+  if (role !== undefined) {
+    if (!ROLES.includes(role)) throw err(`Rol invalido: usa ${ROLES.join(', ')}`, 400);
+    if (quien && quien === username && role !== 'superadmin') throw err('No podes bajarte el rol a vos mismo', 400);
+    add('role', role);
+  }
+  if (activo !== undefined) {
+    if (typeof activo !== 'boolean') throw err('"activo" tiene que ser true o false', 400);
+    if (quien && quien === username && !activo) throw err('No podes desactivarte a vos mismo', 400);
+    add('activo', activo);
+  }
+  if (!sets.length) throw err('No hay nada para cambiar', 400);
+  vals.push(username);
+  let rows;
+  try {
+    ({ rows } = await db.query(
+      `UPDATE usuarios SET ${sets.join(', ')} WHERE username = $${vals.length}
+       RETURNING username, email, nombre, role, origen, activo, cuit_allow, last_login, created_at`, vals));
+  } catch (e) {
+    if (e.code === '23505') throw err('Ya hay otro usuario con ese email', 409);
+    throw e;
+  }
+  if (!rows.length) throw err('Usuario no encontrado', 404);
+  return rows[0];
+}
+
+module.exports = { hashPassword, verifyPassword, seedAdmin, login, crear, listar, actualizar, normEmail, normNombre, ROLES };

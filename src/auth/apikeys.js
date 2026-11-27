@@ -9,6 +9,8 @@
 // - Rotar crea una clave nueva con los mismos permisos; la anterior sigue andando
 //   unos dias de gracia y despues vence sola.
 // - Se aceptan en X-API-Key o en Authorization: Bearer <clave>.
+// - Suite Escriba: una clave puede quedar habilitada para pedir pases (POST /api/suite/pase) con un
+//   rol tope propio, aparte de su rol (ver src/services/suite.js).
 
 const crypto = require('crypto');
 const db = require('../db');
@@ -18,8 +20,13 @@ const ROLES = ['lectura', 'operador', 'admin'];
 const PREFIJO = 'ark_';
 const MAX_VENCE_DIAS = 3650;
 const GRACIA_DEFAULT = 7;
+// Suite Escriba: una clave habilitada puede pedir pases para abrir sesiones de la UI (lo usa
+// Factorum para entrar a Arcanum sin volver a loguearse). El rol de esas sesiones queda topeado
+// por suite_rol_tope, aparte del rol de la clave (la de Factorum suele ser lectura para constatar).
+const ROLES_TOPE = ['lectura', 'operador', 'admin', 'superadmin'];
+const ROL_TOPE_DEFAULT = 'operador';
 
-const COLS = 'id, nombre, role, prefix, cuit_allow, created_at, created_by, last_used, revoked_at, expires_at, rate_limit, rotated_from';
+const COLS = 'id, nombre, role, prefix, cuit_allow, created_at, created_by, last_used, revoked_at, expires_at, rate_limit, rotated_from, suite, suite_rol_tope';
 
 function err(message, httpStatus) {
   return Object.assign(new Error(message), { httpStatus });
@@ -58,6 +65,34 @@ function normLimite(v) {
   return n;
 }
 
+/**
+ * Flag de la suite y rol tope. Una clave con CUITs permitidos no puede topear en admin o
+ * superadmin: en Arcanum esos roles ven todos los CUITs y la lista de la clave no se cumpliria.
+ */
+function normSuite({ suite, suiteRolTope } = {}, cuits = null) {
+  const tope = suiteRolTope === undefined || suiteRolTope === null || suiteRolTope === '' ? ROL_TOPE_DEFAULT : String(suiteRolTope);
+  if (!ROLES_TOPE.includes(tope)) throw err(`Rol tope invalido: usa ${ROLES_TOPE.join(', ')}`, 400);
+  if (cuits && cuits.length && ['admin', 'superadmin'].includes(tope)) {
+    throw err('Una clave con CUITs permitidos no puede tener rol tope admin ni superadmin: esos roles ven todos los CUITs', 400);
+  }
+  return { suite: suite === true, tope };
+}
+
+/** Prende o apaga "puede abrir sesiones de la suite" y cambia el rol tope de una clave activa. */
+async function configurarSuite(id, { suite, suiteRolTope } = {}) {
+  const i = parseInt(id, 10) || 0;
+  const { rows: act } = await db.query(
+    `SELECT ${COLS} FROM api_keys WHERE id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`, [i],
+  );
+  if (!act.length) throw err('Clave no encontrada, vencida o dada de baja', 404);
+  if (typeof suite !== 'boolean') throw err('"suite" tiene que ser true o false', 400);
+  const s = normSuite({ suite, suiteRolTope: suiteRolTope === undefined ? act[0].suite_rol_tope : suiteRolTope }, act[0].cuit_allow);
+  const { rows } = await db.query(
+    `UPDATE api_keys SET suite = $2, suite_rol_tope = $3 WHERE id = $1 RETURNING ${COLS}`, [i, s.suite, s.tope],
+  );
+  return fmt(rows[0]);
+}
+
 function estadoDe(r, ahora = Date.now()) {
   if (r.revoked_at) return 'dada_de_baja';
   if (r.expires_at && new Date(r.expires_at).getTime() <= ahora) return 'vencida';
@@ -78,6 +113,8 @@ function fmt(r) {
     vence: r.expires_at || null,
     limitePorMinuto: r.rate_limit || null,
     rotadaDe: r.rotated_from || null,
+    suite: !!r.suite,
+    suiteRolTope: r.suite_rol_tope || ROL_TOPE_DEFAULT,
     estado: estadoDe(r),
     ...(r.usos_30d !== undefined ? { usos30d: Number(r.usos_30d) } : {}),
   };
@@ -88,18 +125,20 @@ function nuevaClave() {
 }
 
 /** Crea una clave. Devuelve la clave en claro (unica vez) + sus datos. */
-async function crear({ nombre, rol, cuits, venceDias, limitePorMinuto } = {}, creadaPor = null) {
+async function crear({ nombre, rol, cuits, venceDias, limitePorMinuto, suite, suiteRolTope } = {}, creadaPor = null) {
   const n = String(nombre || '').trim().slice(0, 80);
   if (!n) throw err('Falta el nombre de la clave (ej. "SecretarIA")', 400);
   if (!ROLES.includes(rol)) throw err(`Rol invalido: usa ${ROLES.join(', ')}`, 400);
   const dias = normDias(venceDias, 'venceDias', MAX_VENCE_DIAS);
   const limite = normLimite(limitePorMinuto);
+  const allow = normCuits(cuits);
+  const s = normSuite({ suite, suiteRolTope }, allow);
   const clave = nuevaClave();
   const { rows } = await db.query(
-    `INSERT INTO api_keys (nombre, key_hash, role, prefix, cuit_allow, created_by, expires_at, rate_limit)
-     VALUES ($1,$2,$3,$4,$5,$6, CASE WHEN $7::int IS NULL THEN NULL ELSE now() + make_interval(days => $7::int) END, $8)
+    `INSERT INTO api_keys (nombre, key_hash, role, prefix, cuit_allow, created_by, expires_at, rate_limit, suite, suite_rol_tope)
+     VALUES ($1,$2,$3,$4,$5,$6, CASE WHEN $7::int IS NULL THEN NULL ELSE now() + make_interval(days => $7::int) END, $8, $9, $10)
      RETURNING ${COLS}`,
-    [n, hash(clave), rol, clave.slice(0, 10), normCuits(cuits), creadaPor, dias, limite],
+    [n, hash(clave), rol, clave.slice(0, 10), allow, creadaPor, dias, limite, s.suite, s.tope],
   );
   return { ...fmt(rows[0]), clave };
 }
@@ -143,10 +182,10 @@ async function rotar(id, { graciaDias } = {}, creadaPor = null) {
     const duracionMs = v.expires_at ? new Date(v.expires_at).getTime() - new Date(v.created_at).getTime() : null;
     const clave = nuevaClave();
     const { rows } = await client.query(
-      `INSERT INTO api_keys (nombre, key_hash, role, prefix, cuit_allow, created_by, expires_at, rate_limit, rotated_from)
-       VALUES ($1,$2,$3,$4,$5,$6, CASE WHEN $7::bigint IS NULL THEN NULL ELSE now() + ($7::bigint * interval '1 millisecond') END, $8, $9)
+      `INSERT INTO api_keys (nombre, key_hash, role, prefix, cuit_allow, created_by, expires_at, rate_limit, rotated_from, suite, suite_rol_tope)
+       VALUES ($1,$2,$3,$4,$5,$6, CASE WHEN $7::bigint IS NULL THEN NULL ELSE now() + ($7::bigint * interval '1 millisecond') END, $8, $9, $10, $11)
        RETURNING ${COLS}`,
-      [v.nombre, hash(clave), v.role, clave.slice(0, 10), v.cuit_allow, creadaPor, duracionMs, v.rate_limit, v.id],
+      [v.nombre, hash(clave), v.role, clave.slice(0, 10), v.cuit_allow, creadaPor, duracionMs, v.rate_limit, v.id, !!v.suite, v.suite_rol_tope || ROL_TOPE_DEFAULT],
     );
     const { rows: vieja } = await client.query(
       `UPDATE api_keys SET expires_at = LEAST(COALESCE(expires_at, 'infinity'::timestamptz), now() + make_interval(days => $2::int))
@@ -161,7 +200,7 @@ async function rotar(id, { graciaDias } = {}, creadaPor = null) {
 async function verificar(clave) {
   if (!clave || !String(clave).startsWith(PREFIJO)) return null;
   const { rows } = await db.query(
-    `SELECT id, nombre, role, cuit_allow, last_used, rate_limit, expires_at FROM api_keys
+    `SELECT id, nombre, role, prefix, cuit_allow, last_used, rate_limit, expires_at, suite, suite_rol_tope FROM api_keys
      WHERE key_hash = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`,
     [hash(clave)],
   );
@@ -179,6 +218,10 @@ async function verificar(clave) {
     claveId: k.id,
     limitePorMinuto: k.rate_limit || null,
     vence: k.expires_at || null,
+    prefijo: k.prefix || null,
+    // Suite Escriba: si la clave puede pedir pases (POST /api/suite/pase) y con que rol tope.
+    suite: !!k.suite,
+    suiteRolTope: k.suite_rol_tope || ROL_TOPE_DEFAULT,
   };
 }
 
@@ -240,6 +283,6 @@ async function porVencerSinAviso(dias = 7) {
 }
 
 module.exports = {
-  crear, listar, darDeBaja, rotar, verificar, uso, porVencerSinAviso,
-  extraerClave, hash, estadoDe, ROLES, PREFIJO, GRACIA_DEFAULT,
+  crear, listar, darDeBaja, rotar, verificar, uso, porVencerSinAviso, configurarSuite,
+  extraerClave, hash, estadoDe, normSuite, ROLES, ROLES_TOPE, ROL_TOPE_DEFAULT, PREFIJO, GRACIA_DEFAULT,
 };

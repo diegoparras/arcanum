@@ -50,6 +50,8 @@ igual de simple y mas estable.
    ARCANUM_MASTER_KEY=<tu clave hex de 32>
    DATABASE_URL=postgres://USUARIO:PASSWORD@arcanum-db:5432/BASE
    PORT=8094
+   # opcional, para el pase entre apps de la suite (la del dominio del paso 5):
+   ARCANUM_PUBLIC_URL=https://arcanum.tu-dominio.com
    ```
    Reemplazá `USUARIO`, `PASSWORD` y `BASE` por los del paso 1, y `arcanum-db`
    por el nombre interno real de tu servicio Postgres.
@@ -217,6 +219,69 @@ cuando Factorum responde.
 recibida. Tiene que volver `VALIDA` (o `NO VERIFICABLE` si al CUIT consultante le falta WSCDC). Si
 dice que ARCA no respondio, revisá en Arcanum el uso de la clave de Factorum (boton **Uso**): un
 `403` es un CUIT que no esta en la lista de CUITs permitidos de esa clave (el rol `lectura` alcanza).
+
+## Suite Escriba: pase entre Arcanum y Factorum
+
+Con las dos apps conectadas, se pasa de una a la otra sin volver a loguearse: en Arcanum, con la
+grilla de arriba a la derecha; en Factorum, con su boton para abrir Arcanum. Cada lado usa la
+credencial que ya tiene para hablarle al otro, habilitada para la suite. Contrato:
+[docs/suite-pase.md](docs/suite-pase.md).
+
+### 1. URLs publicas
+
+Cada app necesita la direccion con la que se entra **desde el navegador** (no la interna tipo
+`http://factorum:8095`):
+
+- **Arcanum**: `ARCANUM_PUBLIC_URL=https://arcanum.tu-dominio.com` (se acepta tambien
+  `ARCANUM_URL_PUBLICA`), o el menu **Suite Escriba (pase entre apps)** (superadmin), que pisa a la
+  variable. Sin ella, Arcanum responde `409` "Falta la URL pública de Arcanum" cuando Factorum pide
+  un pase.
+- **Factorum**: su propia URL publica (`FACTORUM_URL_PUBLICA`) y la de Arcanum
+  (`ARCANUM_URL_PUBLICA`, la misma que `ARCANUM_PUBLIC_URL`): Factorum controla que el pase de
+  Arcanum lleve ahi. En compose, `docker-compose.factorum.yml` le pasa `ARCANUM_PUBLIC_URL` como
+  `ARCANUM_URL_PUBLICA`.
+
+Detras de un proxy con https, la cookie de sesion que abre el pase sale `Secure` (lo dice la URL
+publica o `X-Forwarded-Proto`).
+
+### 2. De Factorum a Arcanum: la clave de Arcanum, habilitada para la suite
+
+Es la misma clave `ark_...` que Factorum usa para constatar (paso 1 de la seccion anterior). En
+Arcanum, **Usuarios -> Claves de API -> Suite** (o al crearla):
+
+- **Puede abrir sesiones de la suite**: si.
+- **Rol tope**: `operador` (por defecto). Nadie entra desde Factorum por encima de ese rol, aunque
+  en Factorum sea admin. `admin` o `superadmin` como tope los pone solo un superadmin, a proposito;
+  una clave con CUITs permitidos llega como mucho a `operador` (admin y superadmin ven todos los
+  CUITs).
+- **CUITs permitidos** de la clave: los de quien entra se intersecan con estos. Si la clave esta
+  acotada a los CUITs que constatan, la gente que entra desde Factorum queda acotada a esos.
+
+El rol de la clave sigue siendo el de constatar (`lectura` alcanza): el tope de la suite es aparte.
+Quien ya tiene usuario en Arcanum (por email) entra con su rol y sus CUITs de Arcanum, topeados;
+quien no, se da de alta solo, con origen `factorum`, salvo que lo apagues
+(`ARCANUM_SUITE_CREAR_USUARIOS=0` o el menu **Suite Escriba**).
+
+### 3. De Arcanum a Factorum: el token de Factorum, habilitado para la suite
+
+Arcanum pide el pase con `FACTORUM_TOKEN` (o el token cargado en el menu **Factorum (facturas
+recibidas)**). En Factorum, esa credencial tiene que poder **abrir sesiones de la suite** con un
+**rol tope** (`usuario` por defecto); ver la documentacion de Factorum. Arcanum manda el email, el
+nombre, el rol de Arcanum tal cual (Factorum lo traduce: operador -> usuario) y los CUITs
+permitidos de la persona, y Factorum decide con lo suyo.
+
+Cada usuario de Arcanum que quiera usar la grilla necesita un **email** (Usuarios -> Editar). Sin
+email, Arcanum avisa y no pide nada.
+
+### 4. Probar
+
+1. En Arcanum, la grilla aparece arriba a la derecha cuando Factorum esta conectado; "No responde
+   ahora" si su healthz fallo en el ultimo minuto.
+2. Tocá **Factorum**: tenes que entrar sin loguearte. Si Factorum contesta "Esta clave no está
+   habilitada para abrir sesiones de la suite", falta el paso 3.
+3. Desde Factorum, el boton para abrir Arcanum: tenes que entrar con tu usuario de Arcanum. En
+   Arcanum, el menu **Suite Escriba** muestra los ultimos movimientos (pases emitidos, usados y
+   rechazados) y la clave con la que se pidio cada uno.
 
 ## Prueba de emision en homologacion (antes de facturar en produccion)
 

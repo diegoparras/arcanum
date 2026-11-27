@@ -358,6 +358,48 @@ CREATE TABLE IF NOT EXISTS caea_sin_mov (
   PRIMARY KEY (caea_id, punto_venta)
 );
 
+-- Suite Escriba (2.2.0): pase entre apps (Arcanum <-> Factorum) sin volver a loguearse.
+-- Usuarios: email (identidad en la suite), nombre, de donde vino (local | factorum | ...) y si
+-- esta activo (uno desactivado no entra ni con contrasena ni con un pase).
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nombre TEXT;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS origen TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true;
+CREATE UNIQUE INDEX IF NOT EXISTS usuarios_email_idx ON usuarios (lower(email)) WHERE email IS NOT NULL;
+-- Claves: "puede abrir sesiones de la suite" y el rol tope de esas sesiones.
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS suite BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS suite_rol_tope TEXT NOT NULL DEFAULT 'operador';
+-- Pases de un solo uso (60 s). Solo el SHA-256 del token, nunca el token.
+CREATE TABLE IF NOT EXISTS suite_pases (
+  id          SERIAL PRIMARY KEY,
+  token_hash  TEXT NOT NULL UNIQUE,
+  app         TEXT NOT NULL,
+  email       TEXT NOT NULL,
+  username    TEXT NOT NULL,
+  role        TEXT NOT NULL,
+  cuit_allow  TEXT[],
+  clave_id    INT,
+  creado_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  vence_at    TIMESTAMPTZ NOT NULL,
+  usado_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS suite_pases_vence_idx ON suite_pases (vence_at);
+-- Auditoria de la suite: pases emitidos, usados y rechazados, y los pedidos a la otra app.
+CREATE TABLE IF NOT EXISTS suite_auditoria (
+  id            BIGSERIAL PRIMARY KEY,
+  ts            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  evento        TEXT NOT NULL,
+  app           TEXT,
+  email         TEXT,
+  usuario       TEXT,
+  rol           TEXT,
+  clave_id      INT,
+  clave_prefijo TEXT,
+  ip            TEXT,
+  detalle       TEXT
+);
+CREATE INDEX IF NOT EXISTS suite_auditoria_ts_idx ON suite_auditoria (ts DESC);
+
 CREATE TABLE IF NOT EXISTS webhooks (
   id          SERIAL PRIMARY KEY,
   url         TEXT NOT NULL,

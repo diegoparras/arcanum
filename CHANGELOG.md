@@ -3,6 +3,36 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semantico.
 
+## [2.2.0] - 2026-11-27
+
+### Agregado
+- **Suite Escriba: pase entre Arcanum y Factorum.** Con las dos apps conectadas se pasa de una a
+  la otra sin volver a loguearse. Contrato en `docs/suite-pase.md`.
+- **Grilla de la suite** arriba a la derecha (solo si hay alguna app conectada): tocando
+  **Factorum**, Arcanum le pide un pase con `FACTORUM_TOKEN` y entrás directo. La puede usar
+  cualquier sesión, también la de rol lectura (en Arcanum no modifica nada). Por API:
+  `GET /api/suite/apps` y `POST /api/suite/abrir/factorum`.
+- **Entrar desde Factorum**: `POST /api/suite/pase` con una clave de Arcanum que tenga **Puede
+  abrir sesiones de la suite**, y `GET /suite/entrar?pase=...` abre la sesión. Quien ya tiene
+  usuario entra con su rol y sus CUITs de Arcanum; quien no, se da de alta con origen `factorum`
+  (se puede apagar). El rol queda topeado por la clave y los CUITs se intersecan con los de ella.
+  El pase sirve una vez y vence a los 60 s; en la base queda solo su SHA-256.
+- **Claves de API**: **Puede abrir sesiones de la suite** y **rol tope** (operador por defecto;
+  admin y superadmin solo los pone un superadmin). Se cambia con el botón **Suite** de cada clave
+  (`PATCH /api/claves/:id/suite`) y pasa a la clave nueva al rotar.
+- **URL pública de Arcanum**: `ARCANUM_PUBLIC_URL` o el menú **Suite Escriba (pase entre apps)**
+  (superadmin), que también muestra los últimos pases emitidos, usados y rechazados.
+- **Usuarios con email, origen y activo.** El email identifica a la persona en la suite. Un
+  superadmin edita email, nombre y rol, y desactiva usuarios (`PATCH /api/usuarios/:usuario`): uno
+  desactivado no entra ni con contraseña ni con un pase.
+
+### Seguridad
+- El rol lectura suma una sola excepción de `POST`: `POST /api/suite/abrir/<app>`, desde una sesión
+  del navegador. `POST /api/suite/pase` no es una excepción: solo lo acepta una clave habilitada
+  para la suite (ni una sesión ni la clave maestra).
+- El token del pase no va a ningún registro ni a la auditoría, y la página que lo recibe responde
+  sin caché y con `Referrer-Policy: no-referrer`. `FACTORUM_TOKEN` nunca sale al navegador.
+
 ## [2.1.9] - 2026-11-26
 
 ### Agregado
