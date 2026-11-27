@@ -70,6 +70,8 @@ const CLASES = ['facturas', 'nc', 'nd'];
 // Tope del analisis (B-16): con el periodo anterior se leen hasta 4 anios de comprobantes.
 const MAX_DIAS_ANALISIS = 2 * 366;
 const MAX_FILAS_ANALISIS = 100000;
+// Tope de recibidos en una respuesta para la conciliacion (Factorum los cruza en memoria).
+const MAX_RECIBIDOS = 20000;
 
 /** Filtros extra del listado y del analisis (los del clic): validados, o error 400. */
 function filtrosExtra(o = {}) {
@@ -277,6 +279,30 @@ function repoSql() {
            FROM mc_comprobantes WHERE cuit = $1 AND fecha >= $2 AND fecha <= $3 LIMIT 100001`, [cuit, desde, hasta]);
       return rows;
     },
+    // Recibidos de un rango para la conciliacion de Factorum: solo las columnas que hacen falta,
+    // fechas como texto (sin corrimiento de zona) e importes como numeros. Trae uno mas del tope
+    // para saber si se corto.
+    async recibidosRango(cuit, desde, hasta, tope) {
+      const { rows } = await db.query(
+        `SELECT to_char(fecha, 'YYYY-MM-DD') AS fecha, cbte_tipo, punto_venta, numero_desde, numero_hasta, cae,
+                doc_tipo, doc_nro, contraparte, moneda, tipo_cambio::float8 AS tipo_cambio,
+                neto_gravado::float8 AS neto_gravado, no_gravado::float8 AS no_gravado, exento::float8 AS exento,
+                iva::float8 AS iva, total::float8 AS total,
+                CASE WHEN constatacion->'apoc'->>'esApocrifo' IN ('true', 'false') THEN (constatacion->'apoc'->>'esApocrifo')::boolean END AS emisor_apocrifo
+           FROM mc_comprobantes WHERE cuit = $1 AND tipo = 'recibido' AND fecha >= $2 AND fecha <= $3
+          ORDER BY fecha, doc_nro, cbte_tipo, punto_venta, numero_desde LIMIT $4`, [cuit, desde, hasta, tope + 1]);
+      const { rows: n } = await db.query(
+        "SELECT count(*)::int AS n FROM mc_comprobantes WHERE cuit = $1 AND tipo = 'recibido' AND fecha >= $2 AND fecha <= $3", [cuit, desde, hasta]);
+      return { filas: rows, total: n[0].n };
+    },
+    // Corridas de recibidos (o de ambos) para calcular que periodo esta bajado.
+    async corridasRecibidos(cuit) {
+      const { rows } = await db.query(
+        `SELECT id, tipo, to_char(desde, 'YYYY-MM-DD') AS desde, to_char(hasta, 'YYYY-MM-DD') AS hasta, estado,
+                iniciada_at, terminada_at, cantidad, error, COALESCE(latido_at, iniciada_at) AS latido_at
+           FROM mc_corridas WHERE cuit = $1 AND tipo IN ('recibidos', 'ambos') ORDER BY id DESC LIMIT 2000`, [cuit]);
+      return rows;
+    },
     async corridas(cuit, limite = 20) {
       const { rows } = await db.query(
         `SELECT id, cuit, tipo, desde, hasta, estado, origen, usuario, iniciada_at, terminada_at, cantidad, error, progreso,
@@ -284,6 +310,59 @@ function repoSql() {
            FROM mc_corridas WHERE cuit = $1 ORDER BY id DESC LIMIT $2`, [cuit, Math.min(Number(limite) || 20, 200)]);
       return rows;
     },
+  };
+}
+
+// --- cobertura de los recibidos (para la conciliacion de Factorum) ---------------------
+const DIA_MS = 86400000;
+const masDias = (s, n) => iso(new Date(dia(s).getTime() + n * DIA_MS));
+
+/** Une los rangos [desde, hasta] que se tocan o se pisan (dias corridos). Ordenados. */
+function unirRangos(rangos) {
+  const r = rangos.filter((x) => x && x.desde && x.hasta && x.desde <= x.hasta)
+    .map((x) => ({ desde: x.desde, hasta: x.hasta })).sort((a, b) => (a.desde < b.desde ? -1 : a.desde > b.desde ? 1 : 0));
+  const out = [];
+  for (const x of r) {
+    const u = out[out.length - 1];
+    if (u && x.desde <= masDias(u.hasta, 1)) { if (x.hasta > u.hasta) u.hasta = x.hasta; } else out.push(x);
+  }
+  return out;
+}
+
+/**
+ * Que parte de [desde, hasta] esta bajada de Mis Comprobantes (recibidos), segun las corridas que
+ * terminaron bien. Una corrida que fallo a mitad puede haber guardado algunos tramos, pero no se
+ * sabe cuales: no cuenta como cubierta. Devuelve los rangos bajados, los huecos del periodo pedido,
+ * la ultima sincronizacion que termino bien y la ultima corrida (cualquiera sea su estado).
+ */
+function coberturaRecibidos(corridas, desde, hasta, ahora = new Date()) {
+  const lista = Array.isArray(corridas) ? corridas : [];
+  const ok = lista.filter((c) => c.estado === 'terminado');
+  const rangos = unirRangos(ok);
+  const faltan = [];
+  let cursor = desde;
+  for (const r of rangos) {
+    if (r.hasta < cursor) continue;
+    if (r.desde > hasta) break;
+    if (r.desde > cursor) faltan.push({ desde: cursor, hasta: masDias(r.desde, -1) });
+    cursor = masDias(r.hasta, 1);
+    if (cursor > hasta) break;
+  }
+  if (cursor <= hasta) faltan.push({ desde: cursor, hasta });
+  const fechaDe = (v) => (v instanceof Date ? v.toISOString() : v || null);
+  const terminadas = ok.filter((c) => c.terminada_at).sort((a, b) => new Date(b.terminada_at) - new Date(a.terminada_at));
+  const ultimaOk = terminadas[0] || null;
+  const ultima = lista.slice().sort((a, b) => b.id - a.id)[0] || null;
+  const vivaHasta = ahora.getTime() - 10 * 60 * 1000;
+  const enCurso = lista.find((c) => ESTADOS_VIVOS.includes(c.estado) && new Date(c.latido_at || c.iniciada_at).getTime() > vivaHasta) || null;
+  return {
+    sincronizado: rangos.length > 0,
+    cubre: faltan.length === 0,
+    rangos,
+    faltan,
+    ultimaSincronizacion: ultimaOk ? { corrida: ultimaOk.id, terminada: fechaDe(ultimaOk.terminada_at), desde: ultimaOk.desde, hasta: ultimaOk.hasta, cantidad: ultimaOk.cantidad } : null,
+    ultimaCorrida: ultima ? { corrida: ultima.id, estado: ultima.estado, iniciada: fechaDe(ultima.iniciada_at), terminada: fechaDe(ultima.terminada_at), desde: ultima.desde, hasta: ultima.hasta, error: ultima.estado === 'error' ? String(ultima.error || '').slice(0, 300) : null } : null,
+    enCurso: enCurso ? { corrida: enCurso.id, estado: enCurso.estado, desde: enCurso.desde, hasta: enCurso.hasta } : null,
   };
 }
 
@@ -617,6 +696,37 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     return analizar(filas, { desde, hasta, tipo: o.tipo || undefined, ...filtrosExtra(o) });
   }
 
+  /**
+   * Recibidos de [desde, hasta] (por fecha de emision) y la cobertura de la sincronizacion, para
+   * que Factorum los cruce con lo que cargo el estudio. Hasta `tope` filas en una respuesta (20.000
+   * por defecto); si hay mas, `truncado` y el total. El rango va de a lo sumo 2 anios.
+   */
+  async function recibidos(cuit, o = {}) {
+    const c = cuitDe(cuit);
+    if (!o.desde || !o.hasta) throw err('Faltan "desde" y "hasta" (AAAA-MM-DD)', 400);
+    const desde = iso(dia(o.desde));
+    const hasta = iso(dia(o.hasta));
+    if (desde > hasta) throw err('"desde" es posterior a "hasta"', 400);
+    if ((dia(hasta) - dia(desde)) / 86400000 > MAX_DIAS_ANALISIS) throw err('El período no puede pasar de 2 años', 400);
+    const pedido = Number(o.limite);
+    const tope = Number.isInteger(pedido) && pedido > 0 ? Math.min(pedido, MAX_RECIBIDOS) : MAX_RECIBIDOS;
+    const [{ filas, total }, corridas, cred] = await Promise.all([
+      repo.recibidosRango(c, desde, hasta, tope), repo.corridasRecibidos(c), repo.credencial(c)]);
+    const comprobantes = filas.slice(0, tope).map((f) => ({
+      fecha: f.fecha, cbteTipo: f.cbte_tipo, puntoVenta: f.punto_venta, numeroDesde: Number(f.numero_desde),
+      numeroHasta: f.numero_hasta == null ? Number(f.numero_desde) : Number(f.numero_hasta), cae: f.cae || null,
+      docTipo: f.doc_tipo, cuitEmisor: f.doc_nro, emisor: f.contraparte || '', moneda: f.moneda || 'PES',
+      tipoCambio: f.tipo_cambio == null ? 1 : Number(f.tipo_cambio),
+      netoGravado: f.neto_gravado, noGravado: f.no_gravado, exento: f.exento, iva: f.iva, total: f.total,
+      emisorApocrifo: f.emisor_apocrifo == null ? null : !!f.emisor_apocrifo,
+    }));
+    return {
+      cuit: c, desde, hasta, total, tope, truncado: total > comprobantes.length,
+      cobertura: { ...coberturaRecibidos(corridas, desde, hasta, ahora()), credencial: !!(cred && cred.clave_cifrada), sincronizarDiaria: !!(cred && cred.sincronizar) },
+      comprobantes,
+    };
+  }
+
   async function exportarCsv(cuit, filtros) {
     const filas = await repo.listar(cuitDe(cuit), { ...filtros, ...filtrosExtra(filtros), limite: 5000 });
     const cols = ['tipo', 'fecha', 'cbte_tipo', 'punto_venta', 'numero_desde', 'numero_hasta', 'cae', 'doc_tipo', 'doc_nro', 'contraparte', 'moneda', 'tipo_cambio', 'neto_gravado', 'no_gravado', 'exento', 'iva', 'total'];
@@ -634,6 +744,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     corrida: async (id) => repo.corrida(Number(id)),
     listar: async (cuit, filtros = {}) => repo.listar(cuitDe(cuit), { ...filtros, ...filtrosExtra(filtros) }),
     analisis,
+    recibidos,
     /** Hay algo bajado que esta persona pueda ver: decide si la UI muestra "Analisis". */
     hayComprobantes: async (principal = {}) => {
       const admin = ['superadmin', 'admin'].includes(principal.role);
@@ -659,4 +770,4 @@ function servicio() {
   return porDefecto;
 }
 
-module.exports = { crear, servicio, tramos, cuitDe, progresoDe, iaPorEntorno, condicionesListado, filtrosExtra, ESTADOS_VIVOS, RECETA_DEFAULT };
+module.exports = { crear, servicio, tramos, cuitDe, progresoDe, coberturaRecibidos, unirRangos, MAX_RECIBIDOS, iaPorEntorno, condicionesListado, filtrosExtra, ESTADOS_VIVOS, RECETA_DEFAULT };
