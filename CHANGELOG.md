@@ -3,6 +3,32 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [2.4.0] - 2026-11-27
+
+### Agregado
+- **Emitidos para el libro de ventas de Factorum.** `GET /api/mis-comprobantes/{cuit}/emitidos?desde=&hasta=`
+  devuelve los comprobantes emitidos del período (por fecha de emisión, hasta 20.000 y hasta 2 años),
+  con el receptor (tipo y número de documento y denominación) y los importes, y qué parte del período
+  está bajada. Factorum lo usa para armar el **Libro IVA Digital de ventas**.
+- La **cobertura** sale de las sincronizaciones de **emitidos** (o de ambos) que terminaron bien. Una
+  sincronización de recibidos no cuenta para los emitidos.
+- **Detalle por alícuota.** Mis Comprobantes trae el neto y el IVA de cada alícuota: ahora se guardan
+  al sincronizar, junto con los otros tributos, y solo si cierran con los totales del comprobante (si
+  no cierran, el comprobante queda sin detalle, nunca con uno equivocado). Para lo bajado antes de
+  esta versión, volvé a sincronizar los emitidos del período.
+- Si Mis Comprobantes no trae el detalle, se usa el de la **emisión propia de Arcanum** (lo que se mandó
+  por WSFEv1 y ARCA aprobó), cuando es el mismo comprobante y el total coincide. La emisión propia
+  aporta además las percepciones y los impuestos internos por separado. La respuesta dice de dónde
+  salió el detalle y avisa si las dos fuentes no coinciden.
+- Igual que los recibidos: alcanza con una clave de rol **lectura**, respeta los CUITs permitidos de
+  la clave (otro CUIT responde 403), cada pedido queda en la auditoría como
+  `mis-comprobantes:emitidos` y un error inesperado responde un mensaje genérico.
+
+### Cambiado
+- Lo que se emite por WSFEv1 guarda también el detalle de los tributos (antes, solo su total).
+- Mis Comprobantes en CSV con las columnas por alícuota: el neto gravado que se guarda es el total
+  («Imp. Neto Gravado Total») y no el de la primera alícuota.
+
 ## [2.3.0] - 2026-11-27
 
 ### Agregado

@@ -215,6 +215,7 @@ Todos se llaman con el motor genérico (`POST /api/ws/{servicio}/{operación}`).
 | `GET /api/comprobantes` · `/export.csv` · `/{…}/pdf` | Comprobantes, CSV y PDF con QR |
 | `GET /api/mis-comprobantes/{cuit}` · `/analisis` | Mis Comprobantes y su análisis |
 | `GET /api/mis-comprobantes/{cuit}/recibidos` | Recibidos de un período y qué parte está bajada (para conciliar con Factorum) |
+| `GET /api/mis-comprobantes/{cuit}/emitidos` | Emitidos de un período con el detalle por alícuota y qué parte está bajada (para el libro de ventas de Factorum) |
 | `POST /api/constatacion` | Constata una lista de comprobantes (WSCDC y apócrifos) |
 | `GET /api/monotributo/{cuit}` | Facturado en 12 meses contra el tope de la categoría |
 | `GET /api/metrics` · `/metrics` | Métricas en JSON y en formato Prometheus |
@@ -290,6 +291,7 @@ ARCA no publica Mis Comprobantes como Web Service: Arcanum lo baja operando el p
 - La **clave fiscal** se guarda cifrada y nunca vuelve por la API. Si ARCA la rechaza, Arcanum la bloquea y no reintenta, para no bloquear la cuenta.
 - La sincronización es **incremental** y puede ser **diaria** (`ARCANUM_MC_HORA`). Una corrida en curso se puede cancelar.
 - **Conciliación con Factorum:** `GET /api/mis-comprobantes/{cuit}/recibidos?desde=&hasta=` devuelve los recibidos del período (hasta 20.000, hasta 2 años) y la **cobertura**: qué días están bajados según las sincronizaciones que terminaron bien, la última sincronización y la que está en curso. Con una clave de rol `lectura` alcanza, siempre dentro de sus CUITs. Factorum lo cruza con las facturas que cargó el estudio y muestra qué coincide, qué tiene diferencias y qué falta pedirle al cliente.
+- **Libro de ventas de Factorum:** `GET /api/mis-comprobantes/{cuit}/emitidos?desde=&hasta=` devuelve los emitidos del período con los mismos topes, la misma cobertura (con las sincronizaciones de emitidos) y el mismo alcance que los recibidos. Trae el **detalle por alícuota** cuando Mis Comprobantes lo tiene y cierra con sus totales; si no, el de lo que Arcanum emitió por WSFEv1 (el mismo comprobante y el mismo total), que además separa las percepciones y los impuestos internos. Si no hay ninguno, `alicuotas` viene en `null` y Factorum lo avisa.
 - **Constatación masiva:** cada recibido contra WSCDC y su emisor contra apócrifos, en segundo plano y con reintento con CUIL, DNI y consumidor final.
 - **Topes de Monotributo:** 12 meses de emitidos contra el tope de la categoría, semáforo al 80 % y 100 %, categoría sugerida y recordatorio de recategorización.
 

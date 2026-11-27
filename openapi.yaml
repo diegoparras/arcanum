@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arcanum — Gateway REST para ARCA (ex-AFIP)
-  version: 2.3.0
+  version: 2.4.0
   description: >
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
@@ -668,6 +668,34 @@ paths:
             ultimaSincronizacion: { corrida, terminada, desde, hasta, cantidad } | null, ultimaCorrida: { corrida, estado, iniciada, terminada, desde, hasta, error } | null,
             enCurso: { corrida, estado, desde, hasta } | null, credencial, sincronizarDiaria }, comprobantes: [{ fecha, cbteTipo, puntoVenta, numeroDesde, numeroHasta,
             cae, docTipo, cuitEmisor, emisor, moneda, tipoCambio, netoGravado, noGravado, exento, iva, total, emisorApocrifo }] }
+        '400': { description: CUIT o fechas inválidas, o período de más de 2 años }
+        '403': { description: CUIT fuera del alcance }
+  /api/mis-comprobantes/{cuit}/emitidos:
+    get:
+      tags: [Mis Comprobantes]
+      summary: Emitidos de un rango con el detalle por alícuota y qué período está bajado (para el libro de ventas de Factorum)
+      description: >-
+        Los comprobantes emitidos del CUIT con fecha de emisión entre `desde` y `hasta` (a lo sumo 2 años), ordenados por fecha,
+        hasta 20.000 en una respuesta (`truncado`, `total`). `cobertura` es como la de recibidos, con las sincronizaciones de
+        emitidos o de ambos. Alcanza con el rol lectura, dentro de los CUITs de la clave. Importes en la moneda del comprobante.
+        `alicuotas` es el detalle por alícuota (`id` con el código de ARCA: 3 = 0 %, 4 = 10,5 %, 5 = 21 %, 6 = 27 %, 8 = 5 %, 9 = 2,5 %):
+        primero el de Mis Comprobantes, si se bajó y cierra con sus totales; si no, el de la emisión propia de Arcanum (WSFEv1) con el
+        mismo punto de venta, tipo, número y total; si no, null (`fuenteAlicuotas` dice cuál se usó). `desgloseDistinto` avisa que las
+        dos fuentes no coinciden (va la de Mis Comprobantes). `tributos` (percepciones, impuestos internos, con el `id` de la tabla de
+        tributos de WSFEv1) solo lo tiene la emisión propia; null si no hay. `otrosTributos` es null cuando Mis Comprobantes no lo trajo
+        y no hay emisión propia.
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string } }
+        - { name: desde, in: query, required: true, schema: { type: string, format: date } }
+        - { name: hasta, in: query, required: true, schema: { type: string, format: date } }
+        - { name: limite, in: query, schema: { type: integer, maximum: 20000 } }
+      responses:
+        '200':
+          description: >-
+            { ok, cuit, desde, hasta, total, tope, truncado, cobertura (como en recibidos), comprobantes: [{ fecha, cbteTipo, puntoVenta,
+            numeroDesde, numeroHasta, cae, docTipo, docNro, receptor, moneda, tipoCambio, netoGravado, noGravado, exento, iva, otrosTributos,
+            total, alicuotas: [{ id, netoGravado, iva }] | null, fuenteAlicuotas: mis_comprobantes | arcanum | null, desgloseDistinto,
+            tributos: [{ id, descripcion, importe }] | null, emisionArcanum, fechaVtoPago }] }
         '400': { description: CUIT o fechas inválidas, o período de más de 2 años }
         '403': { description: CUIT fuera del alcance }
   /api/mis-comprobantes/{cuit}/corridas:
