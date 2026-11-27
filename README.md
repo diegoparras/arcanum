@@ -215,6 +215,7 @@ Todos se llaman con el motor genérico (`POST /api/ws/{servicio}/{operación}`).
 | `GET /api/comprobantes` · `/export.csv` · `/{…}/pdf` | Comprobantes, CSV y PDF con QR |
 | `GET /api/mis-comprobantes/{cuit}` · `/analisis` | Mis Comprobantes y su análisis |
 | `GET /api/mis-comprobantes/{cuit}/recibidos` | Recibidos de un período y qué parte está bajada (para conciliar con Factorum) |
+| `GET /api/mis-comprobantes/{cuit}/descargados` | Lo bajado, comprobante por comprobante y paginado, para integraciones |
 | `POST /api/constatacion` | Constata una lista de comprobantes (WSCDC y apócrifos) |
 | `GET /api/monotributo/{cuit}` | Facturado en 12 meses contra el tope de la categoría |
 | `GET /api/metrics` · `/metrics` | Métricas en JSON y en formato Prometheus |
@@ -273,7 +274,8 @@ Arcanum necesita su **URL pública**: `ARCANUM_PUBLIC_URL` o el menú **Suite Es
 | `comunicaciones_ventanilla` | Comunicaciones de e-Ventanilla (sin marcarlas como leídas) |
 | `vencimiento_certificado` | Hasta cuándo sirve cada certificado |
 | `vista_previa_comprobante` | Revisa un comprobante sin emitirlo |
-| `mis_comprobantes` · `topes_monotributo` · `constatacion_recibidos` | Datos de Mis Comprobantes |
+| `mis_comprobantes` · `listar_comprobantes_descargados` | Resumen y listado paginado de lo bajado de Mis Comprobantes |
+| `topes_monotributo` · `constatacion_recibidos` | Monotributo y constatación de recibidos |
 | `facturas_recibidas` · `factura_recibida` · `resumen_facturas_recibidas` · `verificar_factura` | Facturas recibidas (con Factorum) |
 
 Para que un asistente facture: `vista_previa_comprobante`, una persona aprueba, y la emisión va por la API REST con una clave de rol `operador`.

@@ -14,6 +14,7 @@
 //   vencimiento_certificado -> vigencia de los certificados cargados
 //   vista_previa_comprobante -> valida un comprobante y muestra su numero, SIN emitir
 //   mis_comprobantes    -> emitidos y recibidos de Mis Comprobantes ya bajados (no entra a ARCA)
+//   listar_comprobantes_descargados -> esos mismos, uno por uno y paginados (no entra a ARCA)
 //   topes_monotributo   -> facturado en 12 meses contra el tope de la categoria
 //   constatacion_recibidos -> resultado guardado de constatar los recibidos (WSCDC + APOC)
 //   cola_emision        -> comprobantes en la cola de contingencia y su estado
@@ -687,6 +688,26 @@ const vistaPreviaTool = {
 };
 
 // ---------- mis_comprobantes ----------
+/**
+ * El CUIT titular de Mis Comprobantes: el indicado, o el único que esta persona puede ver con datos
+ * bajados. Deja el CUIT en el contexto (para la auditoría) después de verificar el alcance.
+ */
+async function cuitConMisComprobantes(valor, ctx, campo = 'cuit') {
+  let cuit;
+  if (valor) {
+    cuit = cuit11(valor);
+  } else {
+    const { rows } = await db.query('SELECT DISTINCT cuit FROM mc_comprobantes ORDER BY cuit');
+    let lista = rows.map((r) => r.cuit);
+    if (ctx.principal.cuitAllow && ctx.principal.cuitAllow.length) lista = lista.filter((c) => ctx.principal.cuitAllow.includes(c));
+    if (lista.length !== 1) throw error(lista.length ? `Hay ${lista.length} CUITs con Mis Comprobantes; indicá "${campo}": ${lista.join(', ')}.` : 'Todavía no se sincronizó Mis Comprobantes para ningún CUIT.');
+    cuit = lista[0];
+  }
+  assertCuitAllowed(ctx.principal, cuit);
+  ctx.cuit = cuit;
+  return cuit;
+}
+
 /** Filas de mc_comprobantes -> resumen por tipo (las notas de credito restan) + ultimos 50. */
 function resumirMc(filas) {
   const { conSigno } = require('../services/tiposCbte');
@@ -733,18 +754,7 @@ const misComprobantesTool = {
     additionalProperties: false,
   },
   async ejecutar(args, ctx) {
-    let cuit;
-    if (args.cuit) {
-      cuit = cuit11(args.cuit);
-    } else {
-      const { rows } = await db.query('SELECT DISTINCT cuit FROM mc_comprobantes ORDER BY cuit');
-      let lista = rows.map((r) => r.cuit);
-      if (ctx.principal.cuitAllow && ctx.principal.cuitAllow.length) lista = lista.filter((c) => ctx.principal.cuitAllow.includes(c));
-      if (lista.length !== 1) throw error(lista.length ? `Hay ${lista.length} CUITs con Mis Comprobantes; indicá "cuit": ${lista.join(', ')}.` : 'Todavía no se sincronizó Mis Comprobantes para ningún CUIT.');
-      cuit = lista[0];
-    }
-    assertCuitAllowed(ctx.principal, cuit);
-    ctx.cuit = cuit;
+    const cuit = await cuitConMisComprobantes(args.cuit, ctx);
     for (const campo of ['desde', 'hasta']) {
       if (args[campo] && !/^\d{4}-\d{2}-\d{2}$/.test(String(args[campo]))) throw error(`"${campo}" debe tener la forma AAAA-MM-DD`);
     }
@@ -756,6 +766,48 @@ const misComprobantesTool = {
       cuit,
       filtros: { tipo: args.tipo || null, desde: args.desde || null, hasta: args.hasta || null },
       ...resumirMc(filas),
+      ultimaSincronizacion: ultima ? { fecha: ultima.terminada_at, desde: fechaIso(ultima.desde), hasta: fechaIso(ultima.hasta), tipo: ultima.tipo } : null,
+      fuente: 'Mis Comprobantes de ARCA, bajado por Arcanum',
+    };
+  },
+};
+
+// ---------- listar_comprobantes_descargados ----------
+const listarDescargadosTool = {
+  nombre: 'listar_comprobantes_descargados',
+  titulo: 'Comprobantes descargados (listado)',
+  descripcion:
+    'Listado de los comprobantes emitidos y recibidos de un CUIT que Arcanum ya bajó de Mis Comprobantes de ARCA, '
+    + 'del más nuevo al más viejo, de a lo sumo 50 por pedido. Cada uno trae id estable, emitido o recibido, tipo y su '
+    + 'nombre, punto de venta, número, fecha, contraparte (CUIT o documento y nombre), importes en número (total, neto '
+    + 'gravado, no gravado, exento, IVA), moneda, cotización y CAE. Si hay más, devuelve "siguiente": pasalo como '
+    + '"cursor" para la próxima página. Si no hay nada para esos filtros lo dice en "mensaje"; los datos llegan hasta la '
+    + 'última sincronización ("ultimaSincronizacion"). No entra a ARCA ni emite nada. Solo lectura.',
+  esquema: {
+    type: 'object',
+    properties: {
+      cuit_titular: { type: 'string', description: 'CUIT dueño de los comprobantes. Opcional si Arcanum tiene uno solo con Mis Comprobantes.' },
+      tipo: { type: 'string', enum: ['emitidos', 'recibidos'], description: 'Opcional. Solo emitidos o solo recibidos.' },
+      desde: { type: 'string', description: 'Opcional. Fecha mínima, AAAA-MM-DD.' },
+      hasta: { type: 'string', description: 'Opcional. Fecha máxima, AAAA-MM-DD.' },
+      cuit: { type: 'string', description: 'Opcional. CUIT o documento de la contraparte (cliente o proveedor).' },
+      tipoCbte: { type: 'integer', description: 'Opcional. Código del tipo de comprobante: 1 Factura A, 6 Factura B, 11 Factura C, 3/8/13 notas de crédito.' },
+      limite: { type: 'integer', minimum: 1, maximum: 50, description: 'Opcional. Cuántos por página (50 por defecto y como máximo).' },
+      cursor: { type: 'string', description: 'Opcional. El "siguiente" de la página anterior.' },
+    },
+    additionalProperties: false,
+  },
+  async ejecutar(args, ctx) {
+    const descargados = require('../services/descargados');
+    const cuit = await cuitConMisComprobantes(args.cuit_titular, ctx, 'cuit_titular');
+    const f = descargados.normalizarFiltros(args, { tope: 50 });
+    const pagina = await descargados.listar(cuit, f);
+    const corridas = await require('../services/misComprobantes').servicio().corridas(cuit, 10);
+    const ultima = corridas.find((c) => c.estado === 'terminado');
+    return {
+      cuit,
+      filtros: descargados.filtrosVisibles(f),
+      ...pagina,
       ultimaSincronizacion: ultima ? { fecha: ultima.terminada_at, desde: fechaIso(ultima.desde), hasta: fechaIso(ultima.hasta), tipo: ultima.tipo } : null,
       fuente: 'Mis Comprobantes de ARCA, bajado por Arcanum',
     };
@@ -1066,7 +1118,7 @@ function crearHerramientasFactorum({ factorum } = {}) {
 const HERRAMIENTAS = [
   padronTool, comprobanteTool, ultimoTool, puntosTool, estadoTool,
   riesgoTool, recientesTool, ventanillaTool, certTool, vistaPreviaTool,
-  misComprobantesTool, topesMonotributoTool, constatacionTool, colaTool,
+  misComprobantesTool, listarDescargadosTool, topesMonotributoTool, constatacionTool, colaTool,
   ...crearHerramientasFactorum(),
 ];
 

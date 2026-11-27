@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arcanum — Gateway REST para ARCA (ex-AFIP)
-  version: 2.3.0
+  version: 2.3.1
   description: >
     API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
     100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
@@ -628,6 +628,32 @@ paths:
         - { name: contraparte, in: query, description: CUIT o documento de la contraparte, schema: { type: string } }
         - { name: q, in: query, description: Texto en el nombre o dígitos del CUIT de la contraparte, schema: { type: string, maxLength: 80 } }
       responses: { '200': { description: comprobantes } }
+  /api/mis-comprobantes/{cuit}/descargados:
+    get:
+      tags: [Mis Comprobantes]
+      summary: Listado paginado de los comprobantes ya bajados, para integraciones
+      description: >-
+        Del más nuevo al más viejo, con montos en número y un id estable por comprobante. No entra a ARCA: devuelve lo
+        guardado en la última sincronización. Si hay más resultados, "siguiente" trae el cursor de la próxima página.
+        Sin resultados en la primera página, "mensaje" lo dice con el periodo pedido. El CAE no trae vencimiento: Mis
+        Comprobantes no lo informa.
+      parameters:
+        - { name: cuit, in: path, required: true, description: CUIT titular, schema: { type: string } }
+        - { name: tipo, in: query, schema: { type: string, enum: [emitidos, recibidos] } }
+        - { name: desde, in: query, schema: { type: string, format: date } }
+        - { name: hasta, in: query, schema: { type: string, format: date } }
+        - { name: cuit, in: query, description: CUIT o documento de la contraparte, schema: { type: string } }
+        - { name: tipoCbte, in: query, description: "Código de ARCA del tipo (1 Factura A, 6 Factura B, 11 Factura C)", schema: { type: integer } }
+        - { name: limite, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: cursor, in: query, description: El valor "siguiente" de la página anterior, schema: { type: string } }
+      responses:
+        '200':
+          description: >-
+            { ok, cuit, filtros, cantidad, siguiente, mensaje?, comprobantes: [{ id, tipo, tipoComprobante, tipoNombre,
+            comprobante, puntoVenta, numero, numeroHasta?, fecha, contraparte: { cuit, documento, tipoDocumento, nombre },
+            importes: { total, netoGravado, noGravado, exento, iva }, moneda, cotizacion, cae }] }
+        '400': { description: filtro o cursor inválido }
+        '403': { description: CUIT fuera del alcance }
   /api/mis-comprobantes/{cuit}/analisis:
     get:
       tags: [Mis Comprobantes]

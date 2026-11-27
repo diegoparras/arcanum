@@ -3,6 +3,15 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [2.3.1] - 2026-11-27
+
+### Agregado
+- **Listado de los comprobantes descargados, para integraciones.** `GET /api/mis-comprobantes/{cuit}/descargados`
+  y la herramienta MCP `listar_comprobantes_descargados` devuelven lo ya bajado de Mis Comprobantes, uno por uno:
+  id estable, emitido o recibido, tipo y su nombre, punto de venta, número, fecha, contraparte, importes en número,
+  moneda, cotización y CAE. Filtros por tipo, fechas, contraparte y tipo de comprobante; paginación por cursor (50
+  por pedido en MCP, hasta 200 por REST). Si no hay nada para el periodo, lo dice. Solo lectura: no entra a ARCA.
+
 ## [2.3.0] - 2026-11-27
 
 ### Agregado
