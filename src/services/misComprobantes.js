@@ -230,17 +230,19 @@ function repoSql() {
         await c.query(
           `INSERT INTO mc_comprobantes (cuit, tipo, fecha, cbte_tipo, punto_venta, numero_desde, numero_hasta, cae,
              doc_tipo, doc_nro, contraparte, moneda, tipo_cambio, neto_gravado, no_gravado, exento, iva, total,
-             corrida_id, actualizado_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19, now())
+             corrida_id, alicuotas, otros_tributos, actualizado_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21, now())
            ON CONFLICT (cuit, tipo, cbte_tipo, punto_venta, numero_desde, doc_nro) DO UPDATE SET
              fecha = EXCLUDED.fecha, numero_hasta = EXCLUDED.numero_hasta, cae = EXCLUDED.cae,
              doc_tipo = EXCLUDED.doc_tipo, contraparte = EXCLUDED.contraparte, moneda = EXCLUDED.moneda,
              tipo_cambio = EXCLUDED.tipo_cambio, neto_gravado = EXCLUDED.neto_gravado,
              no_gravado = EXCLUDED.no_gravado, exento = EXCLUDED.exento, iva = EXCLUDED.iva,
-             total = EXCLUDED.total, corrida_id = EXCLUDED.corrida_id, actualizado_at = now()`,
+             total = EXCLUDED.total, corrida_id = EXCLUDED.corrida_id,
+             alicuotas = EXCLUDED.alicuotas, otros_tributos = EXCLUDED.otros_tributos, actualizado_at = now()`,
           [cuit, tipo, f.fecha, f.cbteTipo, f.puntoVenta || 0, f.numeroDesde, f.numeroHasta, f.cae, f.docTipo,
             f.docNro || '', f.contraparte, f.moneda, f.tipoCambio, f.netoGravado, f.noGravado, f.exento, f.iva,
-            f.total, corridaId]);
+            f.total, corridaId, Array.isArray(f.alicuotas) && f.alicuotas.length ? JSON.stringify(f.alicuotas) : null,
+            f.otrosTributos == null ? null : f.otrosTributos]);
         n += 1;
       }
       return n;
@@ -295,6 +297,38 @@ function repoSql() {
         "SELECT count(*)::int AS n FROM mc_comprobantes WHERE cuit = $1 AND tipo = 'recibido' AND fecha >= $2 AND fecha <= $3", [cuit, desde, hasta]);
       return { filas: rows, total: n[0].n };
     },
+    // Emitidos de un rango para el libro de ventas de Factorum: como recibidosRango, con el detalle
+    // por alicuota y los otros tributos cuando se bajaron.
+    async emitidosRango(cuit, desde, hasta, tope) {
+      const { rows } = await db.query(
+        `SELECT to_char(fecha, 'YYYY-MM-DD') AS fecha, cbte_tipo, punto_venta, numero_desde, numero_hasta, cae,
+                doc_tipo, doc_nro, contraparte, moneda, tipo_cambio::float8 AS tipo_cambio,
+                neto_gravado::float8 AS neto_gravado, no_gravado::float8 AS no_gravado, exento::float8 AS exento,
+                iva::float8 AS iva, total::float8 AS total, otros_tributos::float8 AS otros_tributos, alicuotas
+           FROM mc_comprobantes WHERE cuit = $1 AND tipo = 'emitido' AND fecha >= $2 AND fecha <= $3
+          ORDER BY fecha, cbte_tipo, punto_venta, numero_desde LIMIT $4`, [cuit, desde, hasta, tope + 1]);
+      const { rows: n } = await db.query(
+        "SELECT count(*)::int AS n FROM mc_comprobantes WHERE cuit = $1 AND tipo = 'emitido' AND fecha >= $2 AND fecha <= $3", [cuit, desde, hasta]);
+      return { filas: rows, total: n[0].n };
+    },
+    // Lo que Arcanum emitio por sus Web Services (aprobado) en el rango, con el detalle que mando a
+    // ARCA: alicuotas, tributos e importes. Solo del entorno en el que corre (homologacion o produccion).
+    async propiasRango(cuit, desde, hasta) {
+      const { config } = require('../config');
+      const { rows } = await db.query(
+        `SELECT punto_venta, tipo_cbte, numero, importe_total::float8 AS importe_total, raw
+           FROM comprobantes WHERE cuit = $1 AND entorno = $2 AND resultado = 'A' AND fecha >= $3 AND fecha <= $4
+          LIMIT 50001`, [cuit, config.env, desde, hasta]);
+      return rows;
+    },
+    // Corridas de emitidos (o de ambos) para calcular que periodo esta bajado.
+    async corridasEmitidos(cuit) {
+      const { rows } = await db.query(
+        `SELECT id, tipo, to_char(desde, 'YYYY-MM-DD') AS desde, to_char(hasta, 'YYYY-MM-DD') AS hasta, estado,
+                iniciada_at, terminada_at, cantidad, error, COALESCE(latido_at, iniciada_at) AS latido_at
+           FROM mc_corridas WHERE cuit = $1 AND tipo IN ('emitidos', 'ambos') ORDER BY id DESC LIMIT 2000`, [cuit]);
+      return rows;
+    },
     // Corridas de recibidos (o de ambos) para calcular que periodo esta bajado.
     async corridasRecibidos(cuit) {
       const { rows } = await db.query(
@@ -330,7 +364,8 @@ function unirRangos(rangos) {
 }
 
 /**
- * Que parte de [desde, hasta] esta bajada de Mis Comprobantes (recibidos), segun las corridas que
+ * Que parte de [desde, hasta] esta bajada de Mis Comprobantes, segun las corridas que (las de
+ * recibidos para la conciliacion, las de emitidos para el libro de ventas: quien llama las filtra)
  * terminaron bien. Una corrida que fallo a mitad puede haber guardado algunos tramos, pero no se
  * sabe cuales: no cuenta como cubierta. Devuelve los rangos bajados, los huecos del periodo pedido,
  * la ultima sincronizacion que termino bien y la ultima corrida (cualquiera sea su estado).
@@ -727,6 +762,69 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     };
   }
 
+  /**
+   * Emitidos de [desde, hasta] para el libro de ventas de Factorum: lo que ARCA tiene en Mis
+   * Comprobantes (la lista y los totales), con el detalle por alicuota de donde se pueda y la
+   * cobertura de las corridas de emitidos. Mismos topes y validaciones que recibidos().
+   *
+   * Prioridad del desglose (decision 2.4.0):
+   *   1. el detalle por alicuota de Mis Comprobantes, si se bajo y cierra con sus totales;
+   *   2. si no, el de la emision propia de Arcanum (WSFEv1: lo que se mando a ARCA y ARCA aprobo),
+   *      si el comprobante es el mismo (punto de venta, tipo y numero) y el total coincide;
+   *   3. si no, ninguno (`alicuotas: null`): Factorum avisa y solo deduce la alicuota si hay una sola.
+   * Los tributos separados (percepciones, impuestos internos) solo los tiene la emision propia: van
+   * en `tributos` cuando el total coincide. Si las dos fuentes tienen alicuotas y no coinciden, va
+   * la de Mis Comprobantes y `desgloseDistinto` avisa.
+   */
+  async function emitidos(cuit, o = {}) {
+    const c = cuitDe(cuit);
+    if (!o.desde || !o.hasta) throw err('Faltan "desde" y "hasta" (AAAA-MM-DD)', 400);
+    const desde = iso(dia(o.desde));
+    const hasta = iso(dia(o.hasta));
+    if (desde > hasta) throw err('"desde" es posterior a "hasta"', 400);
+    if ((dia(hasta) - dia(desde)) / 86400000 > MAX_DIAS_ANALISIS) throw err('El período no puede pasar de 2 años', 400);
+    const pedido = Number(o.limite);
+    const tope = Number.isInteger(pedido) && pedido > 0 ? Math.min(pedido, MAX_RECIBIDOS) : MAX_RECIBIDOS;
+    const [{ filas, total }, corridas, cred, propias] = await Promise.all([
+      repo.emitidosRango(c, desde, hasta, tope), repo.corridasEmitidos(c), repo.credencial(c),
+      repo.propiasRango ? repo.propiasRango(c, desde, hasta) : []]);
+    const porClave = new Map();
+    for (const p of propias || []) porClave.set(`${p.tipo_cbte}-${p.punto_venta}-${p.numero}`, p);
+    const comprobantes = filas.slice(0, tope).map((f) => {
+      const desdeN = Number(f.numero_desde);
+      const totalMc = Number(f.total);
+      const propia = porClave.get(`${f.cbte_tipo}-${f.punto_venta}-${desdeN}`);
+      const raw = propia && propia.raw && typeof propia.raw === 'object' ? propia.raw : null;
+      const coincide = !!raw && Math.abs(Number(propia.importe_total) - totalMc) < 0.005;
+      const deMc = Array.isArray(f.alicuotas) && f.alicuotas.length ? f.alicuotas.map((a) => ({ id: Number(a.id), netoGravado: Number(a.netoGravado), iva: Number(a.iva) })) : null;
+      const dePropia = coincide && Array.isArray(raw.alicuotasIva) && raw.alicuotasIva.length
+        ? raw.alicuotasIva.map((a) => ({ id: Number(a.id), netoGravado: Number(a.baseImponible || 0), iva: Number(a.importe || 0) })) : null;
+      const igual = (x, y) => x.length === y.length && x.every((a) => y.some((b) => b.id === a.id && Math.abs(b.netoGravado - a.netoGravado) < 0.005 && Math.abs(b.iva - a.iva) < 0.005));
+      const tributos = coincide && Array.isArray(raw.tributos)
+        ? raw.tributos.map((t) => ({ id: Number(t.id), descripcion: String(t.descripcion || '').slice(0, 80), importe: Number(t.importe || 0) })) : null;
+      return {
+        fecha: f.fecha, cbteTipo: f.cbte_tipo, puntoVenta: f.punto_venta, numeroDesde: desdeN,
+        numeroHasta: f.numero_hasta == null ? desdeN : Number(f.numero_hasta), cae: f.cae || null,
+        docTipo: f.doc_tipo, docNro: f.doc_nro || '', receptor: f.contraparte || '', moneda: f.moneda || 'PES',
+        tipoCambio: f.tipo_cambio == null ? 1 : Number(f.tipo_cambio),
+        netoGravado: f.neto_gravado, noGravado: f.no_gravado, exento: f.exento, iva: f.iva,
+        otrosTributos: f.otros_tributos == null ? (coincide && raw.importeTributos != null ? Number(raw.importeTributos) : null) : Number(f.otros_tributos),
+        total: f.total,
+        alicuotas: deMc || dePropia,
+        fuenteAlicuotas: deMc ? 'mis_comprobantes' : dePropia ? 'arcanum' : null,
+        desgloseDistinto: !!(deMc && dePropia && !igual(deMc, dePropia)),
+        tributos,
+        emisionArcanum: coincide,
+        fechaVtoPago: coincide && raw.fechaVtoPago ? String(raw.fechaVtoPago).replace(/\D/g, '').slice(0, 8) || null : null,
+      };
+    });
+    return {
+      cuit: c, desde, hasta, total, tope, truncado: total > comprobantes.length,
+      cobertura: { ...coberturaRecibidos(corridas, desde, hasta, ahora()), credencial: !!(cred && cred.clave_cifrada), sincronizarDiaria: !!(cred && cred.sincronizar) },
+      comprobantes,
+    };
+  }
+
   async function exportarCsv(cuit, filtros) {
     const filas = await repo.listar(cuitDe(cuit), { ...filtros, ...filtrosExtra(filtros), limite: 5000 });
     const cols = ['tipo', 'fecha', 'cbte_tipo', 'punto_venta', 'numero_desde', 'numero_hasta', 'cae', 'doc_tipo', 'doc_nro', 'contraparte', 'moneda', 'tipo_cambio', 'neto_gravado', 'no_gravado', 'exento', 'iva', 'total'];
@@ -745,6 +843,7 @@ function crear({ repo, fisherboy, vault, webhooks, esperaMs = 2000, ahora = () =
     listar: async (cuit, filtros = {}) => repo.listar(cuitDe(cuit), { ...filtros, ...filtrosExtra(filtros) }),
     analisis,
     recibidos,
+    emitidos,
     /** Hay algo bajado que esta persona pueda ver: decide si la UI muestra "Analisis". */
     hayComprobantes: async (principal = {}) => {
       const admin = ['superadmin', 'admin'].includes(principal.role);
@@ -770,4 +869,4 @@ function servicio() {
   return porDefecto;
 }
 
-module.exports = { crear, servicio, tramos, cuitDe, progresoDe, coberturaRecibidos, unirRangos, MAX_RECIBIDOS, iaPorEntorno, condicionesListado, filtrosExtra, ESTADOS_VIVOS, RECETA_DEFAULT };
+module.exports = { crear, servicio, repoSql, tramos, cuitDe, progresoDe, coberturaRecibidos, cobertura: coberturaRecibidos, unirRangos, MAX_RECIBIDOS, iaPorEntorno, condicionesListado, filtrosExtra, ESTADOS_VIVOS, RECETA_DEFAULT };

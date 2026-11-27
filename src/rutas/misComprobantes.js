@@ -15,6 +15,7 @@
 //   GET      /api/mis-comprobantes/:cuit/export.csv
 //   GET      /api/mis-comprobantes/:cuit/corridas
 //   GET      /api/mis-comprobantes/:cuit/recibidos?desde=&hasta=  recibidos del rango y cobertura (conciliacion de Factorum)
+//   GET      /api/mis-comprobantes/:cuit/emitidos?desde=&hasta=   emitidos del rango, alicuotas y cobertura (libro de ventas de Factorum)
 //   GET      /api/mis-comprobantes/:cuit/rango?tipo=      proxima sincronizacion (incremental)
 //   GET/PUT/DELETE /api/mis-comprobantes/:cuit/credencial   (PUT/DELETE admin+)
 //   POST     /api/mis-comprobantes/:cuit/sincronizar    admin+ u operador con ese CUIT -> 202
@@ -235,6 +236,17 @@ function crearRutas({ mc, fisherboy, constatacion } = {}) {
       req._op = 'mis-comprobantes:recibidos';
       const r = await servicio().recibidos(cuit, { desde: q.get('desde'), hasta: q.get('hasta'), limite: q.get('limite') || undefined });
       // Sin sangria: con miles de filas el JSON con espacios pesa el doble.
+      const body = JSON.stringify({ ok: true, ...r });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store' });
+      res.end(body);
+      return true;
+    }
+    // Para el libro de ventas de Factorum (2.4.0): los emitidos del rango con el detalle por
+    // alicuota y la cobertura de las corridas de emitidos. Igual que recibidos: GET, rol lectura,
+    // dentro de los CUITs de la clave.
+    if (req.method === 'GET' && seg[3] === 'emitidos' && !seg[4]) {
+      req._op = 'mis-comprobantes:emitidos';
+      const r = await servicio().emitidos(cuit, { desde: q.get('desde'), hasta: q.get('hasta'), limite: q.get('limite') || undefined });
       const body = JSON.stringify({ ok: true, ...r });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store' });
       res.end(body);

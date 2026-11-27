@@ -114,6 +114,7 @@ test('JSON de Emitidos: posiciones de ARCA, montos con punto decimal y $ como pe
     tipo: 'emitido', fecha: '2025-11-18', cbteTipo: 11, puntoVenta: 2, numeroDesde: 190, numeroHasta: 190,
     cae: '75461234567890', docTipo: 80, docNro: '30500000001', contraparte: 'CLIENTE DE PRUEBA SA',
     moneda: 'PES', tipoCambio: 1, netoGravado: 3500000, noGravado: 0, exento: 0, iva: 0, total: 3500000,
+    otrosTributos: 0, alicuotas: null,
   });
 });
 

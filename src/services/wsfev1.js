@@ -382,6 +382,10 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
     importeNoGravado: Number(inv.importeNoGravado || 0),
     importeTributos: Number(inv.importeTributos || 0),
     alicuotasIva: Array.isArray(inv.alicuotasIva) ? inv.alicuotasIva : [],
+    // 2.4.0: el detalle de los tributos (percepciones, impuestos internos), para el libro de ventas.
+    tributos: Array.isArray(inv.tributos)
+      ? inv.tributos.map((t) => ({ id: parseInt(t.id, 10), descripcion: t.descripcion || null, baseImponible: Number(t.baseImponible || 0), alicuota: Number(t.alicuota || 0), importe: Number(t.importe || 0) }))
+      : [],
     items: Array.isArray(inv.items) ? inv.items : [],
     condicionIvaReceptor: inv.condicionIvaReceptor != null ? parseInt(inv.condicionIvaReceptor, 10) : null,
     receptorNombre: inv.receptorNombre || inv.razonSocialReceptor || null,

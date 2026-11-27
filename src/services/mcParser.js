@@ -116,12 +116,57 @@ const CAMPOS = {
   contraparte: (h) => h.startsWith('denominacion'),
   tipoCambio: (h) => h.startsWith('tipo cambio') || h.startsWith('tipo de cambio'),
   moneda: (h) => h === 'moneda',
-  netoGravado: (h) => h.includes('neto gravado') && !h.includes('no gravado'),
+  // El neto total: "Imp. Neto Gravado" (formato viejo) o "Imp. Neto Gravado Total" (con el detalle
+  // por alicuota). Las columnas "Imp. Neto Gravado IVA 21%" son de cada alicuota, no del total.
+  netoGravado: (h) => h.includes('neto gravado') && !h.includes('no gravado') && !h.includes('%'),
   noGravado: (h) => h.includes('no gravado'),
   exento: (h) => h.includes('exent'),
+  otrosTributos: (h) => h.includes('otros tributos'),
   iva: (h) => h === 'iva' || h === 'imp. iva' || h === 'total iva',
   total: (h) => h === 'imp. total' || h === 'importe total' || h === 'total',
 };
+
+// Alicuotas de IVA con su codigo (el mismo en WSFEv1 y en el Libro IVA Digital): 3 = 0 %, 4 =
+// 10,5 %, 5 = 21 %, 6 = 27 %, 8 = 5 %, 9 = 2,5 %. Tasa en centesimos de punto.
+const ALICUOTAS = [
+  { id: 3, tasa: '0', bp: 0 }, { id: 9, tasa: '2,5', bp: 250 }, { id: 8, tasa: '5', bp: 500 },
+  { id: 4, tasa: '10,5', bp: 1050 }, { id: 5, tasa: '21', bp: 2100 }, { id: 6, tasa: '27', bp: 2700 },
+];
+const ALICUOTA_POR_TASA = Object.fromEntries(ALICUOTAS.map((a) => [a.tasa, a]));
+
+/**
+ * Detalle por alicuota de una fila, o null si no lo trae o no cierra. Cierra cuando la suma de los
+ * netos da el neto gravado total y la del IVA da el IVA total (un centavo por alicuota de margen) y
+ * el IVA de cada una es su tasa sobre su neto (con el mismo margen). Nunca se inventa: ante la duda,
+ * null y el desglose queda para otra fuente.
+ */
+function alicuotasQueCierran(partes, netoTotal, ivaTotal) {
+  const con = partes.filter((a) => a.netoGravado || a.iva);
+  if (!con.length) return null;
+  const tol = Math.max(2, con.length) / 100;
+  const suma = (k) => Math.round(con.reduce((t, a) => t + a[k], 0) * 100) / 100;
+  if (Math.abs(suma('netoGravado') - netoTotal) > tol || Math.abs(suma('iva') - ivaTotal) > tol) return null;
+  for (const a of con) {
+    const def = ALICUOTAS.find((x) => x.id === a.id);
+    if (a.netoGravado < 0 || a.iva < 0) return null;
+    if (Math.abs(Math.round(a.netoGravado * def.bp) / 10000 - a.iva) > 0.02 + a.netoGravado * 0.00005) return null;
+  }
+  return con.map((a) => ({ id: a.id, netoGravado: a.netoGravado, iva: a.iva }));
+}
+
+/** Las columnas por alicuota del CSV: "Imp. Neto Gravado IVA 21%" e "IVA 21%". */
+function alicuotasCsv(fila) {
+  const por = {};
+  for (const [h, valor] of Object.entries(fila || {})) {
+    const n = sinTildes(h).replace(/\s+/g, ' ');
+    let m = n.match(/neto gravado iva (\d+(?:[.,]\d+)?) ?%$/);
+    if (m) { const a = ALICUOTA_POR_TASA[m[1].replace('.', ',')]; if (a) (por[a.id] = por[a.id] || { id: a.id, netoGravado: 0, iva: 0 }).netoGravado = numero(valor); continue; }
+    m = n.match(/^(?:imp\. )?iva (\d+(?:[.,]\d+)?) ?%$/);
+    if (m) { const a = ALICUOTA_POR_TASA[m[1].replace('.', ',')]; if (a) (por[a.id] = por[a.id] || { id: a.id, netoGravado: 0, iva: 0 }).iva = numero(valor); }
+  }
+  const lista = Object.values(por);
+  return lista.length ? lista : null;
+}
 
 /** Una fila cruda del CSV -> comprobante normalizado. */
 function normalizarFila(fila, tipo) {
@@ -133,6 +178,9 @@ function normalizarFila(fila, tipo) {
     }
   }
   const desde = entero(v.numeroDesde);
+  const netoGravado = numero(v.netoGravado);
+  const iva = numero(v.iva);
+  const partes = alicuotasCsv(fila);
   return {
     tipo,
     fecha: fecha(v.fecha),
@@ -146,11 +194,13 @@ function normalizarFila(fila, tipo) {
     contraparte: String(v.contraparte || '').trim(),
     moneda: String(v.moneda || '').trim() || 'PES',
     tipoCambio: numero(v.tipoCambio) || 1,
-    netoGravado: numero(v.netoGravado),
+    netoGravado,
     noGravado: numero(v.noGravado),
     exento: numero(v.exento),
-    iva: numero(v.iva),
+    iva,
     total: numero(v.total),
+    otrosTributos: v.otrosTributos === undefined ? null : numero(v.otrosTributos),
+    alicuotas: partes ? alicuotasQueCierran(partes, netoGravado, iva) : null,
   };
 }
 
@@ -158,16 +208,31 @@ function normalizarFila(fila, tipo) {
 // cada pagina de ARCA (comprobantesEmitidos.do / comprobantesRecibidos.do), verificadas en vivo:
 // Emitidos trae 49 columnas y Recibidos 52 (suma CUIT y doc del emisor). Las columnas *Styled
 // son el mismo valor con formato y se ignoran.
+//
+// 2.4.0: el detalle por alicuota y los otros tributos. No se verificaron en vivo: salen del orden
+// de las columnas del CSV de la misma pantalla (neto 0 %, y de a pares IVA y neto de 2,5, 5, 10,5,
+// 21 y 27 %; despues el neto total, no gravado, exento, otros tributos, IVA total y total), que en
+// el JSON ocupa justo los huecos entre la moneda y el neto total (cada valor con su *Styled). Por
+// eso se usan solo si cierran (ver alicuotasQueCierran): si ARCA los tuviera en otro orden, la fila
+// queda sin detalle y no con uno equivocado.
+const ALICUOTAS_JSON = (inicio) => [
+  { id: 3, neto: inicio },
+  { id: 9, iva: inicio + 2, neto: inicio + 4 }, { id: 8, iva: inicio + 6, neto: inicio + 8 },
+  { id: 4, iva: inicio + 10, neto: inicio + 12 }, { id: 5, iva: inicio + 14, neto: inicio + 16 },
+  { id: 6, iva: inicio + 18, neto: inicio + 20 },
+];
 const COLUMNAS_JSON = {
   emitido: {
     largo: 49, fecha: 0, cbteTipo: 1, puntoVenta: 3, numeroDesde: 4, numeroHasta: 5, cae: 8,
     docTipo: 10, docNro: 11, contraparte: 12, tipoCambio: 13, moneda: 14,
-    netoGravado: 37, noGravado: 39, exento: 41, iva: 45, total: 47,
+    netoGravado: 37, noGravado: 39, exento: 41, otrosTributos: 43, iva: 45, total: 47,
+    alicuotas: ALICUOTAS_JSON(15),
   },
   recibido: {
     largo: 52, fecha: 0, cbteTipo: 1, puntoVenta: 3, numeroDesde: 4, numeroHasta: 5, cae: 8,
     docTipo: 10, docNro: 11, contraparte: 12, tipoCambio: 16, moneda: 17,
-    netoGravado: 40, noGravado: 42, exento: 44, iva: 48, total: 50,
+    netoGravado: 40, noGravado: 42, exento: 44, otrosTributos: 46, iva: 48, total: 50,
+    alicuotas: ALICUOTAS_JSON(18),
   },
 };
 
@@ -183,6 +248,9 @@ function normalizarFilaJson(fila, tipo) {
   const v = (campo) => fila[k[campo]];
   const desde = entero(v('numeroDesde'));
   const moneda = String(v('moneda') || '').trim();
+  const netoGravado = numeroJson(v('netoGravado'));
+  const iva = numeroJson(v('iva'));
+  const partes = k.alicuotas.map((a) => ({ id: a.id, netoGravado: numeroJson(fila[a.neto]), iva: a.iva === undefined ? 0 : numeroJson(fila[a.iva]) }));
   return {
     tipo,
     fecha: fecha(v('fecha')),
@@ -196,11 +264,13 @@ function normalizarFilaJson(fila, tipo) {
     contraparte: String(v('contraparte') || '').trim(),
     moneda: !moneda || moneda === '$' ? 'PES' : moneda,
     tipoCambio: numeroJson(v('tipoCambio')) || 1,
-    netoGravado: numeroJson(v('netoGravado')),
+    netoGravado,
     noGravado: numeroJson(v('noGravado')),
     exento: numeroJson(v('exento')),
-    iva: numeroJson(v('iva')),
+    iva,
     total: numeroJson(v('total')),
+    otrosTributos: numeroJson(v('otrosTributos')),
+    alicuotas: alicuotasQueCierran(partes, netoGravado, iva),
   };
 }
 
@@ -263,4 +333,4 @@ function desdeArchivo(buf, nombre, tipo) {
   return filas;
 }
 
-module.exports = { parsearCsv, leerZip, normalizarFila, desdeArchivo, COLUMNAS_JSON, _numero: numero };
+module.exports = { parsearCsv, leerZip, normalizarFila, desdeArchivo, COLUMNAS_JSON, ALICUOTAS, alicuotasQueCierran, _numero: numero };
