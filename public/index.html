@@ -1056,10 +1056,52 @@ function mcaToggleTodos(abrir){if(!abrir){MCA.abiertos=new Set();mcAnalisis();re
 const CATEGORIAS={facturacion:'Facturación',consultas:'Consultas',agro:'Agro y remitos',aduana:'Aduana',otros:'Otros'};
 const catNombre=c=>CATEGORIAS[c]||String(c||'Otros').replace(/^./,x=>x.toUpperCase());
 const NOMBRE_TIPO={1:'Factura A',2:'ND A',3:'NC A',6:'Factura B',7:'ND B',8:'NC B',11:'Factura C',12:'ND C',13:'NC C',51:'Factura M',201:'FCE A',206:'FCE B',211:'FCE C'};
+/* Paginador común a toda tabla (regla de la suite): 10, 25, 50, Todas o un número propio. El
+   tamaño se recuerda por tabla en este navegador; la página vuelve a la 1 al cambiar filtros u
+   orden. Uso: filas=pagCortar('clave',lista) y después pagHtml('clave',lista.length,'funcionQuePinta'). */
+const PAG_OPCIONES=[10,25,50];
+const PAG={};
+function pagPrefs(){try{return JSON.parse(localStorage.getItem('arcanum.paginas')||'{}')||{};}catch{return {};}}
+function pagTam(clave){const v=pagPrefs()[clave];return v==='todas'||(Number.isInteger(v)&&v>0)?v:25;}
+function pagEstado(clave){return PAG[clave]||(PAG[clave]={pagina:1,propio:false});}
+function pagReiniciar(clave){pagEstado(clave).pagina=1;}
+function pagCortar(clave,lista){const t=pagTam(clave),e=pagEstado(clave);
+  if(t==='todas'){e.pagina=1;return lista;}
+  const n=Math.max(1,Math.ceil(lista.length/t));e.pagina=Math.min(Math.max(1,e.pagina),n);
+  return lista.slice((e.pagina-1)*t,e.pagina*t);}
+function pagIr(clave,p,repintar){pagEstado(clave).pagina=p;window[repintar]();}
+function pagTamano(clave,v,repintar){const e=pagEstado(clave);
+  if(v==='personalizado'){e.propio=true;window[repintar]();
+    setTimeout(()=>{const i=document.getElementById('pag_n_'+clave);if(i){i.focus();i.select();}},0);return;}
+  const n=v==='todas'?'todas':Math.min(Math.max(parseInt(v,10)||25,1),1000);
+  const prefs=pagPrefs();prefs[clave]=n;try{localStorage.setItem('arcanum.paginas',JSON.stringify(prefs));}catch{}
+  e.propio=n!=='todas'&&!PAG_OPCIONES.includes(n);e.pagina=1;window[repintar]();}
+const I_PAG_ANT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+const I_PAG_SIG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+function pagHtml(clave,total,repintar){
+  if(!total)return '';
+  const t=pagTam(clave),e=pagEstado(clave),todas=t==='todas';
+  const n=todas?1:Math.max(1,Math.ceil(total/t)),p=e.pagina;
+  const desde=todas?1:(p-1)*t+1,hasta=todas?total:Math.min(p*t,total);
+  const propio=e.propio||(!todas&&!PAG_OPCIONES.includes(t));
+  const c=jsA(clave),r=jsA(repintar);
+  const opt=(v,txt,sel)=>`<option value="${v}"${sel?' selected':''}>${txt}</option>`;
+  const sel=`<select aria-label="Filas por página" onchange="pagTamano(${c},this.value,${r})">${PAG_OPCIONES.map(v=>opt(v,v,!propio&&t===v)).join('')}${opt('todas','Todas',todas&&!propio)}${opt('personalizado','Personalizado',propio)}</select>`;
+  const inp=propio?`<input id="pag_n_${esc(clave)}" type="number" min="1" max="1000" inputmode="numeric" value="${todas?'':t}" placeholder="Filas" aria-label="Cantidad de filas por página" onchange="pagTamano(${c},this.value,${r})" onkeydown="if(event.key==='Enter')this.blur()">`:'';
+  let nav='';
+  if(n>1){
+    const ver=[...new Set([1,n,p-1,p,p+1].filter(x=>x>=1&&x<=n))].sort((a,b)=>a-b);
+    let ult=0;const bts=[];
+    for(const x of ver){if(x-ult>1)bts.push('<span class="pag-gap" aria-hidden="true">…</span>');
+      bts.push(`<button type="button" class="ghost"${x===p?' aria-current="page"':''} aria-label="Página ${x}" onclick="pagIr(${c},${x},${r})">${x}</button>`);ult=x;}
+    nav=`<nav class="pag-nav" aria-label="Páginas"><button type="button" class="ghost" aria-label="Página anterior" ${p<=1?'disabled':''} onclick="pagIr(${c},${p-1},${r})">${I_PAG_ANT}</button>${bts.join('')}<button type="button" class="ghost" aria-label="Página siguiente" ${p>=n?'disabled':''} onclick="pagIr(${c},${p+1},${r})">${I_PAG_SIG}</button></nav>`;
+  }
+  return `<div class="paginador"><span class="pag-tam">Filas por página ${sel}${inp}</span><span class="pag-info">${desde}–${hasta} de ${total.toLocaleString('es-AR')}</span>${nav}</div>`;
+}
 async function mcCargarTabla(){
-  try{const {comprobantes:l}=await api(`/api/mis-comprobantes/${MC.cuit}?${mcFiltros()}`);
-    MC.filas=l;
-    const r=$('#mc_tabla_resumen');if(r)r.textContent=l.length?`${l.length} ${l.length===1?'comprobante':'comprobantes'} con los filtros del análisis${l.length>=500?' (se muestran los primeros 500; el CSV trae hasta 5000)':''}.`:'Con los filtros del análisis.';
+  try{const {comprobantes:l}=await api(`/api/mis-comprobantes/${MC.cuit}?${mcFiltros()}&limite=5000`);
+    MC.filas=l;pagReiniciar('mc');
+    const r=$('#mc_tabla_resumen');if(r)r.textContent=l.length?`${l.length} ${l.length===1?'comprobante':'comprobantes'} con los filtros del análisis${l.length>=5000?' (se muestran los primeros 5000: acotá las fechas para ver el resto)':''}.`:'Con los filtros del análisis.';
     mcPintarTabla();
   }catch(e){$('#mc_tabla').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
@@ -1081,7 +1123,7 @@ const MC_COLS=[
 ];
 function mcPrefs(){if(!MC.prefs){let p={};try{p=JSON.parse(localStorage.getItem('arcanum.mcTabla')||'{}');}catch{}MC.prefs={orden:p.orden||'fecha',dir:p.dir===1?1:-1,motivos:p.motivos!==false};}return MC.prefs;}
 function mcGuardarPrefs(){try{localStorage.setItem('arcanum.mcTabla',JSON.stringify(MC.prefs));}catch{}}
-function mcOrdenar(col){const p=mcPrefs();if(p.orden===col)p.dir=-p.dir;else{p.orden=col;p.dir=1;}mcGuardarPrefs();mcPintarTabla();}
+function mcOrdenar(col){const p=mcPrefs();if(p.orden===col)p.dir=-p.dir;else{p.orden=col;p.dir=1;}mcGuardarPrefs();pagReiniciar('mc');mcPintarTabla();}
 function mcMotivos(ver){mcPrefs().motivos=!!ver;mcGuardarPrefs();mcPintarTabla();}
 function mcPintarTabla(){
   const box=$('#mc_tabla');if(!box)return;const l=MC.filas||[];
@@ -1095,15 +1137,17 @@ function mcPintarTabla(){
   const filas=l.map((f,i)=>[col[2](f),i,f]).sort((x,y)=>{const a=x[0],b=y[0];
     const d=typeof a==='number'&&typeof b==='number'?a-b:String(a).localeCompare(String(b),'es',{numeric:true});
     return d?d*p.dir:x[1]-y[1];}).map(x=>x[2]);
+  const pagina=pagCortar('mc',filas);
   const flecha=d=>`<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px"><path d="${d>0?'M6 15l6-6 6 6':'M6 9l6 6 6-6'}"/></svg>`;
   const th=([k,t])=>`<th aria-sort="${p.orden===k?(p.dir>0?'ascending':'descending'):'none'}"><button type="button" class="linkbtn" style="text-decoration:none;color:inherit;font:inherit;font-weight:inherit;display:inline-flex;align-items:center;gap:4px" onclick="mcOrdenar('${k}')" title="Ordenar por ${t.toLowerCase()}">${t}${p.orden===k?flecha(p.dir):''}</button></th>`;
   const hayMotivos=l.some(f=>f.tipo==='recibido'&&f.constatacion&&f.constatacion.valido===false&&mcObs(f.constatacion));
   box.innerHTML=`${hayMotivos?`<label class="chk" style="margin:0 0 8px"><input type="checkbox" ${p.motivos?'checked':''} onchange="mcMotivos(this.checked)"> Mostrar el motivo de ARCA en los que no constan</label>`:''}
-    <table><tr>${MC_COLS.map(th).join('')}</tr>${filas.map(f=>`<tr>
-    <td class="mono">${String(f.fecha).slice(0,10)}</td><td>${f.tipo==='recibido'?'Recibido':'Emitido'} · ${esc(NOMBRE_TIPO[f.cbte_tipo]||f.cbte_tipo)}</td>
-    <td class="mono">${String(f.punto_venta).padStart(4,'0')}-${String(f.numero_desde).padStart(8,'0')}</td>
-    <td>${esc(f.contraparte||'')} <span class="hint mono">${esc(f.doc_nro||'')}</span></td><td class="mono">$${pesos(f.total)}</td>
-    <td class="mono hint">${esc(f.cae||'')}</td><td>${f.tipo==='recibido'?cons(f.constatacion):''}</td></tr>`).join('')}</table>`;
+    <table><tr>${MC_COLS.map(th).join('')}</tr>${pagina.map(f=>`<tr>
+    <td class="mono nw">${String(f.fecha).slice(0,10)}</td><td>${f.tipo==='recibido'?'Recibido':'Emitido'} · ${esc(NOMBRE_TIPO[f.cbte_tipo]||f.cbte_tipo)}</td>
+    <td class="mono nw">${String(f.punto_venta).padStart(4,'0')}-${String(f.numero_desde).padStart(8,'0')}</td>
+    <td>${esc(f.contraparte||'')} <span class="hint mono">${esc(f.doc_nro||'')}</span></td><td class="mono nw">$${pesos(f.total)}</td>
+    <td class="mono hint">${esc(f.cae||'')}</td><td>${f.tipo==='recibido'?cons(f.constatacion):''}</td></tr>`).join('')}</table>
+    ${pagHtml('mc',filas.length,'mcPintarTabla')}`;
 }
 async function mcExportar(){
   try{const r=await fetch(`/api/mis-comprobantes/${MC.cuit}/export.csv?${mcFiltros()}`,{credentials:'include'});

@@ -251,3 +251,21 @@ button.icon-btn.plano:focus-visible { outline: none; box-shadow: var(--ring); }
     background: rgba(0, 0, 0, .35); z-index: 25; }
 }
 @media (prefers-reduced-motion: reduce) { .sidenav { transition: none; } }
+
+/* ---- Paginador: TODA tabla o listado lo lleva ------------------------------ */
+/* 10, 25, 50, Todas o Personalizado. El tamaño se recuerda por tabla; la página
+   vuelve a la 1 al cambiar filtros u orden. */
+.paginador { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 10px 20px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+.paginador .pag-tam { display: inline-flex; align-items: center; gap: 8px; }
+.paginador .pag-tam select { width: auto; padding: 5px 30px 5px 10px; font-size: 13px; }
+.paginador .pag-tam input { width: 84px; padding: 5px 10px; font-size: 13px; font-family: var(--mono); }
+.paginador .pag-info { font-variant-numeric: tabular-nums; }
+.paginador .pag-nav { display: inline-flex; align-items: center; gap: 4px; }
+.paginador .pag-nav button { min-width: 32px; height: 32px; padding: 0 8px; display: inline-grid; place-items: center;
+  font-variant-numeric: tabular-nums; }
+.paginador .pag-nav button svg { width: 15px; height: 15px; }
+.paginador .pag-nav button[aria-current="page"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.paginador .pag-nav button:disabled { opacity: .38; cursor: default; }
+.paginador .pag-nav .pag-gap { min-width: 18px; text-align: center; }
+@media (max-width: 640px) { .paginador { justify-content: center; } }

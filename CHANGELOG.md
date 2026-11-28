@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [2.4.1] - 2026-11-27
+
+### Agregado
+- **Paginación en la tabla de Mis Comprobantes** (y en el listado de Análisis, que es la misma):
+  filas por página 10, 25, 50, Todas o Personalizado (un número de 1 a 1000), con el rango visible y
+  la navegación por páginas. La elección se recuerda en el navegador; al filtrar u ordenar vuelve a
+  la primera página. El orden sigue aplicando sobre todo lo filtrado, no sobre la página.
+- El paginador es un componente del sistema de diseño de la suite (`.paginador` en
+  `escriba-ui.css`): toda tabla nueva lo lleva.
+
+### Cambiado
+- La tabla trae hasta 5000 comprobantes con los filtros (antes 500), para que "Todas" y el orden
+  abarquen el período completo.
+- Fecha, número de comprobante e importe ya no se cortan en dos líneas.
+
 ## [2.4.0] - 2026-11-27
 
 ### Agregado
