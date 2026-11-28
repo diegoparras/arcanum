@@ -3,6 +3,20 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico ([SemVer](https://semver.org/lang/es/)).
 
+## [2.4.2] - 2026-11-27
+
+### Agregado
+- **Paginación en todas las tablas del panel:** Clientes, Comprobantes, Contingencia, Facturador
+  (lotes y el detalle de cada lote), Facturas recibidas, Sincronizaciones de Mis Comprobantes,
+  Webhooks, Usuarios y Claves de API. Las mismas opciones que en Mis Comprobantes: 10, 25, 50, Todas
+  o Personalizado, y cada tabla recuerda la suya.
+- Facturas recibidas pide cada página a Factorum, así recorre todas y no solo las primeras 200.
+
+### Cambiado
+- Comprobantes trae hasta 5000 (antes 200) y la cola de contingencia hasta 1000, para que las
+  páginas abarquen todo.
+- Los botones de las tablas ya no se parten en dos líneas.
+
 ## [2.4.1] - 2026-11-27
 
 ### Agregado

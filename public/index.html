@@ -146,7 +146,7 @@
   h3{font-size:15px;margin:16px 0 10px}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .acciones{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}
-  .nw,.tag{white-space:nowrap}
+  .nw,.tag,.acciones>*{white-space:nowrap}
   table{width:100%;border-collapse:collapse;font-size:13.5px}
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
   th{color:var(--muted);font-weight:560;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
@@ -449,20 +449,23 @@ async function vPanel(){
 /* ---------- CLIENTES ---------- */
 async function vClientes(){
   const v=$('#view');
-  const {tenants}=await api('/api/tenants');
-  const rows=tenants.map(t=>{
+  const {tenants}=await api('/api/tenants');window._clientes=tenants;
+  v.innerHTML=`<div class="row"><h2 style="margin:0">Clientes (${ENV})</h2>
+    <button style="margin-left:auto" onclick="importarCert()">Importar certificado</button>
+    <button class="primary" onclick="nuevoCliente()">Nuevo cliente</button></div>
+    <div class="card" style="margin-top:12px" id="cli_tabla"></div>
+    <p class="hint" style="margin-top:10px">Flujo: <strong>Nuevo cliente</strong> genera el CSR → lo subís a ARCA → descargás el .crt → <strong>Pegar .crt</strong>.</p>`;
+  pintarClientes();
+}
+function pintarClientes(){
+  pagTabla('cli_tabla','clientes',window._clientes||[],'<th>CUIT</th><th>Nombre</th><th>Certificado</th><th></th>',t=>{
     const cert=t.tieneCertificado?`<span class="tag ok">vigente${t.diasParaVencer!=null?' ('+t.diasParaVencer+'d)':''}</span>`:(t.tieneClave?'<span class="tag warn">falta certificado</span>':'<span class="tag no">sin clave</span>');
     return `<tr><td class="mono">${esc(t.cuit)}</td><td>${esc(t.nombre||'')}</td><td>${cert}</td>
       <td><div class="acciones">
        ${t.tieneClave?`<button class="ghost" onclick="verCsr(${jsA(t.cuit)})">CSR</button>`:''}
        <button class="ghost" onclick="pegarCert(${jsA(t.cuit)})">Pegar .crt</button>
        <button class="ghost" onclick="editarEmisor(${jsA(t.cuit)})">Datos fiscales</button>
-      </div></td></tr>`;}).join('')||'<tr><td colspan="4" class="hint">No hay clientes. Creá el primero.</td></tr>';
-  v.innerHTML=`<div class="row"><h2 style="margin:0">Clientes (${ENV})</h2>
-    <button style="margin-left:auto" onclick="importarCert()">Importar certificado</button>
-    <button class="primary" onclick="nuevoCliente()">Nuevo cliente</button></div>
-    <div class="card" style="margin-top:12px"><table><thead><tr><th>CUIT</th><th>Nombre</th><th>Certificado</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="hint" style="margin-top:10px">Flujo: <strong>Nuevo cliente</strong> genera el CSR → lo subís a ARCA → descargás el .crt → <strong>Pegar .crt</strong>.</p>`;
+      </div></td></tr>`;},'pintarClientes','<p class="hint" style="margin:0">No hay clientes. Creá el primero.</p>');
 }
 function nuevoCliente(){modal(`<h3>Nuevo cliente</h3><label>CUIT</label><input id="ncuit" class="mono" placeholder="20111111112">
   <label>Nombre / Razón social</label><input id="nnombre">
@@ -819,15 +822,18 @@ async function mcRango(){
   }catch{}
 }
 async function mcCorridas(retomar){
-  try{const {corridas}=await api(`/api/mis-comprobantes/${MC.cuit}/corridas`);
-    $('#mc_corridas').innerHTML=corridas.length?`<table><tr><th>#</th><th>Qué</th><th>Rango</th><th>Estado</th><th>Cantidad</th><th>Inicio</th><th>Detalle</th></tr>${corridas.map(c=>`<tr>
-      <td class="mono">${Number(c.id)}</td><td>${esc(c.tipo)}</td><td class="mono">${String(c.desde).slice(0,10)} a ${String(c.hasta).slice(0,10)}</td>
-      <td><span class="tag ${c.estado==='terminado'?'ok':c.estado==='error'?'no':'warn'}">${esc(MC_ESTADO[c.estado]||c.estado)}</span></td>
-      <td class="mono">${c.cantidad}</td><td class="hint">${new Date(c.iniciada_at).toLocaleString('es-AR')}</td>
-      <td class="hint">${esc(c.error||mcAvance(c,true))}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${Number(c.id)})">Ver en vivo</button> <button class="ghost" onclick="mcCancelar(${Number(c.id)})">Cancelar</button>`:''}${c.tiene_captura?` <button class="ghost" onclick="mcCaptura(${Number(c.id)})">Ver pantalla</button>`:''}</td></tr>`).join('')}</table>`:'<p class="hint">Todavía no se sincronizó este CUIT.</p>';
+  try{const {corridas}=await api(`/api/mis-comprobantes/${MC.cuit}/corridas?limite=200`);
+    MC.corridas=corridas;mcPintarCorridas();
     const viva=corridas.find(c=>MC_VIVOS.includes(c.estado));
     if(retomar&&viva)mcSeguir(viva.id);
   }catch(e){$('#mc_corridas').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+function mcPintarCorridas(){
+  pagTabla('mc_corridas','corridas',MC.corridas||[],'<th>#</th><th>Qué</th><th>Rango</th><th>Estado</th><th>Cantidad</th><th>Inicio</th><th>Detalle</th>',c=>`<tr>
+      <td class="mono">${Number(c.id)}</td><td>${esc(c.tipo)}</td><td class="mono">${String(c.desde).slice(0,10)} a ${String(c.hasta).slice(0,10)}</td>
+      <td><span class="tag ${c.estado==='terminado'?'ok':c.estado==='error'?'no':'warn'}">${esc(MC_ESTADO[c.estado]||c.estado)}</span></td>
+      <td class="mono">${c.cantidad}</td><td class="hint">${new Date(c.iniciada_at).toLocaleString('es-AR')}</td>
+      <td class="hint">${esc(c.error||mcAvance(c,true))}${MC_VIVOS.includes(c.estado)?` <button class="ghost" onclick="mcSeguir(${Number(c.id)})">Ver en vivo</button> <button class="ghost" onclick="mcCancelar(${Number(c.id)})">Cancelar</button>`:''}${c.tiene_captura?` <button class="ghost" onclick="mcCaptura(${Number(c.id)})">Ver pantalla</button>`:''}</td></tr>`,'mcPintarCorridas','<p class="hint">Todavía no se sincronizó este CUIT.</p>');
 }
 async function mcCancelar(id){
   if(!await confirmar({titulo:'Cancelar la sincronización',texto:'Se cierra la sesión del navegador en ARCA. Lo que ya se bajó queda guardado.',si:'Cancelar sincronización',no:'Seguir',tono:'aviso'}))return;
@@ -1069,6 +1075,12 @@ function pagCortar(clave,lista){const t=pagTam(clave),e=pagEstado(clave);
   if(t==='todas'){e.pagina=1;return lista;}
   const n=Math.max(1,Math.ceil(lista.length/t));e.pagina=Math.min(Math.max(1,e.pagina),n);
   return lista.slice((e.pagina-1)*t,e.pagina*t);}
+/* Pinta en `id` una tabla paginada: cabecera, las filas de la página y el paginador. */
+function pagTabla(id,clave,lista,cabecera,fila,repintar,vacio){
+  const box=$('#'+id);if(!box)return;
+  if(!lista.length){box.innerHTML=vacio;return;}
+  box.innerHTML=`<table><thead><tr>${cabecera}</tr></thead><tbody>${pagCortar(clave,lista).map(fila).join('')}</tbody></table>${pagHtml(clave,lista.length,repintar)}`;
+}
 function pagIr(clave,p,repintar){pagEstado(clave).pagina=p;window[repintar]();}
 function pagTamano(clave,v,repintar){const e=pagEstado(clave);
   if(v==='personalizado'){e.propio=true;window[repintar]();
@@ -1466,17 +1478,22 @@ function faFiltros(){const q=new URLSearchParams();
   const m={estado:'#fa_fest',cliente:'#fa_fcli',desde:'#fa_fdesde',hasta:'#fa_fhasta',q:'#fa_fq',lote:'#fa_flote'};
   for(const [k,s] of Object.entries(m)){const el=$(s);const val=el?el.value.trim():'';if(val)q.set(k,k==='lote'?val.replace(/\D/g,''):val);}
   return q;}
-async function faCargar(){
+/* Las facturas recibidas se paginan en el servidor (Factorum): cada página es un pedido. */
+function faPagina(){faCargar(false);}
+async function faCargar(reiniciar=true){
   const box=$('#fa_tabla');if(!box)return;
-  const q=faFiltros();
-  try{const r=await api('/api/factorum/comprobantes?'+q.toString()+'&limite=200');const l=r.comprobantes||[];
+  if(reiniciar!==false)pagReiniciar('fa');
+  const q=faFiltros();const t=pagTam('fa'),pg=pagEstado('fa').pagina;
+  const lim=t==='todas'?1000:t,off=t==='todas'?0:(pg-1)*t;
+  try{const r=await api('/api/factorum/comprobantes?'+q.toString()+`&limite=${lim}&offset=${off}`);const l=r.comprobantes||[];const total=Number(r.total)||l.length;
     box.innerHTML=l.length?`<table><tr><th>Fecha</th><th>Comprobante</th><th>Emisor</th><th>Cliente</th><th>Total</th><th>Estado</th><th>Constatación</th><th></th></tr>${l.map(c=>{const e=FA_ESTADO[c.estado]||['',c.estado||''];const k=c.constatacion;
       const cons=!k?'<span class="hint">sin constatar</span>':k.apoc&&k.apoc.esApocrifo?'<span class="tag no">APÓCRIFO</span>':k.valido?'<span class="tag ok">OK</span>':'<span class="tag no">NO CONSTA</span>';
       return `<tr><td class="mono">${esc(c.fecha||'')}</td><td class="mono">${esc(NOMBRE_TIPO[c.tipo]||c.tipo||'')} ${String(Number(c.punto_venta)||0).padStart(4,'0')}-${String(Number(c.numero)||0).padStart(8,'0')}${c.duplicado_de?' <span class="tag warn">duplicado</span>':''}</td>
        <td>${esc(c.razon_social_emisor||'')} <span class="hint mono">${esc(c.cuit_emisor||'')}</span></td><td class="mono hint">${esc(c.cliente_cuit||'')}</td>
        <td class="mono">$${faPesos(c.total)}</td><td><span class="tag ${e[0]}">${esc(e[1])}</span></td><td>${cons}</td>
-       <td><button class="ghost" onclick="faRevisar(${Number(c.id)})">Revisar</button></td></tr>`;}).join('')}</table>${r.total>l.length?`<p class="hint">Se muestran ${l.length} de ${esc(r.total)}. Afiná los filtros o descargá el Excel.</p>`:''}`:'<p class="hint">No hay comprobantes con estos filtros.</p>';
+       <td><button class="ghost" onclick="faRevisar(${Number(c.id)})">Revisar</button></td></tr>`;}).join('')}</table>${t==='todas'&&total>l.length?`<p class="hint">Se muestran ${l.length} de ${esc(total)}. Afiná los filtros o descargá el Excel.</p>`:''}${pagHtml('fa',total,'faPagina')}`:'<p class="hint">No hay comprobantes con estos filtros.</p>';
   }catch(e){box.innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+  if(reiniciar===false)return; // cambiar de página no cambia el resumen
   try{const {resumen:s}=await api('/api/factorum/resumen?'+q.toString());
     $('#fa_resumen').innerHTML=s?`<b class="mono">${esc(s.cantidad||0)}</b> ${Number(s.cantidad)===1?'comprobante':'comprobantes'} · neto gravado <b class="mono">$${faPesos(s.neto_gravado)}</b> · IVA 21% <b class="mono">$${faPesos(s.iva_21)}</b> · IVA 10,5% <b class="mono">$${faPesos(s.iva_10_5)}</b> · otros tributos <b class="mono">$${faPesos(s.otros_tributos)}</b> · total <b class="mono">$${faPesos(s.total)}</b> <span>(las notas de crédito restan)</span>`:'';
   }catch{$('#fa_resumen').innerHTML='';}
@@ -1546,13 +1563,16 @@ async function vContingencia(){
   if(typeof caeaCargar==='function')caeaCargar();
 }
 async function clCargar(){
-  try{const est=$('#cl_estado').value;const {cola}=await api('/api/cola'+(est?'?estado='+est:''));
-    $('#cl_tabla').innerHTML=cola.length?`<table><tr><th>#</th><th>CUIT</th><th>Fecha</th><th>Total</th><th>Estado</th><th>Intentos</th><th>Próximo intento</th><th>Detalle</th><th></th></tr>${cola.map(x=>{const e=COLA_ESTADO[x.estado]||['',x.estado];
+  try{const est=$('#cl_estado').value;const {cola}=await api('/api/cola?limite=1000'+(est?'&estado='+est:''));
+    if(window._colaEst!==est)pagReiniciar('cola');window._colaEst=est;window._cola=cola;clPintar();
+  }catch(e){$('#cl_tabla').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+function clPintar(){
+  pagTabla('cl_tabla','cola',window._cola||[],'<th>#</th><th>CUIT</th><th>Fecha</th><th>Total</th><th>Estado</th><th>Intentos</th><th>Próximo intento</th><th>Detalle</th><th></th>',x=>{const e=COLA_ESTADO[x.estado]||['',x.estado];
       const acc=window._clOpera&&['pendiente','requiere_humano'].includes(x.estado)?`<button class="ghost" onclick="clAccion(${Number(x.id)},'reintentar')">Reintentar</button>${x.estado==='requiere_humano'?`<button class="ghost" onclick="clAccion(${Number(x.id)},'hoy')">Emitir con fecha de hoy</button>`:''}<button class="ghost" onclick="clAccion(${Number(x.id)},'cancelar')">Cancelar</button>`:'';
       const det=x.estado==='emitido'&&x.resultado?`CAE ${esc(x.resultado.cae||'')}${x.modo==='CAEA'?' (CAEA)':''}${x.resultado.adoptado?' · recuperado de ARCA':''}`:esc(x.ultimo_error||'');
       return `<tr><td class="mono">${Number(x.id)}</td><td class="mono">${esc(x.cuit)}</td><td class="mono nw">${String(x.fecha||'').slice(0,10)}</td><td class="mono nw">${mcaPlata(x.cuerpo&&x.cuerpo.importeTotal)}</td>
-      <td><span class="tag ${e[0]}">${esc(e[1])}</span></td><td class="mono">${x.intentos}</td><td class="hint">${x.estado==='pendiente'&&x.proximo_intento_at?new Date(x.proximo_intento_at).toLocaleString('es-AR'):''}</td><td class="hint">${det}</td><td><div class="acciones">${acc}</div></td></tr>`;}).join('')}</table>`:'<p class="hint">La cola está vacía.</p>';
-  }catch(e){$('#cl_tabla').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+      <td><span class="tag ${e[0]}">${esc(e[1])}</span></td><td class="mono">${x.intentos}</td><td class="hint">${x.estado==='pendiente'&&x.proximo_intento_at?new Date(x.proximo_intento_at).toLocaleString('es-AR'):''}</td><td class="hint">${det}</td><td><div class="acciones">${acc}</div></td></tr>`;},'clPintar','<p class="hint">La cola está vacía.</p>');
 }
 async function clAccion(id,a){
   if(a==='cancelar'&&!await confirmar({titulo:'Cancelar este comprobante',texto:'Sale de la cola de contingencia y no se va a emitir.',si:'Cancelar comprobante',no:'Volver',tono:'peligro'}))return;
@@ -1615,15 +1635,20 @@ async function sincronizarEmitidosIr(){
   }catch(e){$('#se_res').innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
 }
 async function vComprobantes(){
-  const v=$('#view');const {comprobantes}=await api('/api/comprobantes');
-  const rows=comprobantes.map(c=>`<tr><td class="mono">${esc(c.cuit)}</td><td class="mono nw">${String(c.punto_venta).padStart(4,'0')}-${String(c.numero).padStart(8,'0')}</td><td class="nw">${esc(NOMBRE_TIPO[c.tipo_cbte]||'Tipo '+c.tipo_cbte)}</td>
-    <td class="mono nw">${esc((c.fecha||'').slice?.(0,10)||c.fecha||'')}</td><td class="mono">${esc(c.cae||'')}</td><td class="mono nw">${mcaPlata(c.importe_total)}</td>
-    <td>${c.origen==='importado'?'<span class="tag" title="Comprobante de un tercero, constatado con ARCA">Importado</span>':`<a href="/api/comprobantes/${encodeURIComponent(c.cuit)}/${Number(c.punto_venta)}/${Number(c.tipo_cbte)}/${Number(c.numero)}/pdf"><button class="ghost">PDF</button></a>`}</td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
+  const v=$('#view');const {comprobantes}=await api('/api/comprobantes?limit=5000');
+  window._comps=comprobantes;pagReiniciar('comprobantes');
   v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes</h2>
      <button style="margin-left:auto" onclick="sincronizarEmitidos()">Traer lo emitido por fuera</button>
      <button class="primary" onclick="importarQr()">Importar por QR</button>
      <a href="/api/comprobantes/export.csv"><button>Exportar CSV</button></a></div>
-   <div class="card" style="margin-top:12px"><table><thead><tr><th>CUIT</th><th>Comprobante</th><th>Tipo</th><th>Fecha</th><th>CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+   <div class="card" style="margin-top:12px" id="comp_tabla"></div>
+   ${comprobantes.length>=5000?'<p class="hint">Se muestran los últimos 5000 comprobantes.</p>':''}`;
+  pintarComprobantes();
+}
+function pintarComprobantes(){
+  pagTabla('comp_tabla','comprobantes',window._comps||[],'<th>CUIT</th><th>Comprobante</th><th>Tipo</th><th>Fecha</th><th>CAE</th><th>Total</th><th></th>',c=>`<tr><td class="mono">${esc(c.cuit)}</td><td class="mono nw">${String(c.punto_venta).padStart(4,'0')}-${String(c.numero).padStart(8,'0')}</td><td class="nw">${esc(NOMBRE_TIPO[c.tipo_cbte]||'Tipo '+c.tipo_cbte)}</td>
+    <td class="mono nw">${esc((c.fecha||'').slice?.(0,10)||c.fecha||'')}</td><td class="mono">${esc(c.cae||'')}</td><td class="mono nw">${mcaPlata(c.importe_total)}</td>
+    <td>${c.origen==='importado'?'<span class="tag" title="Comprobante de un tercero, constatado con ARCA">Importado</span>':`<a href="/api/comprobantes/${encodeURIComponent(c.cuit)}/${Number(c.punto_venta)}/${Number(c.tipo_cbte)}/${Number(c.numero)}/pdf"><button class="ghost">PDF</button></a>`}</td></tr>`,'pintarComprobantes','<p class="hint" style="margin:0">Todavía no emitiste comprobantes.</p>');
 }
 async function importarQr(){
   let tenants=[];try{tenants=(await api('/api/tenants')).tenants;}catch{}
@@ -1650,15 +1675,18 @@ async function doImportarQr(){
 
 /* ---------- WEBHOOKS ---------- */
 async function vWebhooks(){
-  const v=$('#view');const {webhooks,eventos}=await api('/api/webhooks');
-  const rows=webhooks.map(w=>`<tr><td class="mono">${esc(w.url)}</td><td class="hint">${esc((w.eventos||[]).join(', '))}</td>
-    <td><div class="acciones"><button class="ghost" onclick="probarWebhook(${Number(w.id)})">Probar</button><button class="ghost" onclick="delWebhook(${Number(w.id)})">Eliminar</button></div></td></tr>`).join('')||'<tr><td colspan="3" class="hint">Sin webhooks.</td></tr>';
-  v.innerHTML=`<h2>Webhooks</h2><div class="card"><table><thead><tr><th>URL</th><th>Eventos</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+  const v=$('#view');const {webhooks,eventos}=await api('/api/webhooks');window._webhooks=webhooks;
+  v.innerHTML=`<h2>Webhooks</h2><div class="card" id="wh_tabla"></div>
    <div class="card" style="margin-top:14px;max-width:560px"><h3 style="margin-top:0">Nuevo webhook</h3>
    <label>URL (n8n, etc.)</label><input id="w_url" class="mono" placeholder="https://...">
    <label>Eventos</label><div class="chklist" id="w_ev">${eventos.map(e=>`<label class="chk"><input type="checkbox" value="${e}"> ${e}</label>`).join('')}</div>
    <label>Secret (opcional, para firma HMAC)</label><input id="w_secret">
    <button class="primary" style="margin-top:14px" onclick="addWebhook()">Crear</button></div>`;
+  pintarWebhooks();
+}
+function pintarWebhooks(){
+  pagTabla('wh_tabla','webhooks',window._webhooks||[],'<th>URL</th><th>Eventos</th><th></th>',w=>`<tr><td class="mono">${esc(w.url)}</td><td class="hint">${esc((w.eventos||[]).join(', '))}</td>
+    <td><div class="acciones"><button class="ghost" onclick="probarWebhook(${Number(w.id)})">Probar</button><button class="ghost" onclick="delWebhook(${Number(w.id)})">Eliminar</button></div></td></tr>`,'pintarWebhooks','<p class="hint" style="margin:0">Sin webhooks.</p>');
 }
 async function addWebhook(){const ev=[...document.querySelectorAll('#w_ev input:checked')].map(o=>o.value);
   if(!ev.length){toast('Elegí al menos un evento',true);return;}
@@ -1675,16 +1703,19 @@ const SEMA={VERDE:'#3b6d11',AMARILLO:'#b8860b',ROJO:'#a32d2d'};
 function semDot(s){return s?`<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${SEMA[s]||'#999'};margin-right:6px"></span>`:'';}
 function estadoTag(e){const m={pendiente:'',solicitado:'warn',emitido:'ok',recibido:'ok',rechazado:'no'};return `<span class="tag ${m[e]||''}">${esc(e)}</span>`;}
 async function vFacturador(){
-  const v=$('#view');const {lotes}=await api('/api/lotes');
-  const rows=lotes.map(l=>{const r=l.resumen;
+  const v=$('#view');const {lotes}=await api('/api/lotes');window._lotes=lotes;
+  v.innerHTML=`<div class="row"><h2 style="margin:0">Facturador masivo</h2><button class="primary" style="margin-left:auto" onclick="nuevoLote()">Nuevo lote</button></div>
+   <p class="hint">Cargá un lote (CSV o filas) con los profesionales/clientes a facturar. Seguí el estado de cada uno con el semáforo de antigüedad: <span style="color:${SEMA.VERDE}">verde &lt;5d</span> · <span style="color:${SEMA.AMARILLO}">amarillo 5–15d</span> · <span style="color:${SEMA.ROJO}">rojo &gt;15d</span>.</p>
+   <div class="card" id="lotes_tabla"></div>`;
+  pintarLotes();
+}
+function pintarLotes(){
+  pagTabla('lotes_tabla','lotes',window._lotes||[],'<th>Lote</th><th>Perfil</th><th>CUIT</th><th>Items</th><th>Pendientes (aging)</th><th>Creado</th>',l=>{const r=l.resumen;
     return `<tr onclick="verLote(${Number(l.id)})" style="cursor:pointer">
       <td>${esc(l.nombre)}</td><td><span class="tag">${esc(l.perfil)}</span></td><td class="mono">${esc(l.cuit)}</td>
       <td>${r.total} <span class="hint">(${r.emitidos+r.recibidos} ok · ${r.pendientes} pend.)</span></td>
       <td>${r.rojo?semDot('ROJO')+r.rojo+' ':''}${r.amarillo?semDot('AMARILLO')+r.amarillo+' ':''}${r.verde?semDot('VERDE')+r.verde:''}</td>
-      <td class="hint">${new Date(l.created_at).toLocaleDateString('es-AR')}</td></tr>`;}).join('')||'<tr><td colspan="6" class="hint">Todavía no cargaste lotes.</td></tr>';
-  v.innerHTML=`<div class="row"><h2 style="margin:0">Facturador masivo</h2><button class="primary" style="margin-left:auto" onclick="nuevoLote()">Nuevo lote</button></div>
-   <p class="hint">Cargá un lote (CSV o filas) con los profesionales/clientes a facturar. Seguí el estado de cada uno con el semáforo de antigüedad: <span style="color:${SEMA.VERDE}">verde &lt;5d</span> · <span style="color:${SEMA.AMARILLO}">amarillo 5–15d</span> · <span style="color:${SEMA.ROJO}">rojo &gt;15d</span>.</p>
-   <div class="card"><table><thead><tr><th>Lote</th><th>Perfil</th><th>CUIT</th><th>Items</th><th>Pendientes (aging)</th><th>Creado</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      <td class="hint">${new Date(l.created_at).toLocaleDateString('es-AR')}</td></tr>`;},'pintarLotes','<p class="hint" style="margin:0">Todavía no cargaste lotes.</p>');
 }
 async function nuevoLote(){
   let tenants=[];try{tenants=(await api('/api/tenants')).tenants;}catch{}
@@ -1705,19 +1736,24 @@ async function crearLote(){
 }
 async function verLote(id){
   const v=$('#view');const {lote}=await api('/api/lotes/'+id);const r=lote.resumen;
-  const rows=lote.items.map(it=>{const a=it.aging||{};const pend=!['emitido','recibido','rechazado'].includes(it.estado);
+  if(window._loteId!==id)pagReiniciar('lote');window._loteId=id;window._lote=lote;
+  v.innerHTML=`<div class="row"><button class="ghost" onclick="vFacturador()">← Lotes</button><h2 style="margin:0 auto 0 8px">${esc(lote.nombre)}</h2>
+     <button onclick="emitirTodo(${Number(id)})">Emitir pendientes</button>
+     <a href="/api/lotes/${Number(id)}/export.csv"><button>CSV</button></a></div>
+   <p class="hint">${esc(lote.cuit)} · perfil ${esc(lote.perfil)} · ${r.total} items — ${r.emitidos} emitidos, ${r.recibidos} recibidos, ${r.pendientes} pendientes</p>
+   <div class="card" id="lote_tabla"></div>`;
+  pintarLote();
+}
+function pintarLote(){
+  const id=window._loteId;const lote=window._lote||{items:[]};
+  pagTabla('lote_tabla','lote',lote.items,'<th>Nombre</th><th>CUIT/Doc</th><th>Estado</th><th>Aging / CAE</th><th>Total</th><th></th>',it=>{const a=it.aging||{};const pend=!['emitido','recibido','rechazado'].includes(it.estado);
     return `<tr><td>${esc(it.nombre||'')}</td><td class="mono">${esc(it.cuit||it.doc_nro||'')}</td>
       <td>${estadoTag(it.estado)}</td>
       <td>${pend?semDot(a.semaforo)+(a.dias!=null?a.dias+'d':''):''}${it.cae?'<span class="hint mono">CAE '+esc(it.cae)+'</span>':''}</td>
       <td class="mono">${it.importe_total!=null?mcaPlata(it.importe_total):''}</td>
       <td><div class="acciones">${pend?`<button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'emitir')">Emitir</button>
         <button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'recibido')">Recibido</button>
-        ${it.email?`<button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'solicitar')">Solicitar</button>`:''}`:''}</div></td></tr>`;}).join('');
-  v.innerHTML=`<div class="row"><button class="ghost" onclick="vFacturador()">← Lotes</button><h2 style="margin:0 auto 0 8px">${esc(lote.nombre)}</h2>
-     <button onclick="emitirTodo(${Number(id)})">Emitir pendientes</button>
-     <a href="/api/lotes/${Number(id)}/export.csv"><button>CSV</button></a></div>
-   <p class="hint">${esc(lote.cuit)} · perfil ${esc(lote.perfil)} · ${r.total} items — ${r.emitidos} emitidos, ${r.recibidos} recibidos, ${r.pendientes} pendientes</p>
-   <div class="card"><table><thead><tr><th>Nombre</th><th>CUIT/Doc</th><th>Estado</th><th>Aging / CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        ${it.email?`<button class="ghost" onclick="itemAccion(${Number(id)},${Number(it.id)},'solicitar')">Solicitar</button>`:''}`:''}</div></td></tr>`;},'pintarLote','<p class="hint" style="margin:0">El lote no tiene items.</p>');
 }
 async function itemAccion(loteId,itemId,accion){
   if(accion==='recibido'){const cae=prompt('CAE del comprobante recibido (opcional):','');if(cae===null)return;
@@ -1734,23 +1770,29 @@ async function vUsuarios(){
   const v=$('#view');const {usuarios}=await api('/api/usuarios');
   const puede=ME.role==='superadmin';
   window._usuarios=usuarios;
-  const ORIGEN={local:'local',factorum:'desde Factorum'};
-  const rows=usuarios.map(u=>`<tr${u.activo===false?' style="opacity:.55"':''}><td>${esc(u.username)}${u.nombre&&u.nombre!==u.username?`<div class="hint">${esc(u.nombre)}</div>`:''}</td><td class="hint">${u.email?esc(u.email):'—'}</td><td><span class="tag">${esc(u.role)}</span></td>
+  v.innerHTML=`<h2>Usuarios</h2><div class="card" style="overflow-x:auto"><div id="usu_tabla"></div>
+    <p class="hint" style="margin:10px 0 0">El email identifica a la persona en la suite Escriba: con él entra a Factorum desde la grilla de arriba, y quien llega desde Factorum entra con su usuario de Arcanum.</p></div>
+   <div id="usu_resto"></div>`;
+  pintarUsuarios();
+  $('#usu_resto').innerHTML=`${USU_RESTO(puede)}`;
+  cargarClaves();
+}
+const ORIGEN_USU={local:'local',factorum:'desde Factorum'};
+function pintarUsuarios(){
+  const puede=ME.role==='superadmin';const ORIGEN=ORIGEN_USU;
+  pagTabla('usu_tabla','usuarios',window._usuarios||[],`<th>Usuario</th><th>Email</th><th>Rol</th><th>Origen</th><th>Estado</th><th>Último ingreso</th>${puede?'<th></th>':''}`,u=>`<tr${u.activo===false?' style="opacity:.55"':''}><td>${esc(u.username)}${u.nombre&&u.nombre!==u.username?`<div class="hint">${esc(u.nombre)}</div>`:''}</td><td class="hint">${u.email?esc(u.email):'—'}</td><td><span class="tag">${esc(u.role)}</span></td>
     <td class="hint">${esc(ORIGEN[u.origen]||u.origen||'local')}${u.origen&&u.origen!=='local'?'<div>sin contraseña: entra con el pase</div>':''}${u.cuit_allow&&u.cuit_allow.length?`<div>CUITs: ${u.cuit_allow.map(esc).join(', ')}</div>`:''}</td>
     <td>${u.activo===false?'<span class="tag no">desactivado</span>':'<span class="tag ok">activo</span>'}</td>
     <td class="hint">${u.last_login?new Date(u.last_login).toLocaleString('es-AR'):'nunca'}</td>
-    ${puede?`<td><div class="acciones"><button class="ghost" onclick="editarUsuario(${jsA(u.username)})">Editar</button>${u.username!==ME.username?`<button class="ghost" onclick="borrarUsuario(${jsA(u.username)})">Borrar</button>`:''}</div></td>`:''}</tr>`).join('');
-  v.innerHTML=`<h2>Usuarios</h2><div class="card" style="overflow-x:auto"><table><thead><tr><th>Usuario</th><th>Email</th><th>Rol</th><th>Origen</th><th>Estado</th><th>Último ingreso</th>${puede?'<th></th>':''}</tr></thead><tbody>${rows}</tbody></table>
-    <p class="hint" style="margin:10px 0 0">El email identifica a la persona en la suite Escriba: con él entra a Factorum desde la grilla de arriba, y quien llega desde Factorum entra con su usuario de Arcanum.</p></div>
-   ${puede?`<div class="card" style="margin-top:14px;max-width:480px"><h3 style="margin-top:0">Nuevo usuario</h3>
+    ${puede?`<td><div class="acciones"><button class="ghost" onclick="editarUsuario(${jsA(u.username)})">Editar</button>${u.username!==ME.username?`<button class="ghost" onclick="borrarUsuario(${jsA(u.username)})">Borrar</button>`:''}</div></td>`:''}</tr>`,'pintarUsuarios','<p class="hint" style="margin:0">No hay usuarios.</p>');
+}
+const USU_RESTO=puede=>`${puede?`<div class="card" style="margin-top:14px;max-width:480px"><h3 style="margin-top:0">Nuevo usuario</h3>
     <label>Usuario</label><input id="u_user"><label>Email (opcional)</label><input id="u_email" type="email" autocomplete="off" placeholder="persona@estudio.com"><label>Contraseña <span class="hint">(12 caracteres o más)</span></label>${pwField('u_pass','','autocomplete="new-password"')}
     <label>Rol</label><select id="u_role"><option value="operador">operador</option><option value="lectura">lectura</option><option value="admin">admin</option><option value="superadmin">superadmin</option></select>
     <button class="primary" style="margin-top:14px" onclick="addUser()">Crear</button></div>`:'<p class="hint">Solo un superadmin puede crear usuarios.</p>'}
    <h2 style="margin-top:28px">Claves de API</h2>
    <p class="hint">Para integraciones (SecretarIA, sistemas propios). Se envían como <code>Authorization: Bearer &lt;clave&gt;</code> o <code>X-API-Key</code>. Una clave con rol <b>lectura</b> solo consulta: no puede emitir ni modificar nada, ni por la API ni por <code>/mcp</code>. Cada clave se da de baja por separado.</p>
    <div id="clavesBox"><p class="hint">Cargando…</p></div>`;
-  cargarClaves();
-}
 async function borrarUsuario(u){
   if(!await confirmar({titulo:'Borrar el usuario '+u,texto:'No va a poder entrar más y sus sesiones abiertas se cierran al instante.',si:'Borrar usuario',tono:'peligro'}))return;
   try{await api('/api/usuarios/'+encodeURIComponent(u),{method:'DELETE'});toast('Usuario borrado');vUsuarios();}catch(e){toast(e.message,true);}
@@ -1780,20 +1822,25 @@ async function cargarClaves(){
   try{
     const {claves}=await api('/api/claves');
     window._claves=claves;
+    box.innerHTML=`<div class="card" id="claves_tabla"></div>${CLAVES_FORM()}`;
+    pintarClaves();
+  }catch(e){box.innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
+}
+function pintarClaves(){
     const f=d=>d?new Date(d).toLocaleString('es-AR'):'nunca';
     const fd=d=>d?new Date(d).toLocaleDateString('es-AR'):'';
     const est=c=>c.estado==='activa'?(c.vence&&new Date(c.vence)-Date.now()<7*864e5?`<span class="tag warn">vence ${fd(c.vence)}</span>`:`<span class="tag ok">activa</span>`)
       :c.estado==='vencida'?`<span class="tag no">vencida</span>`:`<span class="tag no">de baja</span>`;
-    const rows=claves.map(c=>{const n=jsA(c.nombre);const act=c.estado==='activa';
+    pagTabla('claves_tabla','claves',window._claves||[],'<th>Nombre</th><th>Prefijo</th><th>Rol</th><th>CUITs</th><th>Suite</th><th>Estado</th><th>Uso</th><th></th>',c=>{const n=jsA(c.nombre);const act=c.estado==='activa';
       return `<tr${act?'':' style="opacity:.55"'}><td>${esc(c.nombre)}${c.rotadaDe?' <span class="hint">(rotada)</span>':''}</td><td><code>${esc(c.prefijo||'')}</code></td><td><span class="tag">${esc(c.rol)}</span></td>
       <td class="hint">${c.cuits&&c.cuits.length?c.cuits.map(esc).join(', '):'todos'}</td>
       <td>${c.suite?`<span class="tag ok" title="Puede abrir sesiones de la suite">sí</span><div class="hint" style="white-space:nowrap">tope ${esc(c.suiteRolTope)}</div>`:'<span class="hint">no</span>'}</td>
       <td>${est(c)}${act&&c.vence&&new Date(c.vence)-Date.now()>=7*864e5?`<div class="hint">vence ${fd(c.vence)}</div>`:''}</td>
       <td class="hint">${f(c.ultimoUso)}<div>${c.usos30d||0} pedidos en 30 días${c.limitePorMinuto?` · tope ${c.limitePorMinuto}/min`:''}</div></td>
       <td><div class="acciones"><button class="ghost" onclick="usoClave(${Number(c.id)})">Uso</button>
-      ${act?`<button class="ghost" onclick="suiteClave(${Number(c.id)})">Suite</button><button class="ghost" onclick="rotarClave(${Number(c.id)},${n})">Rotar</button><button class="ghost" onclick="bajaClave(${Number(c.id)},${n})">Dar de baja</button>`:''}</div></td></tr>`;}).join('');
-    box.innerHTML=`<div class="card">${claves.length?`<table><thead><tr><th>Nombre</th><th>Prefijo</th><th>Rol</th><th>CUITs</th><th>Suite</th><th>Estado</th><th>Uso</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="hint" style="margin:0">Todavía no hay claves.</p>'}</div>
-     <div class="card" style="margin-top:14px;max-width:520px"><h3 style="margin-top:0">Nueva clave</h3>
+      ${act?`<button class="ghost" onclick="suiteClave(${Number(c.id)})">Suite</button><button class="ghost" onclick="rotarClave(${Number(c.id)},${n})">Rotar</button><button class="ghost" onclick="bajaClave(${Number(c.id)},${n})">Dar de baja</button>`:''}</div></td></tr>`;},'pintarClaves','<p class="hint" style="margin:0">Todavía no hay claves.</p>');
+}
+const CLAVES_FORM=()=>`<div class="card" style="margin-top:14px;max-width:520px"><h3 style="margin-top:0">Nueva clave</h3>
       <label>Nombre</label><input id="k_nom" placeholder="SecretarIA">
       <label>Rol</label><select id="k_rol"><option value="lectura">lectura (solo consulta)</option><option value="operador">operador (puede emitir)</option>${ME.role==='superadmin'?'<option value="admin">admin</option>':''}</select>
       <label>CUITs permitidos (opcional, separados por coma)</label><input id="k_cuits" placeholder="Vacío = todos">
@@ -1801,8 +1848,6 @@ async function cargarClaves(){
       <div><label>Límite por minuto (opcional)</label><input id="k_lim" class="mono" inputmode="numeric" placeholder="Por defecto 120"></div></div>
       ${suiteCampos('k',false,'operador')}
       <button class="primary" style="margin-top:14px" onclick="crearClave()">Crear clave</button></div>`;
-  }catch(e){box.innerHTML=`<p class="hint">${esc(e.message)}</p>`;}
-}
 function mostrarClaveNueva(clave,extra){
   window._claveNueva=clave.clave;
   modal(`<h3 style="margin-top:0">${extra?'Clave rotada':'Clave creada'}</h3>

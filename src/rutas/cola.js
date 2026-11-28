@@ -64,7 +64,7 @@ function crearRutas({ cola } = {}) {
     req._op = 'cola';
     if (req.method === 'GET' && !seg[2]) {
       const q = url.searchParams;
-      let lista = await servicio().listar({ cuit: q.get('cuit') || undefined, estado: q.get('estado') || undefined });
+      let lista = await servicio().listar({ cuit: q.get('cuit') || undefined, estado: q.get('estado') || undefined, limite: q.get('limite') || undefined });
       if (scopedRequiresCuit(principal)) lista = lista.filter((x) => principal.cuitAllow.includes(x.cuit));
       return json(res, 200, { ok: true, cola: lista });
     }
